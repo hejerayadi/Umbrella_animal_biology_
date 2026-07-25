@@ -1,0 +1,24 @@
+{
+  "name": "Multimodal Species Recognition Agent",
+  "type": "worker",
+  "description": "Identifies species from images or multimodal inputs.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "CLIP",
+    "Grounding DINO"
+  ],
+  "capabilities": [
+    "Species recognition",
+    "Image analysis"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "species": "string"
+  }
+}
