@@ -1,0 +1,24 @@
+{
+  "name": "Biodiversity Agent",
+  "type": "worker",
+  "description": "Provides biodiversity and conservation information.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "GBIF",
+    "IUCN"
+  ],
+  "capabilities": [
+    "Habitat analysis",
+    "Conservation status"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "biodiversity_report": "string"
+  }
+}

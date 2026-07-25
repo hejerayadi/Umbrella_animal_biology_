@@ -1,0 +1,27 @@
+{
+  "name": "Evolution Agent",
+  "type": "worker",
+  "description": "Analyzes evolutionary relationships between species.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [
+    "Genome Agent",
+    "Literature Agent"
+  ],
+  "managed_services": [
+    "NCBI Taxonomy",
+    "TimeTree"
+  ],
+  "capabilities": [
+    "Phylogenetic analysis",
+    "Evolutionary comparison"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "evolution_analysis": "string"
+  }
+}
