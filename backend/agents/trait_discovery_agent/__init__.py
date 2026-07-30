@@ -1,3 +1,3 @@
-from .card import AGENT_CARD
-from .mock import execute
-from .schema import TraitDiscoveryInput, TraitDiscoveryOutput
+from .mock import TraitMock
+
+__all__ = ["TraitMock"]

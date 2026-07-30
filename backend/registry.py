@@ -1,41 +1,81 @@
+"""Static catalog of worker agents.
+
+`AGENT_CARDS` is built only from the stable `card.json` metadata files - no
+Python code from `backend/agents/` is imported for that part, so it can
+never be affected by in-progress changes to the agents' dataclasses. The
+Planner and Capability Resolver use this to know what agents exist and pick
+between them.
+
+`AGENT_REGISTRY` maps each agent name to a real, runnable instance (the mock
+worker for now) so LangGraph can actually call `agent.run(request)`. Swapping
+a mock for a real implementation later only means changing the import and
+instantiation below - nothing else in the orchestrator needs to change.
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable
+import json
+from pathlib import Path
+from typing import Any, Protocol
 
 from .agent_card import AgentCard
-from .agents.Literature_Agent.card import AGENT_CARD as LITERATURE_CARD
-from .agents.Literature_Agent.mock import execute as literature_execute
-from .agents.Protein_visualization.card import AGENT_CARD as PROTEIN_CARD
-from .agents.Protein_visualization.mock import execute as protein_execute
-from .agents.biodiversity_agent.card import AGENT_CARD as BIODIVERSITY_CARD
-from .agents.biodiversity_agent.mock import execute as biodiversity_execute
-from .agents.evolution_agent.card import AGENT_CARD as EVOLUTION_CARD
-from .agents.evolution_agent.mock import execute as evolution_execute
-from .agents.genome_agent.card import AGENT_CARD as GENOME_CARD
-from .agents.genome_agent.mock import execute as genome_execute
-from .agents.multimodal_recognition_agent.card import AGENT_CARD as MULTIMODAL_CARD
-from .agents.multimodal_recognition_agent.mock import execute as multimodal_execute
-from .agents.reconstruction_agent.card import AGENT_CARD as RECONSTRUCTION_CARD
-from .agents.reconstruction_agent.mock import execute as reconstruction_execute
-from .agents.trait_discovery_agent.card import AGENT_CARD as TRAIT_CARD
-from .agents.trait_discovery_agent.mock import execute as trait_execute
+from .agents.Literature_Agent import LiteratureMock
+from .agents.Protein_visualization import ProteinMock
+from .agents.biodiversity_agent import BiodiversityMock
+from .agents.evolution_agent import EvolutionMock
+from .agents.genome_agent import GenomeMock
+from .agents.multimodal_recognition_agent import MultimodalMock
+from .agents.reconstruction_agent import ReconstructionMock
+from .agents.trait_discovery_agent import TraitMock
+
+_AGENTS_DIR = Path(__file__).parent / "agents"
+
+# Maps the orchestrator-facing agent name to its folder under backend/agents/.
+_AGENT_FOLDERS: dict[str, str] = {
+    "Genome": "genome_agent",
+    "Evolution": "evolution_agent",
+    "Biodiversity": "biodiversity_agent",
+    "Literature": "Literature_Agent",
+    "Multimodal": "multimodal_recognition_agent",
+    "Reconstruction": "reconstruction_agent",
+    "Trait": "trait_discovery_agent",
+    "Protein": "Protein_visualization",
+}
 
 
-@dataclass(frozen=True)
-class AgentHandle:
-    card: AgentCard
-    mock_execute: Callable[[object], object]
-    depends_on: tuple[str, ...] = ()
+class WorkerAgent(Protocol):
+    """Structural interface every worker agent satisfies.
+
+    Deliberately untyped beyond `run` - each agent still defines its own
+    local `AgentRequest`/`AgentResult` classes, so the orchestrator treats
+    them by duck typing instead of depending on one shared contract.
+    """
+
+    def run(self, request: Any) -> Any: ...
 
 
-AGENT_REGISTRY: dict[str, AgentHandle] = {
-    "Genome": AgentHandle(card=GENOME_CARD, mock_execute=genome_execute),
-    "Evolution": AgentHandle(card=EVOLUTION_CARD, mock_execute=evolution_execute, depends_on=("Genome",)),
-    "Biodiversity": AgentHandle(card=BIODIVERSITY_CARD, mock_execute=biodiversity_execute),
-    "Literature": AgentHandle(card=LITERATURE_CARD, mock_execute=literature_execute),
-    "Multimodal": AgentHandle(card=MULTIMODAL_CARD, mock_execute=multimodal_execute),
-    "Reconstruction": AgentHandle(card=RECONSTRUCTION_CARD, mock_execute=reconstruction_execute, depends_on=("Genome",)),
-    "Trait": AgentHandle(card=TRAIT_CARD, mock_execute=trait_execute, depends_on=("Genome",)),
-    "Protein": AgentHandle(card=PROTEIN_CARD, mock_execute=protein_execute, depends_on=("Trait",)),
+def _load_card(folder_name: str) -> AgentCard:
+    card_path = _AGENTS_DIR / folder_name / "card.json"
+    data = json.loads(card_path.read_text(encoding="utf-8"))
+    return AgentCard(
+        name=data["name"],
+        description=data["description"],
+        capabilities=list(data.get("capabilities", [])),
+        required_inputs=list(data.get("input", {}).keys()),
+        produced_outputs=list(data.get("output", {}).keys()),
+    )
+
+
+AGENT_CARDS: dict[str, AgentCard] = {
+    agent_name: _load_card(folder_name) for agent_name, folder_name in _AGENT_FOLDERS.items()
+}
+
+AGENT_REGISTRY: dict[str, WorkerAgent] = {
+    "Genome": GenomeMock(),
+    "Evolution": EvolutionMock(),
+    "Biodiversity": BiodiversityMock(),
+    "Literature": LiteratureMock(),
+    "Multimodal": MultimodalMock(),
+    "Reconstruction": ReconstructionMock(),
+    "Trait": TraitMock(),
+    "Protein": ProteinMock(),
 }

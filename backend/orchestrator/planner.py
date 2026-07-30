@@ -1,173 +1,108 @@
+"""LLM-driven planner: chooses which worker agent handles a request first.
+
+The planner is not keyword based. It uses Azure OpenAI, through a LangChain
+prompt template and structured output, to pick the initial agent from the
+catalog in `backend/registry.py` - which is itself built only from the
+stable `card.json` files, not from the agents' (still-changing) Python code.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .state import WorkflowState
-from .llm import ask_llm
+from langchain_core.prompts import ChatPromptTemplate
+from pydantic import BaseModel, Field
+
+from ..agent_card import AgentCard
+from ..registry import AGENT_CARDS
+from .llm import get_llm
+
+# The instructions we give the AI model. `{agent_catalog}` and `{user_query}`
+# are placeholders that get filled in with real values every time we ask it
+# a question - this is the "prompt template" mentioned in the docstring above.
+_SYSTEM_PROMPT = (
+    "You are the planning module of a scientific multi-agent orchestrator.\n"
+    "Choose exactly one worker agent to handle the user's request first.\n"
+    "Only choose from the agents listed below, using their name exactly as written.\n\n"
+    "Available agents:\n{agent_catalog}"
+)
+
+# Bundles the system instructions above with the user's actual question into
+# one reusable template. Every call to the planner fills in the blanks and
+# sends this to the model.
+_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        ("system", _SYSTEM_PROMPT),
+        ("human", "{user_query}"),
+    ]
+)
+
+
+class _PlannerOutput(BaseModel):
+    """Structured output requested from the LLM.
+
+    Instead of asking the model to write a free-form sentence and then trying
+    to guess what it meant, we ask it to fill in this exact shape (one field:
+    `initial_agent`). That way we always get back something we can use in
+    code directly, no guessing involved.
+    """
+
+    initial_agent: str = Field(
+        description="Exact name of the worker agent that should handle the request first."
+    )
+
 
 @dataclass(frozen=True)
 class ExecutionPlan:
     """The initial routing decision produced from a user's query."""
 
     initial_agent: str
-    # The original user request is preserved so downstream agents keep the
-    # full context instead of only seeing the keyword that triggered routing.
-    objective: str
 
 
 class Planner:
-    """Decide where the workflow should start and how it should continue.
+    """Decides which worker agent starts the workflow for a given query."""
 
-    The planner performs two related jobs:
-    1. `plan()` chooses the first agent from the user's query using a simple
-       keyword-based heuristic.
-    2. `next_agent()` determines the default hand-off chain when an agent
-       finishes and the workflow should continue.
+    def __init__(self, agent_cards: dict[str, AgentCard] | None = None) -> None:
+        # Which agents we're allowed to choose from. If nothing is passed in,
+        # fall back to the full list of agents the orchestrator knows about.
+        self._agent_cards = agent_cards if agent_cards is not None else AGENT_CARDS
 
-    This is intentionally lightweight and rule-driven rather than model-driven
-    so the orchestration behavior is easy to reason about and debug.
-    """
+        # Wire the prompt template together with the LLM, telling the LLM to
+        # answer using the `_PlannerOutput` shape defined above. The `|` here
+        # is LangChain's way of chaining steps: "build the prompt, then send
+        # it to the model."
+        self._chain = _PROMPT | get_llm().with_structured_output(_PlannerOutput)
 
     def plan(self, user_query: str) -> ExecutionPlan:
-        # Normalize once so keyword matching is case-insensitive.
-        query = user_query.lower()
+        """Ask the LLM to pick the initial agent for `user_query`."""
 
-        # Protein-focused requests are routed first because they usually ask
-        # about structures, 3D forms, or sequence-to-structure interpretation.
-        if any(keyword in query for keyword in [
-            "protein", "proteins", "structure", "3d"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Protein",
-                objective=user_query
-            )
-
-        # Genomic requests are detected by common sequence and gene terms.
-        if any(keyword in query for keyword in [
-            "gene", "genes", "dna", "genome",
-            "chromosome", "sequence"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Genome",
-                objective=user_query
-            )
-
-        # Trait discovery is used when the query is asking what causes or is
-        # associated with a biological trait.
-        if any(keyword in query for keyword in [
-            "trait", "tusk", "tusks", "horn",
-            "adaptation", "responsible for",
-            "associated with", "linked to"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Trait",
-                objective=user_query
-            )
-
-        # Evolutionary comparisons move the workflow toward species relation
-        # analysis and comparative biology.
-        if any(keyword in query for keyword in [
-            "evolution", "evolve",
-            "compare species",
-            "related species"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Evolution",
-                objective=user_query
-            )
-
-        # Reconstruction is chosen for incomplete biological data that needs
-        # to be inferred or rebuilt.
-        if any(keyword in query for keyword in [
-            "reconstruct", "reconstruction",
-            "missing sequence",
-            "incomplete genome"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Reconstruction",
-                objective=user_query
-            )
-
-        # Biodiversity questions are usually about habitat, distribution, and
-        # conservation context.
-        if any(keyword in query for keyword in [
-            "habitat", "distribution",
-            "biodiversity",
-            "conservation",
-            "hotspot"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Biodiversity",
-                objective=user_query
-            )
-
-        # Image-based requests need multimodal recognition rather than text-only
-        # analysis.
-        if any(keyword in query for keyword in [
-            "image", "photo", "picture"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Multimodal",
-                objective=user_query
-            )
-
-        # Literature lookup acts as the default route for paper and reference
-        # oriented questions, and also serves as the fallback if no other rule
-        # matches more specifically.
-        if any(keyword in query for keyword in [
-            "literature", "paper", "papers",
-            "study", "pubmed", "reference"
-        ]):
-            return ExecutionPlan(
-                initial_agent="Literature",
-                objective=user_query
-            )
-
-        # Fallback route: when the query is ambiguous, start with literature
-        # review to gather context before deciding on a narrower analysis path.
-        return ExecutionPlan(
-            initial_agent="Literature",
-            objective=user_query
+        # Actually call the model: fill in the prompt's placeholders and get
+        # back a `_PlannerOutput` object.
+        response = self._chain.invoke(
+            {
+                "agent_catalog": _format_agent_catalog(self._agent_cards),
+                "user_query": user_query,
+            }
         )
 
-    def next_agent(self, state: WorkflowState) -> str | None:
-        """Return the next agent in the hand-off chain, if any.
+        # Safety check: if the model somehow answers with an agent name that
+        # doesn't actually exist, fail loudly now instead of silently
+        # breaking later when we try to run a non-existent agent.
+        if response.initial_agent not in self._agent_cards:
+            raise ValueError(
+                f"Planner selected unknown agent '{response.initial_agent}'; "
+                f"known agents: {sorted(self._agent_cards)}"
+            )
 
-        The state object carries the current agent name, and this method uses a
-        small fixed progression to keep the mock workflow deterministic.
-        Returning `None` means the workflow should stop after the current step.
-        """
+        return ExecutionPlan(initial_agent=response.initial_agent)
 
-        current = state.current_agent
 
-        # The mock workflow models a few simple multi-agent paths without
-        # attempting to infer dynamic dependencies between every possible agent.
+def _format_agent_catalog(agent_cards: dict[str, AgentCard]) -> str:
+    """Turn the agent dictionary into a plain-text bullet list for the prompt.
 
-        if current == "Genome":
-            return "Evolution"
-
-        if current == "Evolution":
-            return "Biodiversity"
-
-        # Trait questions may naturally hand off to protein-level analysis.
-        if current == "Trait":
-            return "Protein"
-
-        # The remaining agents are terminal in this mock flow.
-        if current == "Protein":
-            return None
-
-        if current == "Reconstruction":
-            return None
-
-        if current == "Biodiversity":
-            return None
-
-        if current == "Multimodal":
-            return None
-
-        if current == "Literature":
-            return None
-
-        # Any unknown agent name is treated as a terminal state.
-        return None
+    e.g. "- Genome: Retrieves genomic data (capabilities: Genome retrieval, ...)"
+    This is what actually gets shown to the AI model so it knows its options.
+    """
+    return "\n".join(
+        f"- {name}: {card.description} (capabilities: {', '.join(card.capabilities)})"
+        for name, card in agent_cards.items()
+    )

@@ -1,3 +1,3 @@
-from .card import AGENT_CARD
-from .mock import execute
-from .schema import ProteinVisualizationInput, ProteinVisualizationOutput
+from .mock import ProteinMock
+
+__all__ = ["ProteinMock"]
