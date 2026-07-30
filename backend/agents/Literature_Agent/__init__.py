@@ -1,3 +1,3 @@
-from .card import AGENT_CARD
-from .mock import execute
-from .schema import LiteratureInput, LiteratureOutput
+from .mock import LiteratureMock
+
+__all__ = ["LiteratureMock"]

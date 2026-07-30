@@ -1,16 +1,22 @@
 """Public exports for the orchestrator package.
 
-This module gathers the core orchestration types in one place so the rest
-of the backend can import the planner, scheduler, and state container from a
-single package entry point.
-
-The imports below are intentionally re-exported symbols rather than local
-implementation details. That keeps the public API for the orchestrator
-package small and easy to discover.
+This file controls what other parts of the app can import with
+`from backend.orchestrator import ...`. Everything listed in `__all__` below
+is considered the "public API" of this package.
 """
+from __future__ import annotations
 
+from .capability_resolver import CapabilityResolver
+from .lang_graph import GlobalOrchestrator, build_orchestrator_graph
 from .planner import ExecutionPlan, Planner
-from ..registry import AGENT_REGISTRY, AgentHandle
-from .scheduler import ExecutionScheduler, ScheduleDecision
+from .router import route_after_worker
 from .state import WorkflowState
-
+__all__ = [
+    "CapabilityResolver",
+    "ExecutionPlan",
+    "GlobalOrchestrator",
+    "Planner",
+    "WorkflowState",
+    "build_orchestrator_graph",
+    "route_after_worker",
+]

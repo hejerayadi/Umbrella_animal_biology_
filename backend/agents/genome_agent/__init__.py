@@ -1,3 +1,3 @@
-from .card import AGENT_CARD
-from .mock import execute
-from .schema import GenomeInput, GenomeOutput
+from .mock import GenomeMock
+
+__all__ = ["GenomeMock"]
