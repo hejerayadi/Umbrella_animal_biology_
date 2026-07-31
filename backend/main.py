@@ -10,8 +10,13 @@ Planner and Capability Resolver.
 """
 from __future__ import annotations
 
+import logging
+
 from .orchestrator.lang_graph import GlobalOrchestrator
 from .orchestrator.state import WorkflowState
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def _print_run(user_query: str, state: WorkflowState) -> None:
@@ -21,12 +26,16 @@ def _print_run(user_query: str, state: WorkflowState) -> None:
         print(f"  {entry}")
     print("-" * 72)
     print(f"Final context: {state.context}")
+    print("-" * 72)
+    print(state.final_answer)
 
 
 def main() -> None:
     orchestrator = GlobalOrchestrator()
 
     demo_runs: list[tuple[str, dict[str, str]]] = [
+        # Not a research request - should be answered directly, with no agents.
+        ("Hello! What can you help me with?", {}),
         ("Show me the genome of the woolly mammoth.", {"species": "woolly mammoth"}),
         (
             "Predict the 3D protein structure linked to the tusk trait in the woolly mammoth.",

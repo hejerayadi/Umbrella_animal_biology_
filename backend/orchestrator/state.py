@@ -62,3 +62,8 @@ class WorkflowState:
     # Whatever the most recently run agent just returned (its AgentResult).
     # The router looks at this to decide what happens next.
     last_result: Any | None = None
+
+    # The finished, human-readable answer written by the Responder - this is
+    # the text the user actually sees. Stays None until the workflow reaches
+    # either the `direct_answer` or `responder` node at the very end.
+    final_answer: str | None = None

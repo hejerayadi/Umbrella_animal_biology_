@@ -1,27 +1,34 @@
-"""Router: interprets an AgentResult and decides the next graph node.
+"""Router: decides which graph node runs next.
 
-The router never calls an LLM; it only reads `state.last_result.status`. It
-compares that status by its string `.value` ("completed", "needs_agent", ...)
-rather than by enum identity, because each agent currently defines its own
-local `AgentStatus` enum class - two different classes with the same value
-are not `==` to each other, so comparing by value keeps this router decoupled
-from any single agent's class. For resuming a paused caller it also reads
-`state.waiting_agent`, which the worker node has already updated.
+The router never calls an LLM - it is pure "if/else" logic, the traffic cop
+described in the project spec. It only reads what is already in the state.
+
+`route_after_worker` compares the agent's status by its string `.value`
+("completed", "needs_agent", ...) rather than by enum identity, because each
+agent currently defines its own local `AgentStatus` enum class - two
+different classes with the same value are not `==` to each other, so
+comparing by value keeps this router decoupled from any single agent's class.
 """
 from __future__ import annotations
-
-from langgraph.graph import END
 
 from .state import WorkflowState
 
 
-def route_after_worker(state: WorkflowState) -> str:
-    """Return the name of the next node to run after a worker executes.
+def route_after_planner(state: WorkflowState) -> str:
+    """Return the next node after the planner has made its decision.
 
-    This is plain "if/else" logic, no AI involved - it's the traffic cop
-    described in the project spec: it just reads the last agent's status and
-    picks where to go next.
+    The planner sets `current_agent` to the agent that should start, or
+    leaves it as None when the message needs no research agent at all (a
+    greeting, small talk, a question about the platform).
     """
+
+    if state.current_agent is None:
+        return "direct_answer"
+    return state.current_agent
+
+
+def route_after_worker(state: WorkflowState) -> str:
+    """Return the name of the next node to run after a worker executes."""
 
     # Whatever the agent that just ran handed back to us.
     result = state.last_result
@@ -44,16 +51,17 @@ def route_after_worker(state: WorkflowState) -> str:
         return state.current_agent
 
     # The agent said "something went wrong, I give up."
-    # -> Stop the whole workflow.
+    # -> Stop running agents, but still go through the responder so the user
+    #    gets a real explanation instead of a raw error.
     if status == "failed":
-        return END
+        return "responder"
 
     # The agent said "I'm done."
     if status == "completed":
         # If someone else was paused waiting on this agent, go back and
-        # resume them now that they have what they needed. Otherwise, there's
-        # nobody left waiting, so the whole workflow is finished.
-        return state.waiting_agent if state.waiting_agent is not None else END
+        # resume them now that they have what they needed. Otherwise all the
+        # work is finished, so hand off to the responder to write the answer.
+        return state.waiting_agent if state.waiting_agent is not None else "responder"
 
     # Any other status value is unexpected - fail loudly instead of guessing.
     raise ValueError(f"Unhandled agent status: {status!r}")
