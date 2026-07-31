@@ -1,6 +1,6 @@
-from dataclasses.inputs import PathwaysInput
-from dataclasses.outputs import PathwaysOutput, PathwayEntry
-from dataclasses.common import AgentStatus
+from schemas.inputs import PathwaysInput
+from schemas.outputs import PathwaysOutput, PathwayEntry
+from schemas.common import AgentStatus
 
 _MOCK_KEGG_DB = {
     "UCP1": PathwayEntry(pathway_id="ko00071", pathway_name="Fatty acid degradation"),

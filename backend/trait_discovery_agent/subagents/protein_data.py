@@ -1,6 +1,6 @@
-from dataclasses.inputs import ProteinDataInput
-from dataclasses.outputs import ProteinDataOutput, ProteinEntry
-from dataclasses.common import AgentStatus
+from schemas.inputs import ProteinDataInput
+from schemas.outputs import ProteinDataOutput, ProteinEntry
+from schemas.common import AgentStatus
 
 _MOCK_UNIPROT_DB = {
     "UCP1": ProteinEntry(gene_symbol="UCP1", protein_name="Uncoupling protein 1",

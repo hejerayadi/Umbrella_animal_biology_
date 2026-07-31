@@ -1,6 +1,6 @@
-from dataclasses.inputs import LiteratureSupportInput
-from dataclasses.outputs import LiteratureSupportOutput, LiteratureRecord
-from dataclasses.common import AgentStatus
+from schemas.inputs import LiteratureSupportInput
+from schemas.outputs import LiteratureSupportOutput, LiteratureRecord
+from schemas.common import AgentStatus
 
 _MOCK_LITERATURE_DB = {
     "fur growth": [
