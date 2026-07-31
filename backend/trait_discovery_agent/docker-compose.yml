@@ -1,0 +1,9 @@
+
+services:
+  trait-discovery:
+    build: .
+    container_name: trait-discovery-agent
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: pytest tests/ -v
