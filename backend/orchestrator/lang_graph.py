@@ -2,12 +2,20 @@
 
 Graph shape::
 
-    START -> planner -> <worker> -> (conditional) -> capability_resolver -> <worker> -> ... -> END
+    START -> planner -+-> direct_answer ----------------------------------> END
+                      |
+                      +-> <worker> -> (conditional) -+-> capability_resolver -> <worker> -> ...
+                                                     |
+                                                     +-> responder ---------> END
 
-Each worker agent is one node. The planner and capability resolver are each
-one node. All routing between them is decided by conditional edges backed by
-`router.route_after_worker`, which never calls an LLM - only the planner and
-capability resolver nodes do.
+Each worker agent is one node. The planner, capability resolver, and the two
+answer-writing nodes are each one node. All routing between them is decided
+by conditional edges backed by `router.py`, which never calls an LLM - only
+the planner, capability resolver, and responder nodes do.
+
+A message that needs no research agent (a greeting, a question about the
+platform) goes planner -> direct_answer -> END. Everything else runs agents
+and finishes at `responder`, which writes the findings up as prose.
 
 Requests are built with `SimpleNamespace` rather than a shared `AgentRequest`
 class: every mock agent only ever reads `.instruction` / `.context` off the
@@ -16,6 +24,7 @@ schema is needed to call it.
 """
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,8 +34,13 @@ from langgraph.graph.state import CompiledStateGraph
 from ..registry import AGENT_CARDS, AGENT_REGISTRY, WorkerAgent
 from .capability_resolver import CapabilityResolver
 from .planner import Planner
-from .router import route_after_worker
+from .responder import Responder
+from .router import route_after_planner, route_after_worker
 from .state import WorkflowState
+
+# Every worker agent's status funnels through this one logger, so watching
+# the console shows the orchestrator's whole train of thought in order.
+_logger = logging.getLogger(__name__)
 
 
 def _make_planner_node(planner: Planner):
@@ -38,14 +52,65 @@ def _make_planner_node(planner: Planner):
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
-        # Ask the planner: "given the user's question, who should go first?"
+        # Ask the planner: "does this even need an agent, and if so, who
+        # should go first?"
         plan = planner.plan(state.user_query)
+
+        # `initial_agent` is None when the message needs no research agent -
+        # the router sends those straight to the direct-answer node.
+        step = plan.initial_agent or "Direct answer"
 
         # LangGraph nodes don't mutate the state directly - they return a
         # dict of "here's what changed", and LangGraph merges it in.
         return {
             "current_agent": plan.initial_agent,
-            "execution_history": [*state.execution_history, f"Planner -> {plan.initial_agent}"],
+            "execution_history": [*state.execution_history, f"Planner -> {step}"],
+        }
+
+    return _node
+
+
+def _make_direct_answer_node(responder: Responder):
+    """Build the node that replies conversationally, with no agents involved.
+
+    Reached when the planner decides the message is a greeting, small talk,
+    or a question about the platform rather than a research request.
+    """
+
+    def _node(state: WorkflowState) -> dict[str, Any]:
+        answer = responder.answer_directly(state.user_query)
+        return {
+            "final_answer": answer,
+            "execution_history": [*state.execution_history, "Responder -> answered directly"],
+        }
+
+    return _node
+
+
+def _make_responder_node(responder: Responder):
+    """Build the node that writes the final answer once the agents are done.
+
+    Every research path ends here, including failed ones - so the user always
+    gets a written explanation rather than a raw dictionary or error.
+    """
+
+    def _node(state: WorkflowState) -> dict[str, Any]:
+        # If the last agent failed, hand its error text to the responder so
+        # it can explain honestly instead of inventing an answer.
+        failure = None
+        result = state.last_result
+        if result is not None and result.status.value == "failed":
+            failure = str(result.output)
+
+        answer = responder.synthesize(
+            user_query=state.user_query,
+            context=state.context,
+            execution_history=state.execution_history,
+            failure=failure,
+        )
+        return {
+            "final_answer": answer,
+            "execution_history": [*state.execution_history, "Responder -> answer ready"],
         }
 
     return _node
@@ -98,6 +163,13 @@ def _make_worker_node(agent_name: str, agent: WorkerAgent):
         result = agent.run(request)
         status = result.status.value
 
+        if status == "needs_agent":
+            _logger.info("[%s] needs_agent -> %r", agent_name, result.prompt_to_target_agent)
+        elif status == "failed":
+            _logger.info("[%s] failed -> %r", agent_name, result.output)
+        else:
+            _logger.info("[%s] %s -> %r", agent_name, status, result.output)
+
         # Start building the state updates every worker produces, no matter
         # its status: which agent just ran, what it returned, and a log entry.
         updates: dict[str, Any] = {
@@ -146,15 +218,18 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     "what happens next" (the conditional edges).
     """
 
-    # These do the real work behind the planner/resolver nodes below.
+    # These do the real work behind the planner/resolver/responder nodes below.
     planner = Planner(AGENT_CARDS)
     resolver = CapabilityResolver(AGENT_CARDS)
+    responder = Responder(AGENT_CARDS)
 
     # StateGraph(WorkflowState) means: every node in this graph reads and
     # writes a WorkflowState object (the "clipboard" described in state.py).
     graph = StateGraph(WorkflowState)
     graph.add_node("planner", _make_planner_node(planner))
     graph.add_node("capability_resolver", _make_resolver_node(resolver))
+    graph.add_node("direct_answer", _make_direct_answer_node(responder))
+    graph.add_node("responder", _make_responder_node(responder))
 
     # One node per worker agent (Genome, Evolution, Protein, ...), all built
     # the same way via the factory function above.
@@ -170,9 +245,13 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     # node names already match the agent names.
     dispatch_map = {name: name for name in worker_names}
 
-    # After the planner runs, jump straight to whichever agent it picked
-    # (read from `state.current_agent`).
-    graph.add_conditional_edges("planner", lambda s: s.current_agent, dispatch_map)
+    # After the planner runs, either jump to the agent it picked, or - when it
+    # decided no agent is needed - go straight to the direct-answer node.
+    graph.add_conditional_edges(
+        "planner",
+        route_after_planner,
+        {**dispatch_map, "direct_answer": "direct_answer"},
+    )
 
     # After the resolver runs, jump straight to whichever agent it picked
     # (read from `state.resolved_agent`).
@@ -180,10 +259,18 @@ def build_orchestrator_graph() -> CompiledStateGraph:
 
     # After ANY worker agent runs, use the pure "traffic cop" function from
     # router.py to decide what happens next: another worker, the resolver,
-    # or the end of the workflow.
-    post_worker_map = {**dispatch_map, "capability_resolver": "capability_resolver", END: END}
+    # or the responder that writes the final answer.
+    post_worker_map = {
+        **dispatch_map,
+        "capability_resolver": "capability_resolver",
+        "responder": "responder",
+    }
     for name in worker_names:
         graph.add_conditional_edges(name, route_after_worker, post_worker_map)
+
+    # Both ways of producing an answer are the last step before finishing.
+    graph.add_edge("direct_answer", END)
+    graph.add_edge("responder", END)
 
     # Turn the graph definition into something that can actually be run.
     return graph.compile()

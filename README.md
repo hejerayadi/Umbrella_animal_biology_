@@ -39,6 +39,14 @@ Requirements: Python 3.11+
    Running `python backend\main.py` or `cd backend; python main.py` will fail with
    `ImportError: attempted relative import with no known parent package` - always use the `-m` form above instead.
 
+5. To let the frontend talk to the orchestrator, run the HTTP API instead (also from the repository root):
+
+   ```powershell
+   uvicorn backend.api:app --reload --port 8000
+   ```
+
+   This starts a server at `http://localhost:8000` with one endpoint, `POST /api/chat`, that runs a user's message through the full Planner -> Worker -> Capability Resolver loop and returns the result as JSON.
+
 ## Running the Frontend
 
 Requirements: Node.js 18+
@@ -49,4 +57,26 @@ npm install
 npm run dev
 ```
 
-Then open the local URL printed in the terminal. The frontend currently runs on local mock data and is not yet wired up to the backend.
+Then open the local URL printed in the terminal.
+
+The frontend calls the backend API at `http://localhost:8000` by default. If you're running the API on a different host/port, set `VITE_ORCHESTRATOR_API_URL` in a `.env` file inside `frontend/` before starting the dev server:
+
+```
+VITE_ORCHESTRATOR_API_URL=http://localhost:8000
+```
+
+## Running Both Together
+
+Two terminals, both started from the repository root:
+
+```powershell
+# Terminal 1 - backend API
+.\venv\Scripts\Activate.ps1
+uvicorn backend.api:app --reload --port 8000
+
+# Terminal 2 - frontend
+cd frontend
+npm run dev
+```
+
+Sending a chat message in the UI now runs the real orchestrator: the Agent Thinking panel reflects the actual `Planner -> Worker -> Capability Resolver` steps returned by the backend, not a simulated timeline. If the backend isn't reachable, the chat shows an error message instead of hanging silently.

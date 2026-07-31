@@ -4,18 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 
-import {
-  MOCK_AGENT_ACTIVITY,
-  MOCK_ASSISTANT_REPLY,
-  MOCK_CONVERSATIONS,
-  MOCK_MESSAGES,
-  MOCK_ORCHESTRATION_PLAN,
-} from "./mock-data";
+import { MOCK_AGENT_ACTIVITY, MOCK_CONVERSATIONS, MOCK_MESSAGES } from "./mock-data";
+import { askOrchestrator, parseExecutionHistory } from "./orchestrator-client";
 import type { AgentActivity, Conversation, Message, User } from "./umbrella-types";
 
 const STORAGE_KEY = "umbrella.mock.state.v1";
@@ -76,7 +70,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     setState(readPersisted());
@@ -87,12 +80,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state, hydrated]);
-
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
-
-  const schedule = useCallback((fn: () => void, ms: number) => {
-    timers.current.push(setTimeout(fn, ms));
-  }, []);
 
   const signIn = useCallback((email: string) => {
     setState((prev) => ({
@@ -180,54 +167,52 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
 
       setIsThinking(true);
 
-      MOCK_ORCHESTRATION_PLAN.forEach((step, index) => {
-        const activityId = uid("act");
-        schedule(() => {
+      askOrchestrator(content)
+        .then((response) => {
+          const activities = parseExecutionHistory(response.execution_history, conversationId);
+          const assistantId = uid("msg");
+
           setState((prev) => ({
             ...prev,
             activities: [
-              ...prev.activities.map((a) =>
-                a.conversationId === conversationId && a.status === "running"
-                  ? { ...a, status: "complete" as const }
-                  : a,
-              ),
+              ...prev.activities.filter((a) => a.conversationId !== conversationId),
+              ...activities,
+            ],
+            messages: [
+              ...prev.messages,
               {
-                id: activityId,
+                id: assistantId,
                 conversationId,
-                agentName: step.agentName,
-                status: "running" as const,
-                description: step.description,
+                sender: "assistant",
+                content: response.answer,
                 timestamp: new Date().toISOString(),
               },
             ],
           }));
-        }, 500 + index * 700);
-      });
+          setIsThinking(false);
+          setStreamingMessageId(assistantId);
+        })
+        .catch((error: unknown) => {
+          const assistantId = uid("msg");
+          const message = error instanceof Error ? error.message : String(error);
 
-      const totalDelay = 500 + MOCK_ORCHESTRATION_PLAN.length * 700;
-      schedule(() => {
-        const assistantId = uid("msg");
-        setState((prev) => ({
-          ...prev,
-          activities: prev.activities.map((a) =>
-            a.conversationId === conversationId ? { ...a, status: "complete" as const } : a,
-          ),
-          messages: [
-            ...prev.messages,
-            {
-              id: assistantId,
-              conversationId,
-              sender: "assistant",
-              content: MOCK_ASSISTANT_REPLY,
-              timestamp: new Date().toISOString(),
-            },
-          ],
-        }));
-        setIsThinking(false);
-        setStreamingMessageId(assistantId);
-      }, totalDelay);
+          setState((prev) => ({
+            ...prev,
+            messages: [
+              ...prev.messages,
+              {
+                id: assistantId,
+                conversationId,
+                sender: "assistant",
+                content: `⚠️ Could not reach the orchestrator backend: ${message}`,
+                timestamp: new Date().toISOString(),
+              },
+            ],
+          }));
+          setIsThinking(false);
+        });
     },
-    [schedule],
+    [],
   );
 
   const messagesFor = useCallback(

@@ -7,11 +7,15 @@ matching.
 """
 from __future__ import annotations
 
+import logging
+
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
 from ..agent_card import AgentCard
 from .llm import get_llm
+
+_logger = logging.getLogger(__name__)
 
 # The instructions we give the AI model when an agent is stuck and needs
 # help. `{agent_catalog}` gets filled in with the list of available agents.
@@ -82,6 +86,13 @@ class CapabilityResolver:
             raise ValueError(
                 f"Capability resolver selected the waiting agent '{current_agent}' as its own dependency"
             )
+
+        _logger.info(
+            "[Resolver] %s needs help (%r) -> selected agent: %s",
+            current_agent,
+            prompt_to_target_agent,
+            response.target_agent,
+        )
 
         return response.target_agent
 
