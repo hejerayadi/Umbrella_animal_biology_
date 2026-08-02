@@ -1,6 +1,6 @@
-from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import GeneMapperInput
-from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import GeneMapperOutput, GOAnnotation
-from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
+from schemas.inputs import GeneMapperInput
+from schemas.outputs import GeneMapperOutput, GOAnnotation
+from schemas.common import AgentStatus
 
 _MOCK_GO_DB = {
     "FGF5": GOAnnotation(gene_symbol="FGF5", go_id="GO:0031069", go_name="hair follicle development"),
@@ -19,5 +19,9 @@ async def mock_gene_mapper(input: GeneMapperInput) -> GeneMapperOutput:
         else:
             unmatched.append(gene)  # flagged, never silently dropped
 
-    status = AgentStatus.COMPLETED if annotations else AgentStatus.FAILED
+    if not annotations or unmatched:
+        status = AgentStatus.FAILED
+    else:
+        status = AgentStatus.COMPLETED
+
     return GeneMapperOutput(status=status, go_annotations=annotations, unmatched_genes=unmatched)
