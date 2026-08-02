@@ -1,13 +1,13 @@
 import pytest
 
-from schemas.inputs import TraitDiscoveryInput
-from schemas.common import AgentStatus
-from subagents.gene_mapper import mock_gene_mapper
-from subagents.pathways import mock_pathways_agent
-from subagents.protein_data import mock_protein_data_agent
-from subagents.literature_support import mock_literature_support
-from sub_orchestrator.functional_evidence_orchestrator import FunctionalEvidenceOrchestrator
-from orchestrator.trait_discovery_orchestrator import TraitDiscoveryOrchestrator
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import TraitDiscoveryInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.subagents.gene_mapper import mock_gene_mapper
+from backend.agents.Literature_Agent.trait_discovery_agent.subagents.pathways import mock_pathways_agent
+from backend.agents.Literature_Agent.trait_discovery_agent.subagents.protein_data import mock_protein_data_agent
+from backend.agents.Literature_Agent.trait_discovery_agent.subagents.literature_support import mock_literature_support
+from backend.agents.Literature_Agent.trait_discovery_agent.sub_orchestrator.functional_evidence_orchestrator import FunctionalEvidenceOrchestrator
+from backend.agents.Literature_Agent.trait_discovery_agent.orchestrator.trait_discovery_orchestrator import TraitDiscoveryOrchestrator
 
 
 def _build_orchestrator():

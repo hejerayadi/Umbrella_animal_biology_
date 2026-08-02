@@ -1,6 +1,6 @@
-from schemas.inputs import PathwaysInput
-from schemas.outputs import PathwaysOutput, PathwayEntry
-from schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import PathwaysInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import PathwaysOutput, PathwayEntry
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
 
 _MOCK_KEGG_DB = {
     "UCP1": PathwayEntry(pathway_id="ko00071", pathway_name="Fatty acid degradation"),

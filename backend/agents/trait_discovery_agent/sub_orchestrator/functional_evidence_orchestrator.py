@@ -1,8 +1,8 @@
 import asyncio
 
-from schemas.inputs import FunctionalEvidenceInput, PathwaysInput, ProteinDataInput
-from schemas.outputs import FunctionalEvidenceOutput
-from schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import FunctionalEvidenceInput, PathwaysInput, ProteinDataInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import FunctionalEvidenceOutput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
 
 
 class FunctionalEvidenceOrchestrator:

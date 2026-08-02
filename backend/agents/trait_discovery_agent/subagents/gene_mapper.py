@@ -1,6 +1,6 @@
-from schemas.inputs import GeneMapperInput
-from schemas.outputs import GeneMapperOutput, GOAnnotation
-from schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import GeneMapperInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import GeneMapperOutput, GOAnnotation
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
 
 _MOCK_GO_DB = {
     "FGF5": GOAnnotation(gene_symbol="FGF5", go_id="GO:0031069", go_name="hair follicle development"),

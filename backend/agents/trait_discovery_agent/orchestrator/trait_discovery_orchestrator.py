@@ -1,8 +1,8 @@
 import asyncio
 
-from schemas.inputs import TraitDiscoveryInput, GeneMapperInput, FunctionalEvidenceInput, LiteratureSupportInput
-from schemas.outputs import TraitDiscoveryOutput
-from schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import TraitDiscoveryInput, GeneMapperInput, FunctionalEvidenceInput, LiteratureSupportInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import TraitDiscoveryOutput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
 
 
 class TraitDiscoveryOrchestrator:

@@ -1,6 +1,6 @@
-from schemas.inputs import ProteinDataInput
-from schemas.outputs import ProteinDataOutput, ProteinEntry
-from schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import ProteinDataInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import ProteinDataOutput, ProteinEntry
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
 
 _MOCK_UNIPROT_DB = {
     "UCP1": ProteinEntry(gene_symbol="UCP1", protein_name="Uncoupling protein 1",

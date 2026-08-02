@@ -1,6 +1,6 @@
-from schemas.inputs import LiteratureSupportInput
-from schemas.outputs import LiteratureSupportOutput, LiteratureRecord
-from schemas.common import AgentStatus
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.inputs import LiteratureSupportInput
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.outputs import LiteratureSupportOutput, LiteratureRecord
+from backend.agents.Literature_Agent.trait_discovery_agent.schemas.common import AgentStatus
 
 _MOCK_LITERATURE_DB = {
     "fur growth": [
