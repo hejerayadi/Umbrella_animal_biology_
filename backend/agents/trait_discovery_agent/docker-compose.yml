@@ -1,0 +1,16 @@
+services:
+  toy-agent-langgraph:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m framework.toy_agent_langgraph
+
+  toy-agent-crewai:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m framework.toy_agent_crewai
