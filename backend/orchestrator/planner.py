@@ -35,8 +35,8 @@ _logger = logging.getLogger(__name__)
 # a question - this is the "prompt template" mentioned in the docstring above.
 _SYSTEM_PROMPT = (
     "You are the planning module of Umbrella, a scientific research platform for animal "
-    "biology - genomics, biodiversity, evolution, traits, protein structures and "
-    "scientific literature.\n\n"
+    "biology - genomics, biodiversity, evolution, traits, protein structures, species "
+    "imagery and scientific literature.\n\n"
     "Decide how the user's message should be handled.\n\n"
     "Set `needs_agent` to false when the message is a greeting, small talk, a question "
     "about you or the platform, or anything that is not an animal-biology research "

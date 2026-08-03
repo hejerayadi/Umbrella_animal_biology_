@@ -23,6 +23,7 @@ from .agents.Protein_visualization import ProteinMock
 from .agents.biodiversity_agent import BiodiversityMock
 from .agents.evolution_agent import EvolutionMock
 from .agents.genome_agent import GenomeMock
+from .agents.image_generation_agent import ImageGenerationMock
 from .agents.multimodal_recognition_agent import MultimodalMock
 from .agents.reconstruction_agent import ReconstructionMock
 from .agents.trait_discovery_agent import TraitMock
@@ -39,6 +40,7 @@ _AGENT_FOLDERS: dict[str, str] = {
     "Reconstruction": "reconstruction_agent",
     "Trait": "trait_discovery_agent",
     "Protein": "Protein_visualization",
+    "ImageGeneration": "image_generation_agent",
 }
 
 
@@ -78,4 +80,5 @@ AGENT_REGISTRY: dict[str, WorkerAgent] = {
     "Reconstruction": ReconstructionMock(),
     "Trait": TraitMock(),
     "Protein": ProteinMock(),
+    "ImageGeneration": ImageGenerationMock(),
 }
