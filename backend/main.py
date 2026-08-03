@@ -45,6 +45,10 @@ def main() -> None:
             "Reconstruct the incomplete genome of the woolly mammoth using related species.",
             {"species": "woolly mammoth"},
         ),
+        (
+            "Generate an image of the woolly mammoth - there is no photograph of it.",
+            {"species": "woolly mammoth"},
+        ),
     ]
 
     for user_query, initial_context in demo_runs:
