@@ -1,36 +1,30 @@
 """Static catalog of worker agents.
 
-`AGENT_CARDS` is built only from the stable `card.json` metadata files - no
-Python code from `backend/agents/` is imported for that part, so it can
-never be affected by in-progress changes to the agents' dataclasses. The
-Planner and Capability Resolver use this to know what agents exist and pick
+`AGENT_CARDS` is built only from the stable `card.json` metadata files. The
+Planner and Capability Resolver use it to know what agents exist and to pick
 between them.
 
-`AGENT_REGISTRY` maps each agent name to a real, runnable instance (the mock
-worker for now) so LangGraph can actually call `agent.run(request)`. Swapping
-a mock for a real implementation later only means changing the import and
-instantiation below - nothing else in the orchestrator needs to change.
+`AGENT_ENDPOINTS` maps each agent name to the base URL of its HTTP service.
+Agents are independent services reached over `POST /execute`, so this module
+imports no code from `backend/agents/` at all - a broken or half-finished
+agent package can no longer stop the orchestrator from starting.
+
+Every URL can be overridden with an environment variable, so the same code
+runs against local uvicorn processes, containers, or deployed services
+without edits.
 """
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Any, Protocol
 
 from .agent_card import AgentCard
-from .agents.Literature_Agent import LiteratureMock
-from .agents.Protein_visualization import ProteinMock
-from .agents.biodiversity_agent import BiodiversityMock
-from .agents.evolution_agent import EvolutionMock
-from .agents.genome_agent import GenomeMock
-from .agents.image_generation_agent import ImageGenerationMock
-from .agents.multimodal_recognition_agent import MultimodalMock
-from .agents.reconstruction_agent import ReconstructionMock
-from .agents.trait_discovery_agent import TraitMock
 
 _AGENTS_DIR = Path(__file__).parent / "agents"
 
-# Maps the orchestrator-facing agent name to its folder under backend/agents/.
+# Maps the orchestrator-facing agent name to its folder under backend/agents/
+# (where its card.json lives), plus the port its API listens on by default.
 _AGENT_FOLDERS: dict[str, str] = {
     "Genome": "genome_agent",
     "Evolution": "evolution_agent",
@@ -43,16 +37,26 @@ _AGENT_FOLDERS: dict[str, str] = {
     "ImageGeneration": "image_generation_agent",
 }
 
+# Default local port per agent. Port 8000 is reserved for backend/api.py.
+_AGENT_PORTS: dict[str, int] = {
+    "Genome": 8001,
+    "Evolution": 8002,
+    "Biodiversity": 8003,
+    "Literature": 8004,
+    "Multimodal": 8005,
+    "Reconstruction": 8006,
+    "Trait": 8007,
+    "Protein": 8008,
+    "ImageGeneration": 8009,
+}
 
-class WorkerAgent(Protocol):
-    """Structural interface every worker agent satisfies.
 
-    Deliberately untyped beyond `run` - each agent still defines its own
-    local `AgentRequest`/`AgentResult` classes, so the orchestrator treats
-    them by duck typing instead of depending on one shared contract.
+def _endpoint(agent_name: str, port: int) -> str:
+    """Base URL for one agent, overridable per agent via the environment.
+
+    e.g. "Genome" -> GENOME_AGENT_URL, "ImageGeneration" -> IMAGEGENERATION_AGENT_URL
     """
-
-    def run(self, request: Any) -> Any: ...
+    return os.getenv(f"{agent_name.upper()}_AGENT_URL", f"http://localhost:{port}")
 
 
 def _load_card(folder_name: str) -> AgentCard:
@@ -71,14 +75,6 @@ AGENT_CARDS: dict[str, AgentCard] = {
     agent_name: _load_card(folder_name) for agent_name, folder_name in _AGENT_FOLDERS.items()
 }
 
-AGENT_REGISTRY: dict[str, WorkerAgent] = {
-    "Genome": GenomeMock(),
-    "Evolution": EvolutionMock(),
-    "Biodiversity": BiodiversityMock(),
-    "Literature": LiteratureMock(),
-    "Multimodal": MultimodalMock(),
-    "Reconstruction": ReconstructionMock(),
-    "Trait": TraitMock(),
-    "Protein": ProteinMock(),
-    "ImageGeneration": ImageGenerationMock(),
+AGENT_ENDPOINTS: dict[str, str] = {
+    agent_name: _endpoint(agent_name, port) for agent_name, port in _AGENT_PORTS.items()
 }
