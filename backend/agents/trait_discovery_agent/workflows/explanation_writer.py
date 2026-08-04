@@ -2,7 +2,7 @@ import logging
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from .llm import get_llm
+from .llm import invoke_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +22,17 @@ USER_PROMPT = (
 )
 
 async def write_explanation(trait_name, species_name, genes, pathways, proteins, evidence) -> str:
-    llm = get_llm(temperature=0.2)
     prompt = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("user", USER_PROMPT)])
-    chain = prompt | llm
-    response = await chain.ainvoke({
-        "trait_name": trait_name,
-        "species_name": species_name,
-        "genes": genes or "none matched",
-        "pathways": pathways or "none found",
-        "proteins": proteins or "none found",
-        "evidence": evidence or "none found",
-    })
+    response = await invoke_with_fallback(
+        prompt,
+        {
+            "trait_name": trait_name,
+            "species_name": species_name,
+            "genes": genes or "none matched",
+            "pathways": pathways or "none found",
+            "proteins": proteins or "none found",
+            "evidence": evidence or "none found",
+        },
+        temperature=0.2,
+    )
     return response.content.strip()

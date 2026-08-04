@@ -51,6 +51,10 @@ class TraitDiscoveryState:
     _literature_target_agent: Optional[str] = None
     _literature_prompt: Optional[str] = None
 
+    # ---- capability-resolver output, carried through for observability/tracing.
+    # Not used for routing (routing only ever reads `status`) — purely diagnostic. ----
+    resolution_reasoning: Optional[str] = None
+
     # ---- final output fields, same names/shape as TraitDiscoveryOutput ----
     status: Optional[AgentStatus] = None
     target_agent: Optional[str] = None

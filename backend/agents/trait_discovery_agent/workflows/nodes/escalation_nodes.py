@@ -16,6 +16,7 @@ async def escalate_genome_agent_node(state: TraitDiscoveryState) -> dict:
         "status": AgentStatus.NEEDS_AGENT,
         "target_agent": resolution.target_agent,
         "prompt_to_target_agent": resolution.prompt_to_target_agent,
+        "resolution_reasoning": resolution.reasoning,
     }
 
 async def escalate_literature_agent_node(state: TraitDiscoveryState) -> dict:
@@ -35,4 +36,5 @@ async def escalate_literature_agent_node(state: TraitDiscoveryState) -> dict:
         "status": AgentStatus.NEEDS_AGENT,
         "target_agent": resolution.target_agent,
         "prompt_to_target_agent": resolution.prompt_to_target_agent,
+        "resolution_reasoning": resolution.reasoning,
     }
