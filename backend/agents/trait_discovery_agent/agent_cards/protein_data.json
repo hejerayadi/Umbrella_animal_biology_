@@ -1,0 +1,28 @@
+{
+  "name": "Protein Data",
+  "type": "worker",
+  "description": "For a list of candidate genes, retrieves the corresponding reviewed UniProt protein entries with name and function summary.",
+  "reports_to": "Functional Evidence",
+  "may_need": [
+    {
+      "agent": "Gene Mapper",
+      "note": "data dependency only: same gene_list as Pathways, passed down via Functional Evidence"
+    }
+  ],
+  "managed_agents": [],
+  "managed_services": ["UniProt REST API (one query per gene symbol)"],
+  "capabilities": [
+    "Reviewed protein entry lookup",
+    "Missing-entry flagging"
+  ],
+  "input": [
+    { "name": "gene_list", "type": "list[str]", "source": "from Gene Mapper, same list as Pathways" }
+  ],
+  "output": {
+    "fields": [
+      { "name": "proteins", "type": "list[ProteinEntry]" },
+      { "name": "missing_genes", "type": "list[str]" }
+    ],
+    "control_fields": ["status", "target_agent", "prompt_to_target_agent"]
+  }
+}

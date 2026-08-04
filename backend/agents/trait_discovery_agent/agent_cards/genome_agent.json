@@ -1,0 +1,12 @@
+  {
+    "name": "Genome Agent",
+    "kind": "external",
+    "role": "Resolves a validated list of candidate genes for a given trait/species pair by querying genomic databases (Ensembl, NCBI Gene) and running association analysis.",
+    "call_when": "Another agent needs `gene_list` for a trait but none has been resolved yet in context.",
+    "cannot_help_with": [
+      "Functional annotation",
+      "Pathway data",
+      "Literature evidence"
+    ],
+    "returns": "Raw candidate gene lists"
+  }
