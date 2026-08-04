@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from .orchestrator.lang_graph import GlobalOrchestrator
+from .orchestrator.langgraph import GlobalOrchestrator
 from .orchestrator.state import WorkflowState
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
