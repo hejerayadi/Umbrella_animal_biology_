@@ -47,7 +47,8 @@ async def test_escalation_and_aggregate_nodes_work(patch_llm_nodes):
 
 
 @pytest.mark.asyncio
-async def test_trait_discovery_graph_propagates_gene_list_and_runs_nodes():
+async def test_trait_discovery_graph_propagates_gene_list_and_runs_nodes(monkeypatch):
+    monkeypatch.setattr(td_graph_module, "write_explanation", fake_write_explanation)
     app = td_graph_module.build_trait_discovery_graph()
     result = await app.ainvoke(TraitDiscoveryState(
         trait_name="fur growth",

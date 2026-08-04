@@ -1,9 +1,10 @@
 import logging
+import re
 
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
-from .llm import get_llm
+from .llm import invoke_with_fallback
 from .agent_catalog import build_catalog_text
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ SYSTEM_PROMPT = (
     "but only return the final structured decision — do not show your reasoning.\n"
     "Pick exactly one agent, from the list below, able to satisfy that request.\n"
     "Use the agent name exactly as written. Never pick the waiting agent itself.\n\n"
+    "Return only valid JSON with keys target_agent, prompt_to_target_agent, and reasoning.\n\n"
     "Available agents:\n{agent_catalog}"
 )
 
@@ -31,16 +33,21 @@ class CapabilityResolution(BaseModel):
     reasoning: str = Field(description="One sentence on why this agent — internal only, not shown to the user.")
 
 async def resolve_capability(waiting_agent: str, need_description: str, known_context: str) -> CapabilityResolution:
-    llm = get_llm(temperature=0.0).with_structured_output(CapabilityResolution)
     prompt = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("user", USER_PROMPT)])
-    chain = prompt | llm
 
     logger.info("Resolving capability for %s: %s", waiting_agent, need_description)
-    result: CapabilityResolution = await chain.ainvoke({
-        "agent_catalog": build_catalog_text(exclude=waiting_agent),
-        "waiting_agent": waiting_agent,
-        "need_description": need_description,
-        "known_context": known_context,
-    })
+    response = await invoke_with_fallback(
+        prompt,
+        {
+            "agent_catalog": build_catalog_text(exclude=waiting_agent),
+            "waiting_agent": waiting_agent,
+            "need_description": need_description,
+            "known_context": known_context,
+        },
+    )
+    content = getattr(response, "content", str(response)).strip()
+    match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+    json_text = match.group(0) if match else content
+    result = CapabilityResolution.model_validate_json(json_text)
     logger.info("Resolved -> %s (%s)", result.target_agent, result.reasoning)
     return result

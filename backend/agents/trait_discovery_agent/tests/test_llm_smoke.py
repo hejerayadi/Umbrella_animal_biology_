@@ -25,7 +25,7 @@ def build_ping_graph():
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(
-    not os.getenv("NVIDIA_NIM_API_KEY") and not os.getenv("NVIDIA_API_KEY"),
+    not os.getenv("NVIDIA_NIM_API_KEY") and not os.getenv("NVIDIA_NIM_API_KEY"),
     reason="NVIDIA_NIM_API_KEY not set",
 )
 async def test_nim_smoke():
