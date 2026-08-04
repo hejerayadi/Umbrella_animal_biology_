@@ -24,7 +24,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from ...registry import AGENT_CARDS, AGENT_REGISTRY
+from ...registry import AGENT_CARDS, AGENT_ENDPOINTS
 from ..capability_resolver import CapabilityResolver
 from ..planner import Planner
 from ..responder import Responder
@@ -61,14 +61,15 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     graph.add_node("responder", make_responder_node(responder))
 
     # One node per worker agent (Genome, Evolution, Protein, ...), all built
-    # the same way via the factory function above.
-    for name, agent in AGENT_REGISTRY.items():
-        graph.add_node(name, make_worker_node(name, agent))
+    # the same way via the factory function above. Each node holds the URL of
+    # that agent's service, not an instance of it.
+    for name, base_url in AGENT_ENDPOINTS.items():
+        graph.add_node(name, make_worker_node(name, base_url))
 
     # The workflow always starts by running the planner first.
     graph.add_edge(START, "planner")
 
-    worker_names = list(AGENT_REGISTRY)
+    worker_names = list(AGENT_ENDPOINTS)
     # A lookup table LangGraph uses to know "if the chosen next-step is named
     # X, go to the node named X" - it's just an identity mapping since our
     # node names already match the agent names.

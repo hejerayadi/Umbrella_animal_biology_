@@ -1,0 +1,36 @@
+# Virtual environments
+# Covers the shared root venv and every per-agent venv
+# (backend/agents/<agent>/.venv).
+venv/
+.venv/
+env/
+ENV/
+
+# Secrets - only .env.example is ever committed
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+dist/
+.output/
+.nitro/
+.vite/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

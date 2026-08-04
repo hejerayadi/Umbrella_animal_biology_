@@ -1,45 +1,86 @@
-"""The graph node that runs one worker agent.
+"""The graph node that calls one worker agent over HTTP.
 
-One node is built per entry in `AGENT_REGISTRY`, and this is the only place
-in the whole orchestrator where a worker agent's own code actually runs.
+One node is built per entry in `AGENT_ENDPOINTS`. Agents are independent
+services: this node POSTs to `<agent>/execute` and parses the reply back into
+the orchestrator's own `AgentResult`, so nothing downstream (`router.py`,
+`resolver_node.py`, `answer_nodes.py`) needs to know the call left the
+process.
 
-Requests are built with `SimpleNamespace` rather than a shared `AgentRequest`
-class: every mock agent only ever reads `.instruction` / `.context` off the
-object it receives (duck typing), so no dependency on any one agent's local
-schema is needed to call it.
+The request body matches every agent's `AgentRequest`: `instruction` is the
+user's original question, `context` is everything the agents have produced so
+far.
 """
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 from typing import Any
 
-from ....registry import WorkerAgent
+import httpx
+
+from ...schema import AgentResult, AgentStatus
 from ...state import WorkflowState
 
 # Every worker agent's status funnels through this one logger, so watching
 # the console shows the orchestrator's whole train of thought in order.
 _logger = logging.getLogger(__name__)
 
+# Connect fast (a missing agent should fail immediately, not hang the graph),
+# but allow a slow agent plenty of time to actually do its work.
+_TIMEOUT = httpx.Timeout(120.0, connect=5.0)
 
-def make_worker_node(agent_name: str, agent: WorkerAgent):
+# One pooled client for the whole process, reused across every agent call.
+_client = httpx.Client(timeout=_TIMEOUT)
+
+
+def _call_agent(agent_name: str, base_url: str, state: WorkflowState) -> AgentResult:
+    """POST to one agent and parse its reply. All transport concerns live here."""
+
+    try:
+        response = _client.post(
+            f"{base_url}/execute",
+            json={"instruction": state.user_query, "context": state.context},
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPError as exc:
+        # Agent not running, unreachable, timed out, or returned 5xx. None of
+        # these exist for an in-process call, and none of them should crash
+        # the graph - the router already knows how to handle FAILED.
+        _logger.info("[%s] unreachable -> %s", agent_name, exc)
+        return AgentResult(
+            status=AgentStatus.FAILED,
+            output=f"{agent_name} agent unreachable at {base_url}: {exc}",
+        )
+
+    try:
+        status = AgentStatus(payload["status"])
+    except (KeyError, ValueError) as exc:
+        # The agent answered, but not with a status this orchestrator knows.
+        _logger.info("[%s] unusable response -> %r", agent_name, payload)
+        return AgentResult(
+            status=AgentStatus.FAILED,
+            output=f"{agent_name} agent returned an unusable response ({exc}): {payload!r}",
+        )
+
+    return AgentResult(
+        status=status,
+        target_agent=payload.get("target_agent"),
+        prompt_to_target_agent=payload.get("prompt_to_target_agent"),
+        output=payload.get("output"),
+    )
+
+
+def make_worker_node(agent_name: str, base_url: str):
     """Build the graph node for one specific worker agent (e.g. "Genome").
 
-    `agent_name` and `agent` are captured here once when the graph is built,
-    so every time this node runs later, it already knows which agent it is
-    and which real object to call.
+    `agent_name` and `base_url` are captured here once when the graph is
+    built, so every time this node runs later it already knows which agent it
+    is and where to reach it.
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
-        # Build the request object the agent expects. We use a plain
-        # SimpleNamespace (just an object with attributes) instead of a
-        # shared class, since the mock agents only ever read
-        # `.instruction` and `.context` off of it.
-        request = SimpleNamespace(instruction=state.user_query, context=state.context)
-
-        # Actually call the agent. This is the one place in the whole
-        # orchestrator where a worker agent's code runs.
-        result = agent.run(request)
+        # The one place in the whole orchestrator that talks to an agent.
+        result = _call_agent(agent_name, base_url, state)
         status = result.status.value
 
         if status == "needs_agent":
