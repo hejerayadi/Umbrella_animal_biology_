@@ -1,0 +1,32 @@
+{
+  "name": "Trait Discovery Agent",
+  "type": "orchestrator",
+  "description": "Given a biological trait and species, identifies the responsible genes, functional evidence (pathways + proteins), and supporting literature; updates the knowledge graph and returns a plain-language explanation.",
+  "reports_to": "Global Scientific Orchestrator",
+  "may_need": [
+    { "agent": "Genome Agent", "note": null },
+    { "agent": "Literature Agent", "note": null }
+  ],
+  "managed_agents": ["Gene Mapper", "Functional Evidence", "Literature Support"],
+  "managed_services": [],
+  "capabilities": [
+    "Trait-to-gene routing",
+    "Result aggregation",
+    "Knowledge graph update",
+    "Plain-language explanation generation"
+  ],
+  "input": [
+    { "name": "trait_name", "type": "str", "source": null },
+    { "name": "species_name", "type": "str", "source": null }
+  ],
+  "output": {
+    "fields": [
+      { "name": "go_annotations", "type": "list[GOAnnotation]" },
+      { "name": "pathway_data", "type": "list[PathwayEntry]" },
+      { "name": "protein_data", "type": "list[ProteinEntry]" },
+      { "name": "evidence", "type": "list[LiteratureRecord]" },
+      { "name": "explanation", "type": "str" }
+    ],
+    "control_fields": ["status", "target_agent", "prompt_to_target_agent"]
+  }
+}
