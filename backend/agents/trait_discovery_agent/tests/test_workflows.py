@@ -1,5 +1,6 @@
 import pytest
 
+import workflows.capability_resolver as resolver_module
 import workflows.nodes.escalation_nodes as esc_module
 import workflows.trait_discovery_graph as td_graph_module
 from workflows.capability_resolver import CapabilityResolution
@@ -72,3 +73,51 @@ def test_catalog_text_uses_json_card_fields():
     assert "### Genome Agent" in catalog
     assert "Role:" in catalog
     assert "Call when:" in catalog
+
+
+@pytest.mark.asyncio
+async def test_resolve_capability_parses_valid_json(monkeypatch):
+    class _Resp:
+        content = (
+            '{"target_agent":"Genome Agent",'
+            '"prompt_to_target_agent":"Resolve genes for fur growth in mouse.",'
+            '"reasoning":"Genome Agent provides missing gene candidates."}'
+        )
+
+    async def _fake_invoke(*args, **kwargs):
+        return _Resp()
+
+    monkeypatch.setattr(resolver_module, "invoke_with_fallback", _fake_invoke)
+
+    result = await resolver_module.resolve_capability(
+        waiting_agent="Trait Discovery Agent",
+        need_description="Need a candidate gene list for fur growth.",
+        known_context="trait=fur growth, species=mouse",
+    )
+
+    assert result.target_agent == "Genome Agent"
+    assert "Resolve genes" in result.prompt_to_target_agent
+
+
+@pytest.mark.asyncio
+async def test_resolve_capability_falls_back_on_non_json(monkeypatch):
+    class _Resp:
+        content = (
+            "We should escalate this to the Literature Agent because the evidence is too thin "
+            "and more papers are required before concluding."
+        )
+
+    async def _fake_invoke(*args, **kwargs):
+        return _Resp()
+
+    monkeypatch.setattr(resolver_module, "invoke_with_fallback", _fake_invoke)
+
+    result = await resolver_module.resolve_capability(
+        waiting_agent="Literature Support",
+        need_description="Evidence for cold adaptation is too thin.",
+        known_context="genes so far=['UCP1']",
+    )
+
+    assert result.target_agent == "Literature Agent"
+    assert "Known context:" in result.prompt_to_target_agent
+    assert "fallback" in result.reasoning.lower()
