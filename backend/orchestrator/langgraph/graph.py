@@ -4,14 +4,19 @@ Graph shape::
 
     START -> planner -+-> direct_answer ----------------------------------> END
                       |
-                      +-> <worker> -> (conditional) -+-> capability_resolver -> <worker> -> ...
-                                                     |
-                                                     +-> responder ---------> END
+                      +-> extractor -> <worker> -> (conditional) -+-> capability_resolver -> <worker> -> ...
+                                                                  |
+                                                                  +-> responder ---------> END
 
-Each worker agent is one node. The planner, capability resolver, and the two
-answer-writing nodes are each one node. All routing between them is decided
-by conditional edges backed by `router.py`, which never calls an LLM - only
-the planner, capability resolver, and responder nodes do.
+Each worker agent is one node. The planner, extractor, capability resolver,
+and the two answer-writing nodes are each one node. All routing between them
+is decided by conditional edges backed by `router.py`, which never calls an
+LLM - only the planner, extractor, capability resolver, and responder nodes
+do.
+
+The extractor sits between the planner and the first agent so that the
+subject of the question (species, trait, gene) is already in `context` by the
+time any agent reads it - see `extractor.py` for why that step is needed.
 
 A message that needs no research agent (a greeting, a question about the
 platform) goes planner -> direct_answer -> END. Everything else runs agents
@@ -26,12 +31,14 @@ from langgraph.graph.state import CompiledStateGraph
 
 from ...registry import AGENT_CARDS, AGENT_ENDPOINTS
 from ..capability_resolver import CapabilityResolver
+from ..extractor import Extractor
 from ..planner import Planner
 from ..responder import Responder
 from ..router import route_after_planner, route_after_worker
 from ..state import WorkflowState
 from .nodes import (
     make_direct_answer_node,
+    make_extractor_node,
     make_planner_node,
     make_resolver_node,
     make_responder_node,
@@ -49,6 +56,7 @@ def build_orchestrator_graph() -> CompiledStateGraph:
 
     # These do the real work behind the planner/resolver/responder nodes below.
     planner = Planner(AGENT_CARDS)
+    extractor = Extractor()
     resolver = CapabilityResolver(AGENT_CARDS)
     responder = Responder(AGENT_CARDS)
 
@@ -56,6 +64,7 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     # writes a WorkflowState object (the "clipboard" described in state.py).
     graph = StateGraph(WorkflowState)
     graph.add_node("planner", make_planner_node(planner))
+    graph.add_node("extractor", make_extractor_node(extractor))
     graph.add_node("capability_resolver", make_resolver_node(resolver))
     graph.add_node("direct_answer", make_direct_answer_node(responder))
     graph.add_node("responder", make_responder_node(responder))
@@ -75,13 +84,17 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     # node names already match the agent names.
     dispatch_map = {name: name for name in worker_names}
 
-    # After the planner runs, either jump to the agent it picked, or - when it
-    # decided no agent is needed - go straight to the direct-answer node.
+    # After the planner runs, either head into the extractor (which seeds the
+    # shared context before any agent sees it) or - when no agent is needed -
+    # go straight to the direct-answer node.
     graph.add_conditional_edges(
         "planner",
         route_after_planner,
-        {**dispatch_map, "direct_answer": "direct_answer"},
+        {"extractor": "extractor", "direct_answer": "direct_answer"},
     )
+
+    # The extractor always hands off to the agent the planner already chose.
+    graph.add_conditional_edges("extractor", lambda s: s.current_agent, dispatch_map)
 
     # After the resolver runs, jump straight to whichever agent it picked
     # (read from `state.resolved_agent`).

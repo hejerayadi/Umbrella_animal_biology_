@@ -1,7 +1,7 @@
 {
   "name": "Trait Discovery Agent",
   "type": "worker",
-  "description": "Identifies genes associated with observable traits.",
+  "description": "Identifies the traits of a species and the genes behind them, using Gene Ontology and UniProt. Covers physical characteristics such as body size, morphology, anatomy and coloration; behavioural and life-history traits such as social structure, reproduction and lifespan; which genes cause, control or are associated with an observable trait; and why a species has a particular feature or adaptation.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],

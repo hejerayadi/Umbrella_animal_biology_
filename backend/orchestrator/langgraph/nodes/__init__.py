@@ -8,12 +8,14 @@ of them know about each other.
 from __future__ import annotations
 
 from .answer_nodes import make_direct_answer_node, make_responder_node
+from .extractor_node import make_extractor_node
 from .planner_node import make_planner_node
 from .resolver_node import make_resolver_node
 from .worker_node import make_worker_node
 
 __all__ = [
     "make_direct_answer_node",
+    "make_extractor_node",
     "make_planner_node",
     "make_resolver_node",
     "make_responder_node",
