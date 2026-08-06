@@ -1,17 +1,27 @@
 {
   "name": "Multimodal Species Recognition Agent",
   "type": "worker",
-  "description": "Identifies species from images or multimodal inputs using CLIP and Grounding DINO. Covers determining which species appears in a supplied photograph, answering 'what animal is this' about an image the user provides, and analyzing or describing the contents of wildlife imagery. Requires an image to work from - it cannot identify a species from a text description alone.",
+  "description": "Identifies an animal species from one supplied photograph paired with a text instruction, using image-vector retrieval against a reference collection. Covers determining which species appears in a supplied photograph, answering 'what animal is this' about an image the user provides, and listing visually similar species from the same retrieval. Requires BOTH an image and a non-empty text instruction in the same request - it cannot identify a species from a text description alone, and it cannot accept an image with no instruction. Returns identified, uncertain or not_identified; an inconclusive result is a real answer, not a failure.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
-  "may_need": [],
+  "may_need": [
+    "Evolution Agent",
+    "Genome Agent",
+    "Biodiversity Agent",
+    "Trait Discovery Agent",
+    "Literature Agent",
+    "3D Protein Structure Agent"
+  ],
   "managed_services": [
-    "CLIP",
-    "Grounding DINO"
+    "BioCLIP-2 (officially selected; execution mocked in Sprint 2)",
+    "Qdrant vector retrieval",
+    "GBIF (mocked in Sprint 2)",
+    "NCBI Taxonomy (mocked in Sprint 2)"
   ],
   "capabilities": [
-    "Species recognition",
+    "Species recognition from an image",
+    "Visual similarity candidates",
     "Image analysis"
   ],
   "input": {
@@ -19,6 +29,12 @@
     "context": "dict"
   },
   "output": {
-    "species": "string"
+    "recognition": "dict",
+    "species": "string",
+    "species_id": "string",
+    "gbif_id": "integer",
+    "ncbi_taxid": "integer",
+    "recognition_candidates": "list",
+    "recognition_provenance": "dict"
   }
 }

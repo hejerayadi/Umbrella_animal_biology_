@@ -1,12 +1,15 @@
-<<<<<<< HEAD:backend/multimodal_recognition_agent/requirements.txt
-openai==2.53.0
-python-dotenv==1.2.2
-=======
 # Standalone local dependencies for the Multimodal Recognition agent
+openai==2.53.0
 pillow==11.0.0
+python-dotenv==1.2.2
 requests==2.32.3
-
 # --- Agent API layer (api.py) - required, do not remove ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
->>>>>>> origin/main:backend/agents/multimodal_recognition_agent/requirements.txt
+
+# --- Recognition internal workflow (LangGraph StateGraph) ---
+langgraph==1.2.10
+
+# --- Recognition validation and test dependencies ---
+pydantic==2.13.4
+pytest==8.3.2
