@@ -1,0 +1,24 @@
+{
+  "name": "Biodiversity Agent",
+  "type": "worker",
+  "description": "Provides biodiversity and conservation information from GBIF and IUCN. Covers where a species lives - its habitat, geographic range, distribution and ecosystem; its conservation status, including whether it is endangered, threatened or extinct; population size, population trend and threats; the ecological role it plays; and occurrence records or biodiversity of a region.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "GBIF",
+    "IUCN"
+  ],
+  "capabilities": [
+    "Habitat analysis",
+    "Conservation status"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "biodiversity_report": "string"
+  }
+}

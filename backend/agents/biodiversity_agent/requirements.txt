@@ -1,0 +1,7 @@
+# Standalone local dependencies for the Biodiversity agent
+pandas==2.2.3
+plotly==5.24.1
+
+# --- Agent API layer (api.py) - required, do not remove ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0

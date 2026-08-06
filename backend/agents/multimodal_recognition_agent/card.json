@@ -1,0 +1,24 @@
+{
+  "name": "Multimodal Species Recognition Agent",
+  "type": "worker",
+  "description": "Identifies species from images or multimodal inputs using CLIP and Grounding DINO. Covers determining which species appears in a supplied photograph, answering 'what animal is this' about an image the user provides, and analyzing or describing the contents of wildlife imagery. Requires an image to work from - it cannot identify a species from a text description alone.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "CLIP",
+    "Grounding DINO"
+  ],
+  "capabilities": [
+    "Species recognition",
+    "Image analysis"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "species": "string"
+  }
+}
