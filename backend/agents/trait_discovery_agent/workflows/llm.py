@@ -1,8 +1,19 @@
 import os
 from functools import lru_cache
+from pathlib import Path
 
+from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
+
+# The agent's .env lives at the package root, one level up from workflows/.
+# Two things matter about where this call sits: it uses an explicit path
+# rather than a search, so it works no matter which directory the command was
+# run from; and it runs BEFORE the module-level os.getenv calls below, so
+# NIM_MODEL and NIM_BASE_URL are picked up from .env too, not just the API
+# key read later inside get_llm(). load_dotenv does not overwrite variables
+# already set in the shell, so an explicit export still wins.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 DEFAULT_MODEL = os.getenv("NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 DEFAULT_BASE_URL = os.getenv("NIM_BASE_URL")
