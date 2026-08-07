@@ -43,6 +43,7 @@ from backend.agents.biodiversity_agent.framework.llm_client import (  # noqa: E4
     LLMUnavailable,
     get_llm,
 )
+from backend.agents.biodiversity_agent.intent import classify_intent  # noqa: E402
 from backend.agents.biodiversity_agent.orchestrator import (  # noqa: E402
     BiodiversityOrchestrator,
 )
@@ -70,38 +71,27 @@ if "orchestrator" not in st.session_state:
 # ---------- intent detection (mimics what the Global Orchestrator will do) ----------
 
 
-_INTENT_SYSTEM_PROMPT = """You are the Global Scientific Orchestrator for the Umbrella BioHub.
-Given a user's free-form question, decide which BIODIVERSITY feature to run and
-extract the parameters. Respond with a strict JSON object, no prose, no code
-fences, no extra keys:
-
-{
-  "feature": "species_distribution_map" | "habitat_visualization" | "biodiversity_hotspots" | "migration_analysis",
-  "species_name": "<scientific or common name, or null>",
-  "region": "<continent or country, default 'global'>"
-}
-
-Rules:
-- species_distribution_map: user asks WHERE a species is observed (point map).
-- habitat_visualization: user asks about a species HABITAT / conservation status.
-- biodiversity_hotspots: user asks about REGIONS with many species (no single species).
-- migration_analysis: user asks about MIGRATION / seasonal movement of a species.
-- If the user asks about hotspots, species_name is null.
-- Output ONLY the JSON. No markdown."""
-
-
 async def _classify_intent(prompt: str) -> dict:
-    llm = get_llm()
-    from langchain_core.messages import HumanMessage, SystemMessage
+    """Classify the prompt, as a plain dict for the display below.
 
-    response = await llm.ainvoke(
-        [SystemMessage(content=_INTENT_SYSTEM_PROMPT), HumanMessage(content=prompt)]
-    )
-    text = response.content.strip()
-    # Strip fences the LLM sometimes ignores rules and adds.
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    return json.loads(text)
+    The prompt and parser now live in `intent.py` so the HTTP adapter and this
+    page classify identically. This wrapper only re-shapes the result into the
+    dict the rest of the page already expects.
+    """
+
+    recognized = await classify_intent(prompt)
+    if not recognized.is_usable:
+        # Surfaced the same way an exception was before, so the page still stops
+        # rather than dispatching a request with no feature on it.
+        raise RuntimeError(
+            f"Could not determine a biodiversity feature from that prompt "
+            f"(reason: {recognized.source})."
+        )
+    return {
+        "feature": recognized.feature,
+        "species_name": recognized.species_name,
+        "region": recognized.region,
+    }
 
 
 # ---------- helpers ----------
