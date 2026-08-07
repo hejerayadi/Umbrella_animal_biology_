@@ -1,5 +1,4 @@
 # Standalone local dependencies for the Genome agent
-biopython==1.84
 requests==2.32.3
 
 # --- Agent API layer (api.py) - required, do not remove ---
