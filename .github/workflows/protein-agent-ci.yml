@@ -1,8 +1,13 @@
 name: Protein Agent CI
 
 on:
+  push:
+    branches: [Group_B, main]
+    paths:
+      - "backend/Protein_visualization/**"
+      - ".github/workflows/protein-agent-ci.yml"
   pull_request:
-    branches: [Group_B]
+    branches: [Group_B, main]
     paths:
       - "backend/Protein_visualization/**"
       - ".github/workflows/protein-agent-ci.yml"
