@@ -1,24 +1,44 @@
 {
-  "name": "Biodiversity Agent",
-  "type": "worker",
-  "description": "Provides biodiversity and conservation information.",
+  "name": "Biodiversity Agent Orchestrator",
+  "type": "orchestrator",
+  "description": "Plans and coordinates biodiversity and conservation tasks: species distribution mapping, habitat visualization, biodiversity hotspots detection, and migration analysis. Owns the shared geospatial services (PostgreSQL, map rendering, Qdrant taxonomy) used by its worker agents.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
-  "may_need": [],
+  "may_need": [
+    "Trait Discovery Agent",
+    "Literature Agent"
+  ],
+  "managed_agents": [
+    "Species Distribution Agent",
+    "Habitat Visualization Agent",
+    "Biodiversity Hotspots Agent",
+    "Migration Analysis Agent"
+  ],
   "managed_services": [
     "GBIF",
-    "IUCN"
+    "IUCN",
+    "WorldClim",
+    "Movebank",
+    "PostgreSQL",
+    "Qdrant (species_taxonomy)",
+    "Map / Heatmap rendering module"
   ],
   "capabilities": [
-    "Habitat analysis",
-    "Conservation status"
+    "Planning",
+    "Skill selection",
+    "Species name normalization",
+    "Sequential and parallel worker execution",
+    "Conditional routing",
+    "Result aggregation",
+    "Cross-agent escalation (NEEDS_AGENT)"
   ],
   "input": {
     "instruction": "string",
     "context": "dict"
   },
   "output": {
-    "biodiversity_report": "string"
+    "biodiversity_report": "dict",
+    "map_url": "string | null"
   }
 }
