@@ -1,0 +1,14 @@
+fastapi>=0.115,<1
+httpx>=0.27,<1
+alembic>=1.14,<2
+langchain-openai>=0.3,<1
+langgraph>=0.2,<2
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+psycopg[binary]>=3.2,<4
+qdrant-client>=1.13,<2
+rich>=14,<16
+sentence-transformers>=3.3,<6
+SQLAlchemy>=2.0,<3
+tenacity>=9,<10
+uvicorn[standard]>=0.34,<1
