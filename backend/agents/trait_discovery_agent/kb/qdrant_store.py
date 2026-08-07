@@ -6,13 +6,14 @@ Shared Qdrant access layer for all three cacheable subagents
                         -> changed/new: embed -> upsert
 """
 import hashlib
+from http import client
 import logging
 import os
 from typing import Any, Optional
 
 try:
     from qdrant_client import AsyncQdrantClient
-    from qdrant_client.models import Distance, PointStruct, VectorParams
+    from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
 
     _QDRANT_AVAILABLE = True
 except ModuleNotFoundError:
@@ -64,6 +65,27 @@ async def ensure_collections() -> None:
             vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
         )
         logger.info("created Qdrant collection %s", name)
+
+    # Filtering on a payload field requires an index for that field — Qdrant returns
+    # 400 Bad Request otherwise. Indexes are idempotent to (re)create; safe every run.
+    _FILTERABLE_FIELDS: dict[str, dict[str, Any]] = {
+        "go_annotations": {"gene_symbol": PayloadSchemaType.KEYWORD},
+        "kegg_pathways": {"gene_symbol": PayloadSchemaType.KEYWORD},
+        "uniprot_proteins": {
+            "gene_symbol": PayloadSchemaType.KEYWORD,
+            "species_tax_id": PayloadSchemaType.INTEGER,
+        },
+    }
+    for collection_name, fields in _FILTERABLE_FIELDS.items():
+        for field_name, field_schema in fields.items():
+            try:
+                await client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name=field_name,
+                    field_schema=field_schema,
+                )
+            except Exception as exc:
+                logger.debug("payload index %s.%s already present (%s)", collection_name, field_name, exc)
 
 
 def _text_hash(text: str) -> str:
