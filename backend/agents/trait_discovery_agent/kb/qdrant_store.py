@@ -130,6 +130,7 @@ async def upsert_point(
         logger.info("skip re-embed for %s (unchanged)", dedup_key)
         return existing[0].payload
 
+
     vector = await embed_text(text_to_embed)
     full_payload = {**payload, "text_hash": new_hash, "dedup_key": dedup_key}
     await client.upsert(

@@ -7,7 +7,6 @@ services:
       - .:/app
     command: pytest tests/test_llm_smoke.py -v
 
-  # One-off: creates the 3 Qdrant collections if they don't exist yet. Safe to re-run.
   create-collections:
     build: .
     env_file:
@@ -16,8 +15,6 @@ services:
       - .:/app
     command: python scripts/create_collections.py
 
-  # Task 6 — Retrieval Pipeline: human-readable quality report (semantic search,
-  # metadata filtering, retrieved-document validation). Exits non-zero on any failure.
   retrieval-quality:
     build: .
     env_file:
@@ -26,7 +23,6 @@ services:
       - .:/app
     command: python scripts/test_retrieval_quality.py
 
-  # Task 6 — Retrieval Pipeline: pytest suite for the same pipeline.
   test-retrieval:
     build: .
     env_file:
@@ -34,3 +30,11 @@ services:
     volumes:
       - .:/app
     command: pytest tests/test_retrieval.py -v -s
+
+  test-integration:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/integration -v -s
