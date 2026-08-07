@@ -25,8 +25,10 @@ async def fetch_uniprot(gene_symbol: str, tax_id: int) -> ProteinEntry | None:
         (c["texts"][0]["value"] for c in comments if c.get("commentType") == "FUNCTION"),
         "",
     )
+    accession = entry.get("primaryAccession", "")
     return ProteinEntry(
         gene_symbol=gene_symbol,
         protein_name=protein_name,
         function_summary=function_summary,
+        source_accession=accession,
     )
