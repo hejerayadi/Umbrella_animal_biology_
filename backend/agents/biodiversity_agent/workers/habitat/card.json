@@ -1,0 +1,30 @@
+{
+  "name": "Habitat Visualization Agent",
+  "type": "worker",
+  "description": "Combines GBIF occurrences, IUCN conservation status and WorldClim environmental variables to render a habitat map for a given species.",
+  "reports_to": [
+    "Biodiversity Agent Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "GBIF",
+    "IUCN",
+    "WorldClim"
+  ],
+  "capabilities": [
+    "Habitat mapping",
+    "Conservation status overlay",
+    "Climate context enrichment"
+  ],
+  "input": {
+    "species_name": "string",
+    "feature": "habitat_visualization",
+    "include_climate_data": "bool"
+  },
+  "output": {
+    "species_name": "string",
+    "habitat_regions": "list[string]",
+    "conservation_status": "string",
+    "map_url": "string"
+  }
+}

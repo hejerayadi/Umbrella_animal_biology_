@@ -1,0 +1,30 @@
+{
+  "name": "Migration Analysis Agent",
+  "type": "worker",
+  "description": "Reconstructs migration routes and seasonal movement patterns from Movebank GPS tracks and GBIF timestamped occurrences.",
+  "reports_to": [
+    "Biodiversity Agent Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "Movebank",
+    "GBIF",
+    "WorldClim"
+  ],
+  "capabilities": [
+    "Route reconstruction",
+    "Seasonal pattern detection",
+    "Climate-correlated migration analysis"
+  ],
+  "input": {
+    "species_name": "string",
+    "feature": "migration_analysis",
+    "time_period": "tuple[int, int] | null"
+  },
+  "output": {
+    "species_name": "string",
+    "route": "list[tuple[float, float]]",
+    "seasonal_pattern": "string",
+    "map_url": "string"
+  }
+}

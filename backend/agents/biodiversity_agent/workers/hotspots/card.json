@@ -1,0 +1,27 @@
+{
+  "name": "Biodiversity Hotspots Agent",
+  "type": "worker",
+  "description": "Clusters GBIF occurrences with DBSCAN to identify biodiversity hotspots and renders them as a heatmap.",
+  "reports_to": [
+    "Biodiversity Agent Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "GBIF",
+    "DBSCAN"
+  ],
+  "capabilities": [
+    "Density-based clustering",
+    "Heatmap rendering",
+    "Region-scoped hotspot ranking"
+  ],
+  "input": {
+    "region": "string",
+    "feature": "biodiversity_hotspots"
+  },
+  "output": {
+    "region": "string",
+    "hotspots": "list[dict]",
+    "heatmap_url": "string"
+  }
+}
