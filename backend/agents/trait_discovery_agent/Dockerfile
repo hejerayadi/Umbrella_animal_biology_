@@ -7,12 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY . ./
 
 ENV PYTHONUNBUFFERED=1
 
-# default: run the Task 1 test suite; override CMD to run either toy agent
-CMD ["pytest", "tests/", "-v"]
+CMD ["python", "-m", "pytest", "tests/test_workflows.py", "tests/test_llm_smoke.py", "-v", "--maxfail=1"]

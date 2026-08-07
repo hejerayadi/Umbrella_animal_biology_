@@ -1,0 +1,7 @@
+# Standalone local dependencies for the Multimodal Recognition agent
+pillow==11.0.0
+requests==2.32.3
+
+# --- Agent API layer (api.py) - required, do not remove ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0

@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .orchestrator.lang_graph import GlobalOrchestrator
+from .orchestrator.langgraph import GlobalOrchestrator
 
 # Makes the Planner/Resolver/worker log lines (see orchestrator/*.py) show
 # up in the terminal running `uvicorn backend.api:app`, so you can watch the

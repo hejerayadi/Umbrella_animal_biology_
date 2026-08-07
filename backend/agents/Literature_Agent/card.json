@@ -1,7 +1,7 @@
 {
   "name": "Literature Agent",
   "type": "worker",
-  "description": "Searches and summarizes scientific literature.",
+  "description": "Searches and summarizes scientific literature from PubMed and Semantic Scholar. Covers peer-reviewed papers, publications and studies about a topic or species; what the published evidence says on a question; citations, references and DOIs; literature reviews; and recent findings or the current state of research.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],

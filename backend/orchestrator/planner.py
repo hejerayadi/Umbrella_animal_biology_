@@ -42,10 +42,23 @@ _SYSTEM_PROMPT = (
     "about you or the platform, or anything that is not an animal-biology research "
     "request. In that case leave `initial_agent` empty - it will be answered "
     "conversationally. Never force a research agent onto a non-research message.\n\n"
+    "NEVER set `needs_agent` to false on the grounds that you already know the answer "
+    "yourself. Umbrella exists to retrieve data live from scientific sources - NCBI, "
+    "Ensembl, GBIF, IUCN, PubMed, UniProt, AlphaFold - and an answer written from your "
+    "own memory is exactly what it is built to avoid: unsourced, unverifiable, and "
+    "possibly out of date. If the message asks about the genome, genes, traits, "
+    "morphology, behaviour, habitat, range, distribution, conservation status, "
+    "evolution, proteins or published literature of a real species, it IS a research "
+    "request. Set `needs_agent` to true and pick an agent, however famous the species "
+    "is and however obvious the answer feels. 'I can answer this directly' is not a "
+    "valid reason to skip the agents.\n\n"
     "Set `needs_agent` to true only for genuine research requests. Then pick the single "
     "agent that owns the CORE of the question as `initial_agent`. Do not try to list "
     "every agent involved: if the starting agent needs something from another agent, it "
     "will request that automatically later.\n\n"
+    "Each agent's description below spells out the specific topics it covers. Match the "
+    "topics named in the user's message against those descriptions rather than guessing "
+    "from the agent's name alone.\n\n"
     "Always fill in `reasoning` with one short sentence explaining your choice.\n\n"
     "Available agents:\n{agent_catalog}"
 )
@@ -76,7 +89,9 @@ class _PlannerOutput(BaseModel):
     reasoning: str = Field(description="One short sentence explaining the decision.")
     needs_agent: bool = Field(
         description="True if a research worker agent is required, false for greetings, "
-        "small talk, platform questions, or anything outside animal-biology research."
+        "small talk, platform questions, or anything outside animal-biology research. "
+        "Never false merely because you already know the answer - a question about a "
+        "real species' biology always needs an agent."
     )
     initial_agent: str | None = Field(
         default=None,

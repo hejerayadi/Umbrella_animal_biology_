@@ -1,7 +1,7 @@
 {
   "name": "Evolution Agent",
   "type": "worker",
-  "description": "Analyzes evolutionary relationships between species.",
+  "description": "Analyzes evolutionary relationships between species using NCBI Taxonomy and TimeTree. Covers how species are related, their ancestry, lineage and common ancestors; when two lineages diverged and the phylogenetic trees showing it; how a trait, species or group evolved over time; and taxonomy, classification and a species' place in the tree of life.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
