@@ -1,0 +1,15 @@
+{
+  "collection_name": "sprint2_recognition_reference",
+  "vector_name": null,
+  "vector_dimension": 64,
+  "distance": "Cosine",
+  "embedding_mode": "mock",
+  "mock_provider_version": "sprint2-mock-bioclip2-v1",
+  "dataset_version": "sprint2-qdrant-minimal-v1",
+  "required_payload_fields": [
+    "species_id",
+    "scientific_name",
+    "dataset_version",
+    "embedding_mode"
+  ]
+}
