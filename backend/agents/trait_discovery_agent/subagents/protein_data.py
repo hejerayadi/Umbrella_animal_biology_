@@ -30,26 +30,29 @@ async def mock_protein_data_agent(input: ProteinDataInput) -> ProteinDataOutput:
 
 
 
+from datetime import datetime, timezone
+from schemas.inputs import ProteinDataInput
+from schemas.outputs import ProteinDataOutput, ProteinEntry
+from schemas.common import AgentStatus
+from kb.qdrant_store import get_cached, upsert_point
+from kb.sources.uniprot_client import fetch_uniprot
+
+SCHEMA_VERSION = 1
 
 async def protein_data_agent(input: ProteinDataInput) -> ProteinDataOutput:
     tax_id = input.context.get("tax_id")
     proteins, missing = [], []
 
     for gene in input.gene_list:
-        dedup_key = f"uniprot:{gene}:{tax_id}"
-        cached = await get_cached("uniprot_proteins", dedup_key)
-
-        if cached:
-            proteins.append(ProteinEntry(
-                gene_symbol=cached["gene_symbol"],
-                protein_name=cached["protein_name"],
-                function_summary=cached["function_summary"],
-            ))
-            continue
-
         entry = await fetch_uniprot(gene, tax_id)
         if entry is None:
             missing.append(gene)
+            continue
+
+        dedup_key = f"uniprot:{entry.source_accession}:{tax_id}"
+        cached = await get_cached("uniprot_proteins", dedup_key)
+        if cached:
+            proteins.append(entry)
             continue
 
         await upsert_point(
@@ -62,6 +65,9 @@ async def protein_data_agent(input: ProteinDataInput) -> ProteinDataOutput:
                 "function_summary": entry.function_summary,
                 "species_tax_id": tax_id,
                 "source": "UniProt REST API",
+                "source_accession": entry.source_accession,
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
+                "schema_version": SCHEMA_VERSION,
             },
         )
         proteins.append(entry)

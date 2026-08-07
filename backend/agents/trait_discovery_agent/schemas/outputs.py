@@ -39,6 +39,7 @@ class ProteinEntry:
     gene_symbol: str
     protein_name: str
     function_summary: str
+    source_accession: str = ""
 
 
 @dataclass
