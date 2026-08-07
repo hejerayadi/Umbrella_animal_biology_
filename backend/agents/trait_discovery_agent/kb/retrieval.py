@@ -94,9 +94,9 @@ async def semantic_search(
     query_vector = await embed_text(query_text)
     query_filter = build_filter(**filters) if filters else None
 
-    response = await client.query_points(           # 1. search -> query_points, results -> response
+    response = await client.query_points(           
         collection_name=collection,
-        query=query_vector,                         # 2. query_vector= -> query=
+        query=query_vector,                         
         query_filter=query_filter,
         limit=top_k,
         score_threshold=score_threshold,
@@ -105,7 +105,7 @@ async def semantic_search(
 
     return [
         RetrievedDocument(id=str(point.id), score=point.score, payload=point.payload or {})
-        for point in response.points                # 3. results -> response.points
+        for point in response.points                
     ]
 
 
