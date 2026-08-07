@@ -1,0 +1,8 @@
+{
+  "primaryAccession": "P04637",
+  "uniProtkbId": "P53_HUMAN",
+  "proteinDescription": {"recommendedName": {"fullName": {"value": "Cellular tumor antigen p53"}}},
+  "genes": [{"geneName": {"value": "TP53"}}],
+  "organism": {"scientificName": "Homo sapiens", "taxonId": 9606},
+  "sequence": {"value": "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP", "length": 393}
+}
