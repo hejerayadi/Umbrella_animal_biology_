@@ -1,6 +1,9 @@
 from schemas.inputs import GeneMapperInput
 from schemas.outputs import GeneMapperOutput, GOAnnotation
 from schemas.common import AgentStatus
+from kb.qdrant_store import get_cached, upsert_point
+from kb.sources.go_client import fetch_go_annotation
+
 
 _MOCK_GO_DB = {
     "FGF5": GOAnnotation(gene_symbol="FGF5", go_id="GO:0031069", go_name="hair follicle development"),
@@ -47,4 +50,52 @@ async def mock_gene_mapper(input: GeneMapperInput) -> GeneMapperOutput:
     else:
         status = AgentStatus.COMPLETED
 
+    return GeneMapperOutput(status=status, go_annotations=annotations, unmatched_genes=unmatched)
+
+
+
+
+
+from schemas.inputs import GeneMapperInput
+from schemas.outputs import GeneMapperOutput, GOAnnotation
+from schemas.common import AgentStatus
+from kb.qdrant_store import get_cached, upsert_point
+from kb.sources.go_client import fetch_go_annotation
+
+
+async def gene_mapper_agent(input: GeneMapperInput) -> GeneMapperOutput:
+    annotations, unmatched = [], []
+
+    for gene in input.gene_list:
+        uniprot_accession = input.context.get("uniprot_accessions", {}).get(gene)
+        dedup_key = f"go:{gene}:{uniprot_accession}"
+        cached = await get_cached("go_annotations", dedup_key)
+
+        if cached:
+            annotations.append(GOAnnotation(
+                gene_symbol=cached["gene_symbol"],
+                go_id=cached["go_id"],
+                go_name=cached["go_name"],
+            ))
+            continue
+
+        entry = await fetch_go_annotation(gene, uniprot_accession) if uniprot_accession else None
+        if entry is None:
+            unmatched.append(gene)
+            continue
+
+        await upsert_point(
+            "go_annotations",
+            dedup_key,
+            text_to_embed=entry.go_name,
+            payload={
+                "gene_symbol": entry.gene_symbol,
+                "go_id": entry.go_id,
+                "go_name": entry.go_name,
+                "source": "GO REST API (QuickGO)",
+            },
+        )
+        annotations.append(entry)
+
+    status = AgentStatus.FAILED if (not annotations or unmatched) else AgentStatus.COMPLETED
     return GeneMapperOutput(status=status, go_annotations=annotations, unmatched_genes=unmatched)

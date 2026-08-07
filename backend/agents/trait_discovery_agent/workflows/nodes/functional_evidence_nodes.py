@@ -1,17 +1,17 @@
 import logging
-
+from subagents.protein_data import protein_data_agent
+from subagents.pathways import pathways_agent
 from workflows.state import FunctionalEvidenceState
 from schemas.inputs import PathwaysInput, ProteinDataInput
 from schemas.common import AgentStatus
-from subagents.pathways import mock_pathways_agent
-from subagents.protein_data import mock_protein_data_agent
+
 
 logger = logging.getLogger(__name__)
 
 
 async def pathways_node(state: FunctionalEvidenceState) -> dict:
     logger.info("pathways input gene list=%s", state.gene_list)
-    out = await mock_pathways_agent(PathwaysInput(
+    out = await pathways_agent(PathwaysInput(
         gene_list=state.gene_list, instruction=state.instruction, context=state.context,
     ))
     logger.info("pathways output=%s", out)
@@ -20,7 +20,7 @@ async def pathways_node(state: FunctionalEvidenceState) -> dict:
 
 async def protein_data_node(state: FunctionalEvidenceState) -> dict:
     logger.info("protein_data input gene list=%s", state.gene_list)
-    out = await mock_protein_data_agent(ProteinDataInput(
+    out = await protein_data_agent(ProteinDataInput(
         gene_list=state.gene_list, instruction=state.instruction, context=state.context,
     ))
     logger.info("protein_data output=%s", out)
