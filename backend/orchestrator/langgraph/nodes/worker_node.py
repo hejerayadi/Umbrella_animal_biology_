@@ -9,6 +9,10 @@ process.
 The request body matches every agent's `AgentRequest`: `instruction` is the
 user's original question, `context` is everything the agents have produced so
 far.
+
+One exception to "context is sent as-is": an attached image travels as a short
+id, and only the agent that can actually look at it is given the bytes. See
+`_context_for` below.
 """
 from __future__ import annotations
 
@@ -17,8 +21,18 @@ from typing import Any
 
 import httpx
 
+from ....image_store import IMAGE_STORE
 from ...schema import AgentResult, AgentStatus
 from ...state import WorkflowState
+
+# The context key holding the id of an image the user attached, and the agent
+# allowed to receive the image itself.
+IMAGE_ID_CONTEXT_KEY = "recognition_image_id"
+_IMAGE_CONSUMER = "Multimodal"
+
+# The key the Recognition agent reads the image from. Its own `validation.py`
+# reads this one key and no other, deliberately, so the name has to match.
+_RECOGNITION_IMAGE_KEY = "recognition_image"
 
 # Every worker agent's status funnels through this one logger, so watching
 # the console shows the orchestrator's whole train of thought in order.
@@ -32,13 +46,51 @@ _TIMEOUT = httpx.Timeout(120.0, connect=5.0)
 _client = httpx.Client(timeout=_TIMEOUT)
 
 
+def _context_for(agent_name: str, context: dict[str, Any]) -> dict[str, Any]:
+    """The context to send to one agent, resolving or stripping the image.
+
+    The id is swapped for the real bytes for the Recognition agent, and removed
+    entirely for everyone else. Broadcasting a multi-megabyte data URL to nine
+    agents would be wasteful; the reason it is actively harmful is that the
+    Responder renders every context key into an LLM prompt, so a stray image
+    would arrive as hundreds of thousands of tokens.
+    """
+
+    image_id = context.get(IMAGE_ID_CONTEXT_KEY)
+    if not image_id:
+        return context
+
+    trimmed = {key: value for key, value in context.items() if key != IMAGE_ID_CONTEXT_KEY}
+    if agent_name != _IMAGE_CONSUMER:
+        return trimmed
+
+    stored = IMAGE_STORE.get(str(image_id))
+    if stored is None:
+        # Evicted, or a stale id from an old browser tab. Send the request
+        # without it: the agent answers MISSING_IMAGE, which is a clearer
+        # result than a transport error here would be.
+        _logger.info("[%s] image id %r is unknown or expired", agent_name, image_id)
+        return trimmed
+
+    return {
+        **trimmed,
+        _RECOGNITION_IMAGE_KEY: {
+            "data_url": stored.as_data_url(),
+            "filename": stored.filename,
+        },
+    }
+
+
 def _call_agent(agent_name: str, base_url: str, state: WorkflowState) -> AgentResult:
     """POST to one agent and parse its reply. All transport concerns live here."""
 
     try:
         response = _client.post(
             f"{base_url}/execute",
-            json={"instruction": state.user_query, "context": state.context},
+            json={
+                "instruction": state.user_query,
+                "context": _context_for(agent_name, state.context),
+            },
         )
         response.raise_for_status()
         payload = response.json()

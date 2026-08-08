@@ -56,6 +56,15 @@ export interface Message {
   sender: MessageSender;
   content: string;
   timestamp: string;
+  /**
+   * URL of an image the user attached, served by the backend. A URL rather
+   * than the image data because messages are persisted to localStorage, and
+   * one base64 photo would exhaust its ~5 MB quota. May 404 once the backend
+   * evicts the image; the message renders without it in that case.
+   */
+  imageUrl?: string;
+  /** The original filename, for the image's alt text. */
+  imageName?: string;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

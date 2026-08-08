@@ -38,6 +38,11 @@ export function ChatMessage({
 }) {
   const isUser = message.sender === "user";
   const { shown, done } = useTypedText(message.content, streaming && !isUser);
+  // The backend evicts old uploads, so the URL can 404 in a long-lived
+  // conversation. Hide the image rather than leaving a broken-image icon -
+  // the message text is still perfectly readable without it.
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(message.imageUrl) && !imageFailed;
 
   return (
     <div className={cn("flex w-full gap-3 animate-fade-up", isUser && "justify-end")}>
@@ -49,8 +54,27 @@ export function ChatMessage({
 
       <div className={cn("min-w-0", isUser ? "max-w-[80%]" : "flex-1")}>
         {isUser ? (
-          <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-[0.95rem] leading-7 text-primary-foreground">
-            {message.content}
+          <div className="flex flex-col items-end gap-2">
+            {showImage && (
+              <a
+                href={message.imageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-2xl rounded-tr-sm border border-border"
+              >
+                <img
+                  src={message.imageUrl}
+                  alt={message.imageName ?? "Attached image"}
+                  onError={() => setImageFailed(true)}
+                  className="max-h-64 w-auto max-w-full object-contain"
+                />
+              </a>
+            )}
+            {message.content && (
+              <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-[0.95rem] leading-7 text-primary-foreground">
+                {message.content}
+              </div>
+            )}
           </div>
         ) : (
           <div className={cn(!done && "typing-caret")}>

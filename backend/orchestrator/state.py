@@ -28,6 +28,16 @@ class WorkflowState:
     # changes once the workflow starts.
     user_query: str
 
+    # Set when the user attached an image to this message. The image itself is
+    # NOT here - only its id, in `context["recognition_image_id"]`, with the
+    # bytes held server-side by `backend/image_store.py`.
+    #
+    # This flag exists because the Planner reads only the text. "What animal is
+    # this?" with a photo and without one are the same sentence, but only one
+    # of them can be answered by the Recognition agent - and that agent is
+    # useless without an image. The planner needs to be told.
+    has_image: bool = False
+
     # The name of the agent that is running (or about to run) right now,
     # e.g. "Genome" or "Protein".
     current_agent: str | None = None

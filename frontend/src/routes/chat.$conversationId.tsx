@@ -100,10 +100,10 @@ function ConversationView() {
           <ChatComposer
             focusKey={conversationId}
             disabled={isThinking}
-            onSend={(value) => sendMessage(conversationId, value)}
+            onSend={(value, image) => sendMessage(conversationId, value, image)}
           />
           <p className="text-center text-[0.7rem] text-muted-foreground">
-            Mock orchestration — no backend connected in this phase.
+            Attach, paste or drop a photo to identify a species.
           </p>
         </div>
       </div>
