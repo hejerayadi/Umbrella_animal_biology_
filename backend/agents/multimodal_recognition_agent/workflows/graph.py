@@ -1,13 +1,23 @@
 """The Recognition workflow, as a real LangGraph `StateGraph`.
 
-    START -> validate -> plan -> embed -> retrieve -> aggregate
-          -> taxonomy -> confidence -> explain -> delegate -> finalize -> END
+    START -> validate_image_and_text
+          -> plan_or_analyze_text
+          -> classify_with_mock_bioclip2
+          -> evaluate_confidence
+          -> validate_taxonomy_with_mock_gbif_and_ncbi
+          -> explain
+          -> delegate_if_needed
+          -> finalize -> END
 
 Every stage routes conditionally: the moment a node writes `error_code` into the
 state, the graph jumps straight to `finalize`. That is why `finalize` is the
 only node that ever builds an `AgentResult` - success, uncertain, no match,
 delegation and failure all arrive there, so the shared contract cannot hold on
 some branches and not others.
+
+There is no embed node, no retrieve node and no aggregate node, because the
+agent performs no vector search. Species candidates come from exactly one place:
+`classify_with_mock_bioclip2`.
 
 Two things this graph deliberately does not have: a checkpointer and a memory
 store. Nothing is persisted between requests; each `invoke` starts from a fresh
@@ -23,11 +33,10 @@ import logging
 
 from langgraph.graph import END, START, StateGraph
 
-from ..adapters.bioclip import ImageEmbeddingProvider
+from ..adapters.bioclip import BioCLIP2Classifier
 from ..adapters.reasoning_llm import NullRecognitionLLM
-from ..adapters.retrieval import RetrievalProvider
 from ..adapters.taxonomy import MockTaxonomyProvider
-from ..config import RecognitionConfig
+from ..config import MODEL_TARGET, RecognitionConfig
 from ..schema import AgentResult, AgentStatus
 from ..text_analysis import RuleBasedTextAnalyzer
 from . import nodes
@@ -35,17 +44,24 @@ from .state import RecognitionState
 
 _logger = logging.getLogger(__name__)
 
-# The order the evidence must be built in. The plan may choose which optional
-# steps run; it can never reorder these.
+# Node names, and the order the evidence must be built in. The plan may choose
+# which optional steps run; it can never reorder these.
+VALIDATE = "validate_image_and_text"
+PLAN = "plan_or_analyze_text"
+CLASSIFY = "classify_with_mock_bioclip2"
+CONFIDENCE = "evaluate_confidence"
+TAXONOMY = "validate_taxonomy_with_mock_gbif_and_ncbi"
+EXPLAIN = "explain"
+DELEGATE = "delegate_if_needed"
+FINALIZE = "finalize"
+
 _PIPELINE = (
-    ("validate", "plan"),
-    ("plan", "embed"),
-    ("embed", "retrieve"),
-    ("retrieve", "aggregate"),
-    ("aggregate", "taxonomy"),
-    ("taxonomy", "confidence"),
-    ("confidence", "explain"),
-    ("explain", "delegate"),
+    (VALIDATE, PLAN),
+    (PLAN, CLASSIFY),
+    (CLASSIFY, CONFIDENCE),
+    (CONFIDENCE, TAXONOMY),
+    (TAXONOMY, EXPLAIN),
+    (EXPLAIN, DELEGATE),
 )
 
 
@@ -53,7 +69,7 @@ def _route(next_node: str):
     """Continue to `next_node`, unless a controlled failure was recorded."""
 
     def _router(state: RecognitionState) -> str:
-        return "finalize" if state.error_code else next_node
+        return FINALIZE if state.error_code else next_node
 
     return _router
 
@@ -98,7 +114,9 @@ def _build_agent_result(state: RecognitionState) -> AgentResult:
     recognition: dict = {
         "decision": decision.decision,
         "text_alignment": decision.text_alignment,
-        "similarity_is_probability": False,
+        # A classification score is a ranking value, not a probability, and in
+        # Sprint 2 it is a deterministic mock value on top of that.
+        "score_is_probability": False,
         "explanation": decision.explanation,
         "clarification_question": decision.clarification_question,
     }
@@ -107,6 +125,13 @@ def _build_agent_result(state: RecognitionState) -> AgentResult:
         # from `not_identified` - this is not a general clarification route.
         recognition["request_better_image"] = True
         recognition["better_image_reason"] = confidence_better_image_reason(decision.decision)
+    unsupported = (
+        state.text_evidence.unsupported_capability if state.text_evidence else None
+    )
+    if unsupported:
+        # Declined out loud. This agent has no similarity feature and does not
+        # quietly substitute classification for one without saying so.
+        recognition["unsupported_capability"] = unsupported
     if state.warnings:
         recognition["warnings"] = list(state.warnings)
 
@@ -118,7 +143,7 @@ def _build_agent_result(state: RecognitionState) -> AgentResult:
             # Image Generation all read.
             "species": primary.scientific_name if primary else None,
             "species_id": primary.species_id if primary else None,
-            # Never invented. Null means the mock taxonomy had no value.
+            # Never invented. Null means the mocked taxonomy had no value.
             "gbif_id": primary.gbif_id if primary else None,
             "ncbi_taxid": primary.ncbi_taxid if primary else None,
             "recognition_candidates": [c.model_dump() for c in decision.candidates],
@@ -134,24 +159,25 @@ def confidence_better_image_reason(decision: str) -> str | None:
 
 
 def _provenance(state: RecognitionState) -> dict:
-    """What actually produced this answer. Every field is checkable."""
+    """What actually produced this answer. Every field is checkable.
+
+    Three separate mocks, named separately, so no reader can mistake one for a
+    real service or assume that "mocked" applied to only some of them.
+    """
     config = state.config_snapshot
     return {
-        "embedding_provider": "MockBioCLIP2Provider",
-        "embedding_mode": "mock",
-        "mock_provider_version": config["mock_provider_version"],
-        "embedding_dimension": config["embedding_dimension"],
-        "embedding_dimension_source": config["embedding_dimension_source"],
-        "retrieval_provider": state.retrieval_provider,
-        # "mock_local_development" or "real_minimal" - never conflated.
-        "retrieval_mode": state.retrieval_mode,
-        "collection": state.retrieval_collection,
-        "dataset_version": state.retrieval_dataset_version,
-        "qdrant_contract_frozen": config["qdrant_contract_frozen"],
-        "taxonomy_mode": "mock",
-        "taxonomy_sources": {"gbif": "mock", "ncbi": "mock"},
+        "model_target": MODEL_TARGET,
+        "recognition_provider": state.classification_provider,
+        # "mock_classification" - never plain "classification".
+        "recognition_mode": state.classification_mode,
+        "mock_provider_version": state.classifier_version or config["mock_provider_version"],
+        "top_k_requested": state.requested_top_k,
+        "gbif_mode": "mock",
+        "ncbi_mode": "mock",
         "taxonomy_degraded": state.taxonomy_degraded,
         "taxonomy_report": state.taxonomy_report,
+        "score_is_probability": False,
+        "score_kind": "deterministic_sprint2_test_score",
         "text_analysis_mode": config["text_analysis_mode"],
         "workflow_engine": "langgraph",
         "reasoning_llm_enabled": config["reasoning_llm_enabled"],
@@ -161,7 +187,6 @@ def _provenance(state: RecognitionState) -> dict:
         "explanation_source": state.explanation_source,
         "reasoning_llm_calls": state.reasoning_llm_calls,
         "reasoning_llm_used": state.reasoning_llm_used,
-        "similarity_is_probability": False,
     }
 
 
@@ -171,15 +196,13 @@ class RecognitionWorkflow:
     def __init__(
         self,
         config: RecognitionConfig,
-        embedding_provider: ImageEmbeddingProvider,
-        retriever: RetrievalProvider,
+        classifier: BioCLIP2Classifier,
         taxonomy_provider: MockTaxonomyProvider,
         text_analyzer: RuleBasedTextAnalyzer,
         reasoning_llm=None,
     ) -> None:
         self._config = config
-        self._embedding_provider = embedding_provider
-        self._retriever = retriever
+        self._classifier = classifier
         self._taxonomy = taxonomy_provider
         self._text_analyzer = text_analyzer
         # Disabled unless one is supplied. Recognition never depends on it.
@@ -189,26 +212,23 @@ class RecognitionWorkflow:
     def _build_graph(self):
         graph = StateGraph(RecognitionState)
 
-        graph.add_node("validate", nodes.make_validate_node(self._config))
-        graph.add_node("plan", nodes.make_plan_node(
+        graph.add_node(VALIDATE, nodes.make_validate_node(self._config))
+        graph.add_node(PLAN, nodes.make_plan_node(
             self._text_analyzer, self._reasoning_llm, self._config))
-        graph.add_node("embed", nodes.make_embed_node(
-            self._embedding_provider, self._config))
-        graph.add_node("retrieve", nodes.make_retrieve_node(self._retriever, self._config))
-        graph.add_node("aggregate", nodes.make_aggregate_node(self._config))
-        graph.add_node("taxonomy", nodes.make_taxonomy_node(self._taxonomy))
-        graph.add_node("confidence", nodes.make_confidence_node(self._config))
-        graph.add_node("explain", nodes.make_explain_node(self._reasoning_llm, self._config))
-        graph.add_node("delegate", nodes.make_delegation_node())
-        graph.add_node("finalize", make_finalize_node())
+        graph.add_node(CLASSIFY, nodes.make_classify_node(self._classifier, self._config))
+        graph.add_node(CONFIDENCE, nodes.make_confidence_node(self._config))
+        graph.add_node(TAXONOMY, nodes.make_taxonomy_node(self._taxonomy))
+        graph.add_node(EXPLAIN, nodes.make_explain_node(self._reasoning_llm, self._config))
+        graph.add_node(DELEGATE, nodes.make_delegation_node())
+        graph.add_node(FINALIZE, make_finalize_node())
 
-        graph.add_edge(START, "validate")
+        graph.add_edge(START, VALIDATE)
         for source, target in _PIPELINE:
             graph.add_conditional_edges(
-                source, _route(target), {target: target, "finalize": "finalize"}
+                source, _route(target), {target: target, FINALIZE: FINALIZE}
             )
-        graph.add_edge("delegate", "finalize")
-        graph.add_edge("finalize", END)
+        graph.add_edge(DELEGATE, FINALIZE)
+        graph.add_edge(FINALIZE, END)
 
         # No checkpointer, no store: nothing survives a request.
         return graph.compile()
@@ -238,13 +258,6 @@ class RecognitionWorkflow:
         config = self._config
         return {
             "mock_provider_version": config.mock_provider_version,
-            "embedding_dimension": config.mock_embedding_dimension,
-            "embedding_dimension_source": (
-                "local_default_pending_qdrant_manifest"
-                if config.mock_embedding_dimension_is_local_default
-                else "configured"
-            ),
-            "qdrant_contract_frozen": config.qdrant.is_frozen,
             "text_analysis_mode": self._text_analyzer.mode,
             "reasoning_llm_enabled": bool(getattr(self._reasoning_llm, "enabled", False)),
             "reasoning_llm_provider": getattr(self._reasoning_llm, "name", "disabled"),

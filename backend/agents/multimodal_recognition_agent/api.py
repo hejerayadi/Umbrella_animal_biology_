@@ -2,7 +2,7 @@
 
 Communication only - this layer holds no business logic. It receives a request
 from the Global Orchestrator, validates it into `AgentRequest`, hands it to the
-agent implementation in `mock.py`, and returns whatever `AgentResult` comes
+agent implementation in `agent.py`, and returns whatever `AgentResult` comes
 back. The orchestrator is the only caller; the frontend never reaches an agent
 directly.
 

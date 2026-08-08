@@ -10,6 +10,10 @@ from that model's repr and serialization. This state object is never logged,
 never serialized and never returned - only the values the finalize node
 explicitly copies out of it ever leave the workflow. No checkpointer is
 attached, so nothing here is persisted between requests either.
+
+There is no query vector, no retrieved reference and no collection name in this
+state, because the agent computes none of those. What it holds between
+classification and the decision is a list of taxonomic labels.
 """
 from __future__ import annotations
 
@@ -17,9 +21,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..domain.models import (
+    BioCLIPTaxonPrediction,
     NormalizedRecognitionInput,
     RecognitionDecision,
-    RetrievedReference,
     SpeciesCandidate,
     TextEvidence,
 )
@@ -66,24 +70,20 @@ class RecognitionState:
     reasoning_llm_used: bool = False
     explanation_source: str = "deterministic"
 
-    # -- embedding --
-    query_vector: list[float] | None = None
+    # -- species classification (mock BioCLIP-2) --
+    predictions: list[BioCLIPTaxonPrediction] = field(default_factory=list)
+    classification_provider: str | None = None
+    classification_mode: str | None = None
+    classifier_version: str | None = None
+    requested_top_k: int | None = None
 
-    # -- retrieval --
-    references: list[RetrievedReference] = field(default_factory=list)
-    retrieval_provider: str | None = None
-    retrieval_mode: str | None = None
-    retrieval_collection: str | None = None
-    retrieval_dataset_version: str | None = None
-    rejected_payloads: int = 0
-
-    # -- aggregation, taxonomy, fusion, confidence --
+    # -- candidates, confidence, taxonomy --
     candidates: list[SpeciesCandidate] = field(default_factory=list)
     margin: float | None = None
-    taxonomy_degraded: bool = False
-    taxonomy_report: dict[str, Any] = field(default_factory=dict)
     visual_evidence_sufficient: bool = True
     decision: RecognitionDecision | None = None
+    taxonomy_degraded: bool = False
+    taxonomy_report: dict[str, Any] = field(default_factory=dict)
 
     # -- delegation --
     delegate_to: str | None = None
@@ -93,8 +93,8 @@ class RecognitionState:
     error_code: str | None = None
     error_message: str | None = None
 
-    # Non-fatal notes for the response: a degraded taxonomy, dropped payloads.
-    # Never contains request data.
+    # Non-fatal notes for the response: a degraded taxonomy, an unsupported part
+    # of the request. Never contains request data.
     warnings: list[str] = field(default_factory=list)
 
     # Config values the finalize node needs for provenance. Snapshotted into the

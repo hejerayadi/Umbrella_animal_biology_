@@ -1,7 +1,7 @@
 {
   "name": "Multimodal Species Recognition Agent",
   "type": "worker",
-  "description": "Identifies an animal species from one supplied photograph paired with a text instruction, using image-vector retrieval against a reference collection. Covers determining which species appears in a supplied photograph, answering 'what animal is this' about an image the user provides, and listing visually similar species from the same retrieval. Requires BOTH an image and a non-empty text instruction in the same request - it cannot identify a species from a text description alone, and it cannot accept an image with no instruction. Returns identified, uncertain or not_identified; an inconclusive result is a real answer, not a failure.",
+  "description": "Identifies an animal species from one supplied photograph paired with a text instruction, by classifying the image into ranked taxonomic labels. Covers determining which species appears in a supplied photograph and answering 'what animal is this' about an image the user provides. It does NOT search for similar animals or similar images, and it owns no reference-image collection. Requires BOTH an image and a non-empty text instruction in the same request - it cannot identify a species from a text description alone, and it cannot accept an image with no instruction. Returns identified, uncertain or not_identified; an inconclusive result is a real answer, not a failure.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
@@ -14,15 +14,18 @@
     "3D Protein Structure Agent"
   ],
   "managed_services": [
-    "BioCLIP-2 (officially selected; execution mocked in Sprint 2)",
-    "Qdrant vector retrieval",
+    "BioCLIP-2 label classification (officially selected; execution mocked in Sprint 2)",
     "GBIF (mocked in Sprint 2)",
     "NCBI Taxonomy (mocked in Sprint 2)"
   ],
   "capabilities": [
     "Species recognition from an image",
-    "Visual similarity candidates",
-    "Image analysis"
+    "Top-K taxonomic classification of one photograph"
+  ],
+  "does_not_provide": [
+    "Visual similarity search between animals or images",
+    "Reference-image retrieval",
+    "Vector or nearest-neighbour search"
   ],
   "input": {
     "instruction": "string",

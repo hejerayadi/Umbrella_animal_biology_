@@ -7,7 +7,7 @@ absent, misconfigured, slow, or wrong.
 
 What the model is allowed to do is deliberately tiny. It may refine an ambiguous
 intent and fill in hints the rules left empty. That is all. It cannot see an
-image, cannot score anything, cannot name a species that retrieval did not
+image, cannot score anything, cannot name a species the classifier did not
 return, and cannot reach another agent - not by policy, but because the types
 below give it no way to.
 
@@ -38,8 +38,10 @@ from ..domain.models import Intent
 
 _logger = logging.getLogger(__name__)
 
-# The only intents the model may choose from. Anything else is malformed output.
-_ALLOWED_INTENTS: frozenset[str] = frozenset(("recognition", "similarity", "scientific_follow_up"))
+# The only intents the model may choose from. Anything else - including the
+# `similarity` value earlier drafts allowed - is malformed output, and a model
+# that returns one has its whole answer discarded.
+_ALLOWED_INTENTS: frozenset[str] = frozenset(("recognition", "scientific_follow_up"))
 
 # Hints are short by nature; a long one is a sign the model is writing prose (or
 # echoing its input) rather than extracting, so it is dropped.
@@ -58,7 +60,7 @@ _ENV_MAX_OUTPUT_TOKENS = "AZURE_OPENAI_MAX_OUTPUT_TOKENS"
 class ReasoningRequest:
     """Everything the model is ever given. Four text fields, and no more.
 
-    `candidate_names` and `candidate_species_ids` are the species retrieval
+    `candidate_names` and `candidate_species_ids` are the species the classifier
     already returned. They are supplied so the model can read the situation, and
     they are the reason it can never invent one: the workflow only ever matches
     its answer back against this list.
@@ -176,7 +178,7 @@ class BoundedAzureReasoningLLM:
         "You classify a short user instruction for a species-recognition agent.\n"
         "Return ONLY a JSON object with these keys: intent, taxon_hint, "
         "location_hint, habitat_hint, language.\n"
-        "intent must be exactly one of: recognition, similarity, scientific_follow_up.\n"
+        "intent must be exactly one of: recognition, scientific_follow_up.\n"
         "Use null for any hint the instruction does not state. Never guess a species. "
         "Never invent a location. You are not identifying anything in an image - you "
         "are only reading the sentence."
@@ -212,7 +214,7 @@ class BoundedAzureReasoningLLM:
         payload = (
             f"instruction: {request.instruction}\n"
             f"rule_intent: {request.rule_intent}\n"
-            f"retrieved_species: {', '.join(request.candidate_names) or 'none'}"
+            f"classified_species: {', '.join(request.candidate_names) or 'none'}"
         )
 
         try:
@@ -255,24 +257,24 @@ def build_reasoning_llm(enabled: bool, timeout_seconds: float) -> ReasoningLLM:
 # run steps from a fixed vocabulary; anything outside that vocabulary is
 # rejected wholesale and the deterministic plan is used instead. The explanation
 # it writes is checked against the evidence before it is accepted, so it cannot
-# name a species retrieval did not return.
+# name a species the classifier did not return.
 # ===========================================================================
 
 # The complete set of steps a plan may ask for. A plan naming anything else -
-# "compare", "clarify", "call_agent", "fetch_url" - is rejected entirely.
+# "embed_image", "retrieve_candidates", "find_similar", "compare", "call_agent",
+# "fetch_url" - is rejected entirely. The vocabulary is the enum: a model cannot
+# ask for a pipeline this agent does not have.
 ALLOWED_PLAN_STEPS: tuple[str, ...] = (
-    "embed_image",
-    "retrieve_candidates",
-    "validate_taxonomy",
+    "classify_image",
     "score_confidence",
+    "validate_taxonomy",
     "explain",
 )
 
 # Steps that must run whatever the plan says. The model cannot skip the evidence
 # and jump to a conclusion.
 MANDATORY_PLAN_STEPS: tuple[str, ...] = (
-    "embed_image",
-    "retrieve_candidates",
+    "classify_image",
     "score_confidence",
 )
 
@@ -324,8 +326,10 @@ class ExplainRequest:
     top_score: float | None
     margin: float | None
     taxonomy_status: str | None
-    retrieval_mode: str
-    embedding_mode: str
+    # "mock_classification" in Sprint 2. Named so the model is told, in the
+    # payload itself, that it is describing a mock.
+    recognition_mode: str
+    classifier_version: str
     visual_evidence_sufficient: bool
 
 
@@ -403,7 +407,7 @@ def deterministic_plan(*, intent: str, top_k: int, evidence: Any = None) -> Reco
 def explanation_is_grounded(text: Any, request: ExplainRequest) -> bool:
     """Would accepting this explanation put an unsupported claim in the output?
 
-    The check that matters: a species name may appear only if retrieval
+    The check that matters: a species name may appear only if the classifier
     returned it. Everything else the model writes is prose about evidence we
     computed; a species it introduces would be a fabrication.
     """
@@ -418,7 +422,7 @@ def explanation_is_grounded(text: Any, request: ExplainRequest) -> bool:
     if request.primary_species:
         allowed.add(request.primary_species.lower())
 
-    # Any binomial-looking name in the text must be one we actually retrieved.
+    # Any binomial-looking name in the text must be one the classifier returned.
     for match in re.finditer(r"\b([A-Z][a-z]{2,})\s+([a-z]{3,})\b", stripped):
         candidate = f"{match.group(1)} {match.group(2)}".lower()
         if candidate in allowed:
@@ -429,8 +433,8 @@ def explanation_is_grounded(text: Any, request: ExplainRequest) -> bool:
             continue
         return False
 
-    # A similarity score is not a probability, and the explanation may not imply
-    # otherwise.
+    # A classification score is not a probability, and the explanation may not
+    # imply otherwise.
     for forbidden in ("% probability", "percent probability", "probability of",
                       "certainty of", "% confident", "% certain"):
         if forbidden in lowered:
@@ -440,10 +444,11 @@ def explanation_is_grounded(text: Any, request: ExplainRequest) -> bool:
 
 # Ordinary sentence openings that the binomial pattern would otherwise flag.
 _EXPLANATION_SAFE_WORDS = frozenset({
-    "the", "this", "that", "retrieval", "recognition", "taxonomy", "similarity",
-    "confidence", "evidence", "image", "qdrant", "candidates", "based", "no",
-    "none", "there", "these", "those", "results", "scores", "margin", "local",
-    "mock", "insufficient", "visual", "species", "identification", "reference",
+    "the", "this", "that", "classification", "classifier", "recognition",
+    "taxonomy", "confidence", "evidence", "image", "candidates", "based", "no",
+    "none", "there", "these", "those", "results", "scores", "margin", "label",
+    "labels", "mock", "insufficient", "visual", "species", "identification",
+    "sprint", "neither", "both", "only",
 })
 
 
@@ -527,13 +532,13 @@ class FakeGPT5MiniProvider:
 
         if request.decision == "not_identified" or request.primary_species is None:
             return (
-                "The retrieved references were not close enough to support naming a "
-                "species, so no identification is claimed."
+                "The classifier returned no taxonomic label strong enough to support "
+                "naming a species, so no identification is claimed."
             )
         score = "unknown" if request.top_score is None else f"{request.top_score:.4f}"
         return (
-            f"{request.primary_species} is the closest retrieved match "
-            f"(aggregated similarity {score}). The decision is {request.decision} and the "
+            f"{request.primary_species} is the highest-ranked label "
+            f"(classification score {score}). The decision is {request.decision} and the "
             f"text alignment is {request.text_alignment}."
         )
 
@@ -649,11 +654,12 @@ class AzureGPT5MiniProvider:
         "requested_capability.\n"
         f"steps must be a subset of {list(ALLOWED_PLAN_STEPS)} and MUST include "
         f"{list(MANDATORY_PLAN_STEPS)}.\n"
-        "intent must be exactly one of: recognition, similarity, scientific_follow_up.\n"
+        "intent must be exactly one of: recognition, scientific_follow_up.\n"
         "top_k must be an integer between 1 and 50.\n"
         "Use null for any hint the instruction does not state. Never guess a species. "
         "You are NOT identifying anything in an image - you only read the sentence and "
-        "decide which internal steps to run."
+        "decide which internal steps to run. This agent does not search for similar "
+        "animals or similar images and has no such step to request."
     )
 
     _EXPLAIN_SYSTEM = (
@@ -661,7 +667,7 @@ class AzureGPT5MiniProvider:
         "Use ONLY the structured evidence given to you. Write two or three short "
         "sentences of plain prose.\n"
         "Never name a species that is not in the candidate list. Never invent a GBIF or "
-        "NCBI identifier, a score, or a biological fact. Never describe the similarity "
+        "NCBI identifier, a score, or a biological fact. Never describe the classification "
         "score as a probability or a percentage of certainty. Do not add a disclaimer - "
         "one is appended automatically."
     )
@@ -733,11 +739,11 @@ class AzureGPT5MiniProvider:
             f"text_alignment: {request.text_alignment}\n"
             f"primary_species: {request.primary_species or 'none'}\n"
             f"candidates: {', '.join(request.candidate_names) or 'none'}\n"
-            f"top_similarity_score: {request.top_score}\n"
-            f"margin_over_next_species: {request.margin}\n"
+            f"top_classification_score: {request.top_score}\n"
+            f"margin_over_next_label: {request.margin}\n"
             f"taxonomy_status: {request.taxonomy_status}\n"
-            f"retrieval_mode: {request.retrieval_mode}\n"
-            f"embedding_mode: {request.embedding_mode}\n"
+            f"recognition_mode: {request.recognition_mode}\n"
+            f"classifier_version: {request.classifier_version}\n"
             f"visual_evidence_sufficient: {request.visual_evidence_sufficient}"
         )
         return self._call(self._EXPLAIN_SYSTEM, payload)

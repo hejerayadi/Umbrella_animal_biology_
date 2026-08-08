@@ -26,7 +26,7 @@ from ..adapters.reasoning_llm import (
 from ..agent import RecognitionAgent
 from ..config import RECOGNITION_IMAGE_CONTEXT_KEY, RecognitionConfig
 from ..schema import AgentRequest, AgentStatus
-from .conftest import StubRetriever, image_entry, make_config, png_bytes, reference
+from .conftest import StubClassifier, image_entry, make_config, png_bytes, prediction
 
 DEPLOYMENT = "umbrella-gpt5-mini"
 
@@ -207,7 +207,7 @@ def test_a_fenced_json_reply_is_still_parsed():
 @pytest.mark.parametrize(
     "reply",
     ["not json at all", "", None, "{broken", json.dumps({"steps": ["compare"]}),
-     json.dumps({"steps": ["embed_image"], "intent": "hack"})],
+     json.dumps({"steps": ["classify_image"], "intent": "hack"})],
 )
 def test_an_invalid_reply_yields_no_usable_plan_and_no_second_call(reply):
     client = FakeAzureClient(replies=[reply])
@@ -237,13 +237,14 @@ def _explain_request():
     return ExplainRequest(
         decision="identified", text_alignment="neutral", primary_species="Panthera leo",
         candidate_names=("Panthera leo",), top_score=0.96, margin=0.5,
-        taxonomy_status="mock_verified", retrieval_mode="mock_local_development",
-        embedding_mode="mock", visual_evidence_sufficient=True,
+        taxonomy_status="mock_verified", recognition_mode="mock_classification",
+        classifier_version="sprint2-mock-bioclip2-classifier-v1",
+        visual_evidence_sufficient=True,
     )
 
 
 def test_the_explainer_addresses_the_configured_deployment():
-    client = FakeAzureClient(replies=["Panthera leo is the closest retrieved match."])
+    client = FakeAzureClient(replies=["Panthera leo is the highest-ranked label."])
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     assert provider.explain(_explain_request())
@@ -302,10 +303,10 @@ def test_output_tokens_and_timeout_are_bounded():
 # The two-call budget, end to end through the workflow
 # ===========================================================================
 
-def build_agent(references=None, *, llm=None):
+def build_agent(predictions=None, *, llm=None):
     return RecognitionAgent(
         make_config(),
-        retriever=StubRetriever(references or []),
+        classifier=StubClassifier(predictions or []),
         reasoning_llm=llm,
     )
 
@@ -322,7 +323,7 @@ def test_a_valid_request_costs_exactly_two_azure_calls():
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     result = build_agent(
-        [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+        [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
     ).run(request_with())
 
     assert result.status is AgentStatus.COMPLETED
@@ -360,7 +361,7 @@ def test_an_invalid_request_costs_zero_azure_calls():
         ("not json at all", "malformed planner response"),
         ("", "empty planner response"),
         (json.dumps({"steps": ["compare"]}), "forbidden action"),
-        (json.dumps({"steps": ["embed_image"], "intent": "hack"}), "invalid schema"),
+        (json.dumps({"steps": ["classify_image"], "intent": "hack"}), "invalid schema"),
     ],
 )
 def test_a_failed_planner_costs_one_azure_call_only(reply, label):
@@ -370,7 +371,7 @@ def test_a_failed_planner_costs_one_azure_call_only(reply, label):
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     result = build_agent(
-        [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+        [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
     ).run(request_with())
 
     provenance = result.output["recognition_provenance"]
@@ -396,7 +397,7 @@ def test_a_planner_exception_costs_one_azure_call_only(failure, label):
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     result = build_agent(
-        [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+        [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
     ).run(request_with())
 
     provenance = result.output["recognition_provenance"]
@@ -415,7 +416,7 @@ def test_a_successful_planner_with_a_failing_explainer_costs_two():
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     result = build_agent(
-        [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+        [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
     ).run(request_with())
 
     assert len(client.calls) == 2
@@ -427,7 +428,7 @@ def test_a_successful_planner_with_a_failing_explainer_costs_two():
 def test_the_whole_call_budget_matrix():
     """Every row of the contract, in one place."""
     plan_ok, explain_ok = valid_plan_json(), "Panthera leo is the match."
-    references = [reference("panthera_leo", 0.96, "p1", "Panthera leo")]
+    predictions = [prediction("panthera_leo", 0.96, "Panthera leo")]
 
     # invalid request, before the planner
     client = FakeAzureClient(replies=[plan_ok, explain_ok])
@@ -438,21 +439,21 @@ def test_the_whole_call_budget_matrix():
 
     # planner failed
     client = FakeAzureClient(replies=["not json", explain_ok])
-    build_agent(references, llm=AzureGPT5MiniProvider(settings(), client=client)).run(
+    build_agent(predictions, llm=AzureGPT5MiniProvider(settings(), client=client)).run(
         request_with()
     )
     assert len(client.calls) == 1
 
     # planner ok + explainer ok
     client = FakeAzureClient(replies=[plan_ok, explain_ok])
-    build_agent(references, llm=AzureGPT5MiniProvider(settings(), client=client)).run(
+    build_agent(predictions, llm=AzureGPT5MiniProvider(settings(), client=client)).run(
         request_with()
     )
     assert len(client.calls) == 2
 
     # planner ok + explainer failed
     client = FakeAzureClient(replies=[plan_ok, "This is Ursus maritimus."])
-    build_agent(references, llm=AzureGPT5MiniProvider(settings(), client=client)).run(
+    build_agent(predictions, llm=AzureGPT5MiniProvider(settings(), client=client)).run(
         request_with()
     )
     assert len(client.calls) == 2
@@ -461,21 +462,21 @@ def test_the_whole_call_budget_matrix():
 def test_azure_cannot_change_the_science():
     """The model plans and phrases. The candidates, scores and decision are the
     deterministic code's, and identical with or without Azure."""
-    references = [
-        reference("panthera_leo", 0.96, "p1", "Panthera leo"),
-        reference("panthera_tigris", 0.40, "p2", "Panthera tigris"),
+    predictions = [
+        prediction("panthera_leo", 0.96, "Panthera leo"),
+        prediction("panthera_tigris", 0.40, "Panthera tigris"),
     ]
     client = FakeAzureClient(replies=[valid_plan_json(), "Panthera leo is the match."])
     with_azure = build_agent(
-        references, llm=AzureGPT5MiniProvider(settings(), client=client)
+        predictions, llm=AzureGPT5MiniProvider(settings(), client=client)
     ).run(request_with()).output
-    without = build_agent(references, llm=NullRecognitionLLM()).run(request_with()).output
+    without = build_agent(predictions, llm=NullRecognitionLLM()).run(request_with()).output
 
     assert with_azure["species"] == without["species"]
     assert with_azure["recognition"]["decision"] == without["recognition"]["decision"]
     assert (
-        with_azure["recognition_candidates"][0]["similarity_score"]
-        == without["recognition_candidates"][0]["similarity_score"]
+        with_azure["recognition_candidates"][0]["classification_score"]
+        == without["recognition_candidates"][0]["classification_score"]
     )
 
 
@@ -486,7 +487,7 @@ def test_an_ungrounded_azure_explanation_is_replaced_not_published():
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     result = build_agent(
-        [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+        [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
     ).run(request_with())
 
     explanation = result.output["recognition"]["explanation"]
@@ -500,7 +501,7 @@ def test_provenance_names_the_azure_provider():
     provider = AzureGPT5MiniProvider(settings(), client=client)
 
     provenance = build_agent(
-        [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+        [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
     ).run(request_with()).output["recognition_provenance"]
 
     assert provenance["reasoning_llm_provider"] == "azure-gpt-5-mini"
@@ -516,7 +517,7 @@ def test_no_secret_appears_in_any_output_or_log(caplog):
 
     with caplog.at_level(logging.DEBUG, logger="backend.agents.multimodal_recognition_agent"):
         result = build_agent(
-            [reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=provider
+            [prediction("panthera_leo", 0.96, "Panthera leo")], llm=provider
         ).run(request_with())
 
     haystack = json.dumps(result.output, default=str) + "".join(

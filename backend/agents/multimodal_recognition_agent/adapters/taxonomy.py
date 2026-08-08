@@ -1,10 +1,16 @@
-"""Taxonomy lookup - mocked for Sprint 2.
+"""Taxonomy validation - GBIF and NCBI, both mocked for Sprint 2.
 
 GBIF, NCBI and IUCN are not called. Not once, not "just to check". The fixtures
 below stand in for them, and every candidate they touch carries a
 `taxonomy_status` saying how much of it was found.
 
-The rule that matters: when a fixture has no GBIF ID or no NCBI taxid, the
+Where these sources sit in the workflow matters as much as what they do. They
+run **after** BioCLIP-2 classification, on the candidates it produced. They may
+validate a candidate, supply its identifiers and normalise a synonym to its
+accepted name. They may never create a species candidate the classifier did not
+return, and they may never re-order or re-score one.
+
+The rule that matters most: when a fixture has no GBIF ID or no NCBI taxid, the
 answer is `None`. It is never filled in, never inferred from a sibling species,
 never approximated. A missing identifier is a fact about our data, and inventing
 one would turn a mock into a fabrication.
@@ -30,10 +36,25 @@ def _load_fixture() -> dict:
     return json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
-class TaxonomyProvider(Protocol):
+def _identifier(raw: object) -> int | None:
+    """An identifier the fixture actually supplied, or None.
+
+    A non-integer value in the fixture is treated as absent rather than coerced.
+    Coercing `"5219404"` or `5219404.0` into an int would be the agent deciding
+    what a broken record meant, which is one short step from inventing one.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw
+
+
+class TaxonomySource(Protocol):
+    """One mocked taxonomy service."""
+
+    source: str
     mode: str
 
-    def enrich(self, candidate: SpeciesCandidate) -> SpeciesCandidate:
+    def lookup(self, species_id: str, scientific_name: str) -> TaxonomyLookup:
         ...
 
 
@@ -41,9 +62,18 @@ class TaxonomyProvider(Protocol):
 class TaxonomyLookup:
     """One source's answer about one candidate.
 
+    `available` is False when the source itself did not answer (down, timing
+    out). `matched` is False when it answered but holds no record for this
+    species. The two are different facts and the response reports both.
+
     `accepted_name` lets a source resolve a synonym to the accepted name. It can
-    only ever rename a species retrieval already returned - it cannot introduce
-    a different one, because the workflow matches it back against the candidate.
+    only ever rename a species the classifier already returned - it cannot
+    introduce a different one, because the caller matches it back against the
+    candidate.
+
+    `inconsistent` marks a record that contradicts the candidate (a different
+    scientific name under the same id). Such a record is used for nothing: no
+    identifier is taken from it.
     """
 
     available: bool
@@ -52,6 +82,24 @@ class TaxonomyLookup:
     accepted_name: str | None = None
     rank: str | None = None
     classification: dict[str, str] = dc_field(default_factory=dict)
+    inconsistent: bool = False
+
+
+def _record_is_consistent(record: dict, species_id: str, scientific_name: str,
+                          synonyms: dict) -> bool:
+    """Does this fixture record actually describe the candidate we asked about?
+
+    A record whose scientific name is neither the candidate's name nor a known
+    synonym of it is inconsistent fixture data. We refuse to read an identifier
+    out of it rather than attaching someone else's taxid to this species.
+    """
+    fixture_name = record.get("scientific_name")
+    if not isinstance(fixture_name, str) or not fixture_name:
+        return False
+    if fixture_name.strip().lower() == scientific_name.strip().lower():
+        return True
+    # The candidate may be a synonym that resolves onto this accepted record.
+    return synonyms.get(species_id) is not None
 
 
 class MockGBIFProvider:
@@ -73,18 +121,23 @@ class MockGBIFProvider:
         self._unavailable_ids = unavailable_ids or set()
 
     def lookup(self, species_id: str, scientific_name: str) -> TaxonomyLookup:
+        # An unavailable source is not a failed request. It is a fact reported
+        # in the response, and the candidate survives it visibly unverified.
         if self._unavailable or species_id in self._unavailable_ids:
             return TaxonomyLookup(available=False, matched=False)
 
         resolved_id = self._synonyms.get(species_id, species_id)
         record = self._species.get(resolved_id)
-        if record is None:
+        if not isinstance(record, dict):
             return TaxonomyLookup(available=True, matched=False)
+
+        if not _record_is_consistent(record, species_id, scientific_name, self._synonyms):
+            return TaxonomyLookup(available=True, matched=False, inconsistent=True)
 
         return TaxonomyLookup(
             available=True,
             matched=True,
-            identifier=record.get("gbif_id"),
+            identifier=_identifier(record.get("gbif_id")),
             accepted_name=record.get("scientific_name"),
             rank=record.get("rank", "SPECIES"),
             classification=dict(record.get("classification", {})),
@@ -109,26 +162,30 @@ class MockNCBIProvider:
             return TaxonomyLookup(available=False, matched=False)
 
         record = self._species.get(species_id)
-        if record is None:
+        if not isinstance(record, dict):
             return TaxonomyLookup(available=True, matched=False)
+
+        # NCBI resolves no synonyms here, so the name must agree exactly.
+        if not _record_is_consistent(record, species_id, scientific_name, {}):
+            return TaxonomyLookup(available=True, matched=False, inconsistent=True)
 
         return TaxonomyLookup(
             available=True,
             matched=True,
-            identifier=record.get("ncbi_taxid"),
+            identifier=_identifier(record.get("ncbi_taxid")),
             accepted_name=record.get("scientific_name"),
             rank=record.get("rank", "SPECIES"),
         )
 
 
 class MockTaxonomyProvider:
-    """Fixture-backed taxonomy with four behaviours the workflow must handle:
-    a complete record, a partial one, no match at all, and an unavailable
-    service.
+    """Fixture-backed taxonomy with the branches the workflow must handle:
+    a complete record, a partial one, no match at all, an unavailable service,
+    and an inconsistent record.
 
-    Since Phase 4 this is a facade over two independent sources, so "GBIF up,
-    NCBI down" is a state the workflow can actually be tested against. The
-    single-provider API is unchanged.
+    It is a facade over two independent sources, so "GBIF up, NCBI down" is a
+    state the workflow can actually be tested against, and the response reports
+    each source's outcome separately.
     """
 
     mode = "mock"
@@ -146,8 +203,6 @@ class MockTaxonomyProvider:
         self._unavailable_ids = set(data.get("unavailable_species_ids", []))
         self._simulate_unavailable = simulate_unavailable
 
-        # The two sources are independent, so "GBIF answered, NCBI timed out" is
-        # a real state rather than an all-or-nothing outage.
         self.gbif = MockGBIFProvider(
             species=data,
             synonyms=data.get("synonyms", {}),
@@ -161,10 +216,11 @@ class MockTaxonomyProvider:
         )
 
     def validate_candidate(self, candidate: SpeciesCandidate) -> tuple[SpeciesCandidate, dict]:
-        """Enrich through both sources, and report what each one did.
+        """Validate one classified candidate through both sources.
 
-        Neither source may pick a species: `accepted_name` is applied only when
-        it refers to the candidate retrieval already returned.
+        Neither source may pick a species, change a score or change the order.
+        `accepted_name` is applied only when it refers to the candidate the
+        classifier already returned.
         """
         gbif = self.gbif.lookup(candidate.species_id, candidate.scientific_name)
         ncbi = self.ncbi.lookup(candidate.species_id, candidate.scientific_name)
@@ -184,8 +240,9 @@ class MockTaxonomyProvider:
             "ncbi_taxid": ncbi_taxid,
             "taxonomy_status": status,
         }
-        # A synonym may be normalised to its accepted name - never to a
-        # different species.
+        # A common name may be supplied where the classifier had none. It is a
+        # label, never an identity: `species_id` and `scientific_name` are the
+        # classifier's and stay untouched.
         if gbif.matched and gbif.accepted_name and candidate.common_name is None:
             record = self._species.get(candidate.species_id, {})
             names = record.get("common_names") or []
@@ -193,10 +250,12 @@ class MockTaxonomyProvider:
                 updates["common_name"] = names[0]
 
         report = {
-            "gbif": {"available": gbif.available, "matched": gbif.matched,
-                     "identifier": gbif_id},
-            "ncbi": {"available": ncbi.available, "matched": ncbi.matched,
-                     "identifier": ncbi_taxid},
+            "gbif": {"mode": self.gbif.mode, "available": gbif.available,
+                     "matched": gbif.matched, "identifier": gbif_id,
+                     "inconsistent_record": gbif.inconsistent},
+            "ncbi": {"mode": self.ncbi.mode, "available": ncbi.available,
+                     "matched": ncbi.matched, "identifier": ncbi_taxid,
+                     "inconsistent_record": ncbi.inconsistent},
             "status": status,
         }
         return candidate.model_copy(update=updates), report
@@ -207,8 +266,8 @@ class MockTaxonomyProvider:
         """Map a scientific or common name in free text to a species_id.
 
         Used only to understand what the user *said*. It can never add a
-        candidate: the workflow compares the result against species that
-        retrieval already returned.
+        candidate: the workflow compares the result against species the
+        classifier already returned.
         """
         needle = text.strip().lower()
         if not needle:
@@ -231,21 +290,21 @@ class MockTaxonomyProvider:
                 names[common.lower()] = species_id
         return names
 
-    # -- enrichment ---------------------------------------------------------
+    # -- single-source enrichment (kept for direct callers and tests) -------
 
     def enrich(self, candidate: SpeciesCandidate) -> SpeciesCandidate:
         if self._simulate_unavailable or candidate.species_id in self._unavailable_ids:
             # The service being down is not a reason to fail the request. The
-            # candidate survives, visibly unverified.
-            raise RecognitionError(ErrorCode.RETRIEVAL_UNAVAILABLE)
+            # caller catches this and the candidate survives, visibly unverified.
+            raise RecognitionError(ErrorCode.TAXONOMY_UNAVAILABLE)
 
         record = self._species.get(candidate.species_id)
         if record is None:
             # No match. Not an error - just nothing to add.
             return candidate.model_copy(update={"taxonomy_status": "unverified"})
 
-        gbif_id = record.get("gbif_id")
-        ncbi_taxid = record.get("ncbi_taxid")
+        gbif_id = _identifier(record.get("gbif_id"))
+        ncbi_taxid = _identifier(record.get("ncbi_taxid"))
 
         # Status derived from what is actually present, not from the fixture's
         # own claim, so the two can never drift apart.
