@@ -15,10 +15,9 @@ async def generate_visualization(scope: str, genome_size_bp: int = None, gene_ta
     """
 
     if scope == "protein_structure":
-        # Not our job — hand off to the platform orchestrator
         return {
             "status": "NEEDS_AGENT",
-            "target_agent": "protein_structure_visualization_agent",
+            "target_agent": None,
             "prompt_to_target_agent": "Render an interactive, labeled 3D structure for the requested gene.",
             "chart_data": None,
             "format": None,

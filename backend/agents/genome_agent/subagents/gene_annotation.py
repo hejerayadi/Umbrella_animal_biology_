@@ -1,44 +1,72 @@
 """
-Gene Annotation — mock subagent (Task 1)
+Gene Annotation — real NCBI Gene eutils subagent (Task 5)
 Retrieves gene/feature annotation data for a resolved assembly.
-Currently returns hardcoded fake data — no real NCBI calls yet.
+Never cached — pass-through only, rebuilt from NCBI each request.
 """
 
-# Fake lookup table simulating what NCBI Gene would return
-_FAKE_ANNOTATION_DB = {
-    "GCF_000001635.27": {
-        "gene_table": [
-            {"gene_name": "Trp53", "location": "chr11:69580309-69591923", "function": "Tumor suppressor"},
-            {"gene_name": "Fgf5", "location": "chr5:98211000-98221000", "function": "Hair growth regulation"},
-        ],
-        "gene_list": ["Trp53", "Fgf5"],
-    },
-    "GCF_000464555.1": {
-        "gene_table": [
-            {"gene_name": "Mc1r", "location": "chr15:12000000-12003000", "function": "Coat color regulation"},
-        ],
-        "gene_list": ["Mc1r"],
-    },
-    "GCA_024166365.1": {
-        "gene_table": [],
-        "gene_list": [],
-    },
-}
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from ._ncbi_client import ncbi_get
+
+logger = logging.getLogger(__name__)
 
 
 async def get_gene_annotation(assembly_id: str) -> dict:
-    """
-    Mock version of Gene Annotation.
-    Input: assembly_id (str)
-    Output: dict matching GeneAnnotationOutput shape
-    """
-    if assembly_id in _FAKE_ANNOTATION_DB:
-        return _FAKE_ANNOTATION_DB[assembly_id]
+    # Step 1: esearch for gene IDs associated with this assembly
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esearch.fcgi",
+            "db": "gene",
+            "term": f"{assembly_id}[Assembly]",
+            "retmode": "json",
+            "retmax": 50,
+        },
+    )
+    data = resp.json()
+    gene_ids = data.get("esearchresult", {}).get("idlist", [])
 
-    # No match found
+    if not gene_ids:
+        return {
+            "gene_table": [],
+            "gene_list": [],
+        }
+
+    # Step 2: esummary for gene details (batch up to 50 IDs)
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esummary.fcgi",
+            "db": "gene",
+            "id": ",".join(gene_ids[:50]),
+            "retmode": "json",
+        },
+    )
+    data = resp.json()
+    results = data.get("result", {})
+
+    gene_table = []
+    gene_list = []
+    for gene_id in gene_ids[:50]:
+        gene_info = results.get(gene_id, {})
+        gene_name = gene_info.get("name") or gene_info.get("Name") or gene_id
+        description = gene_info.get("description") or gene_info.get("Description") or ""
+        chromosome = gene_info.get("chromosome") or gene_info.get("chromosomes") or ""
+        location = f"{chromosome}" if chromosome else ""
+        
+        gene_table.append({
+            "gene_name": gene_name,
+            "location": location,
+            "function": description,
+        })
+        gene_list.append(gene_name)
+
     return {
-        "gene_table": [],
-        "gene_list": [],
+        "gene_table": gene_table,
+        "gene_list": gene_list,
     }
 
 
@@ -46,17 +74,10 @@ if __name__ == "__main__":
     import asyncio
 
     async def _quick_test():
-        result = await get_gene_annotation("GCF_000001635.27")
-        print("Mouse:", result)
-        assert result["gene_list"] == ["Trp53", "Fgf5"]
-
+        print("--- Gene Annotation live NCBI test ---")
         result = await get_gene_annotation("GCF_000464555.1")
-        print("Tiger:", result)
-        assert len(result["gene_table"]) == 1
-
-        result = await get_gene_annotation("unknown_id")
-        print("Unknown:", result)
-        assert result["gene_list"] == []
+        print("Tiger genes:", result)
+        assert len(result["gene_list"]) > 0, "Expected at least one gene from NCBI"
 
         print("All tests passed ✅")
 
