@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .mock import MultimodalMock
+from .agent import RecognitionAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
 
 app = FastAPI(title="Multimodal Recognition Agent")
@@ -22,7 +22,7 @@ app = FastAPI(title="Multimodal Recognition Agent")
 # Built once at startup rather than per request: mocks are free to construct,
 # but real implementations load models and open connections, and this keeps
 # that cost out of the request path.
-_agent = MultimodalMock()
+_agent = RecognitionAgent()
 
 
 @app.post("/execute", response_model=AgentResult)

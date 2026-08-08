@@ -1,3 +1,3 @@
-from .mock import MultimodalMock
+from .agent import RecognitionAgent
 
-__all__ = ["MultimodalMock"]
+__all__ = ["RecognitionAgent"]
