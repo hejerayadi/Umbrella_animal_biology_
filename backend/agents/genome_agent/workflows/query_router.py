@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from .agent_catalog import load_agent_catalog
-from .llm import get_llm_client
+from .llm import get_llm_client, invoke_with_retry, summarize_llm_error
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +58,15 @@ def route_query(user_question: str) -> QueryRouterDecision | None:
     bound = client.bind_tools([QueryRouterDecision], tool_choice=QueryRouterDecision.__name__)
 
     try:
-        response = bound.invoke([SystemMessage(content=prompt), HumanMessage(content=user_question)])
+        response = invoke_with_retry(
+            lambda: bound.invoke([SystemMessage(content=prompt), HumanMessage(content=user_question)])
+        )
         tool_calls = response.tool_calls or []
         if tool_calls:
             call = tool_calls[0]
             return QueryRouterDecision(**call["args"])
     except Exception as exc:
-        logger.warning("LLM query router failed: %s", exc)
+        logger.info("LLM query router unavailable (%s) — using keyword fallback", summarize_llm_error(exc))
 
     return None
 

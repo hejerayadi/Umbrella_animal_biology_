@@ -1,0 +1,28 @@
+services:
+  # Real, end-to-end execution of the LangGraph orchestrator across five
+  # scenarios (happy path, unknown species / error_end, NEEDS_AGENT
+  # escalation, hard visualization failure, partial results). Prints a
+  # readable trace to stdout — this is a script run, not a pytest suite.
+  #
+  # NVIDIA_API_KEY is optional: if it's set in .env, query_router,
+  # capability_resolver, and explanation_writer call the real LLM. If it's
+  # absent, each of them falls back to its deterministic keyword-based
+  # logic automatically, so this runs fine with no key at all.
+  genome-agent-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    command: python -m genome_agent.scripts.run_orchestrator_scenarios
+
+  # Optional: pytest suite (routing/capability-resolver unit tests +
+  # live LLM smoke test, the latter auto-skips without NVIDIA_API_KEY).
+  test:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    command: python -m pytest genome_agent/tests -v

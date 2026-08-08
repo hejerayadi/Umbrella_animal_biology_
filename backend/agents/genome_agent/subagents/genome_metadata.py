@@ -24,6 +24,24 @@ _FAKE_METADATA_DB = {
         "karyotype": "28 pairs",
         "assembly_level": "Scaffold",
     },
+    "GCF_008795835.1": {
+        "genome_size_bp": 2461000000,
+        "chromosome_count": 38,
+        "karyotype": "19 pairs",
+        "assembly_level": "Chromosome",
+    },
+    "GCF_001857705.1": {
+        "genome_size_bp": 2525000000,
+        "chromosome_count": 38,
+        "karyotype": "19 pairs",
+        "assembly_level": "Chromosome",
+    },
+    "GCF_000181335.3": {
+        "genome_size_bp": 2418000000,
+        "chromosome_count": 38,
+        "karyotype": "19 pairs",
+        "assembly_level": "Chromosome",
+    },
 }
 
 
@@ -43,6 +61,15 @@ async def get_genome_metadata(assembly_id: str) -> dict:
         "karyotype": None,
         "assembly_level": None,
     }
+
+
+def get_all_genome_metadata() -> dict[str, dict]:
+    """
+    Return every assembly_id -> metadata pair currently known to this mock.
+    Used by the Visualization subagent to build real cross-species
+    comparisons instead of a single-species placeholder chart.
+    """
+    return dict(_FAKE_METADATA_DB)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ class VisualizationOutput:
     target_agent: str | None = None
     prompt_to_target_agent: str | None = None
     note: str | None = None
+    comparisons: list[dict[str, Any]] | None = None
 
 
 @dataclass

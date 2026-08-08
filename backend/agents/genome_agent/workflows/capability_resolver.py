@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from .agent_catalog import _AGENT_CARDS_DIR, load_agent_catalog
-from .llm import get_llm_client
+from .llm import get_llm_client, invoke_with_retry, summarize_llm_error
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,9 @@ def resolve_capability(
     bound = client.bind_tools([CapabilityResolverOutput], tool_choice="CapabilityResolverOutput")
 
     try:
-        response = bound.invoke([SystemMessage(content=prompt), HumanMessage(content=user_message)])
+        response = invoke_with_retry(
+            lambda: bound.invoke([SystemMessage(content=prompt), HumanMessage(content=user_message)])
+        )
         tool_calls = response.tool_calls or []
         if tool_calls:
             call = tool_calls[0]
@@ -67,7 +69,7 @@ def resolve_capability(
                 return result
             logger.warning("LLM returned invalid target agent: %s", result.target_agent)
     except Exception as exc:
-        logger.warning("LLM capability resolver failed: %s", exc)
+        logger.info("LLM capability resolver unavailable (%s) — using keyword fallback", summarize_llm_error(exc))
 
     return None
 

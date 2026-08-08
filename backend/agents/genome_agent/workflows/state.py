@@ -14,7 +14,7 @@ class GenomeAgentState:
     needs_metadata: bool = False
     needs_annotation: bool = False
     species_name: str = ""
-    visualization_scope: str = "chromosome_map"
+    visualization_scope: str = ""
     species: dict | None = None
     assembly_id: str | None = None
     metadata: dict | None = None
