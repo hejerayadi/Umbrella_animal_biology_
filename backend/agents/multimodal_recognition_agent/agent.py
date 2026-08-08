@@ -25,7 +25,7 @@ import os
 from .adapters.bioclip import MockBioCLIP2Provider
 from .adapters.qdrant_mock import MockQdrantRetriever
 from .adapters.qdrant_real import RealQdrantRetriever
-from .adapters.reasoning_llm import ReasoningLLM, build_reasoning_llm
+from .adapters.reasoning_llm import ReasoningLLM, build_recognition_llm
 from .adapters.retrieval import RetrievalProvider
 from .adapters.taxonomy import MockTaxonomyProvider
 from .config import RecognitionConfig
@@ -75,11 +75,11 @@ class RecognitionAgent:
         # recognise" (no signal). It still cannot add a candidate.
         analyzer = RuleBasedTextAnalyzer(known_names=taxonomy.known_names())
 
-        # Disabled unless RECOGNITION_REASONING_LLM_ENABLED is explicitly set.
-        # `build_reasoning_llm` opens no connection - the client, if any, is
-        # constructed lazily on the first permitted call.
-        llm = reasoning_llm if reasoning_llm is not None else build_reasoning_llm(
-            enabled=self.config.reasoning_llm_enabled,
+        # Disabled unless RECOGNITION_LLM_PROVIDER_MODE says otherwise. No
+        # connection is opened here - the Azure client, if any, is built lazily
+        # on the first permitted call.
+        llm = reasoning_llm if reasoning_llm is not None else build_recognition_llm(
+            self.config.reasoning_llm_provider_mode,
             timeout_seconds=self.config.reasoning_llm_timeout_seconds,
         )
 

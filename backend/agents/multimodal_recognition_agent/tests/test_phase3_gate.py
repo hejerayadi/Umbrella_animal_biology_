@@ -49,13 +49,20 @@ class SpyLLM:
 
     name = "spy"
 
-    def __init__(self, result=None, raises=None, enabled=True, plan=None):
+    # A well-formed plan, so the default spy exercises the nominal two-call
+    # path. Pass `plan=None` to simulate a planner that answers off-contract.
+    _DEFAULT_PLAN = {"steps": ["embed_image", "retrieve_candidates", "validate_taxonomy",
+                               "score_confidence", "explain"],
+                     "intent": "recognition", "top_k": 30}
+    _UNSET = object()
+
+    def __init__(self, result=None, raises=None, enabled=True, plan=_UNSET):
         self.enabled = enabled
         self.calls = 0
         self.seen: list = []
         self._result = result
         self._raises = raises
-        self._plan = plan
+        self._plan = dict(self._DEFAULT_PLAN) if plan is self._UNSET else plan
 
     def plan(self, request):
         self.calls += 1
@@ -204,8 +211,9 @@ def test_gate3_llm_failure_falls_back_to_rules(failure):
         pytest.fail(f"an LLM failure escaped the workflow: {type(exc).__name__}")
 
     # Degrading safely means completing on the deterministic path - not failing
-    # the request. Both the planner and the explainer failed here.
-    assert spy.calls == 2
+    # the request. The planner failed, so the explanation call is forfeited:
+    # one call, not two.
+    assert spy.calls == 1
     assert result.status is AgentStatus.COMPLETED
     assert result.output["recognition"]["decision"] == "identified"
     provenance = result.output["recognition_provenance"]
@@ -214,12 +222,14 @@ def test_gate3_llm_failure_falls_back_to_rules(failure):
 
 
 def test_gate3_malformed_llm_output_is_ignored_and_rules_stand():
-    spy = SpyLLM(result=None)  # adapter rejected the response
+    spy = SpyLLM(plan=None)  # the planner answered off-contract
     agent = build_agent([reference("panthera_leo", 0.96, "p1", "Panthera leo")], llm=spy)
     result = agent.run(request_with(AMBIGUOUS_INSTRUCTION))
 
     assert result.status is AgentStatus.COMPLETED
     assert result.output["recognition_provenance"]["reasoning_llm_used"] is False
+    # A malformed plan forfeits the explanation call too.
+    assert spy.calls == 1
 
 
 def test_gate3_both_failures_at_once_still_complete():
@@ -238,6 +248,7 @@ def test_gate3_both_failures_at_once_still_complete():
     assert result.output["recognition_provenance"]["taxonomy_degraded"] is True
     assert result.output["recognition_provenance"]["plan_source"] == "deterministic"
     assert result.output["recognition_candidates"][0]["taxonomy_status"] == "unverified"
+    assert spy.calls == 1  # planner failed -> no explanation call
 
 
 # ===========================================================================

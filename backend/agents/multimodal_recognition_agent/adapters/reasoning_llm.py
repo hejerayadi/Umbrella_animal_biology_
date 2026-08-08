@@ -536,3 +536,236 @@ class FakeGPT5MiniProvider:
             f"(aggregated similarity {score}). The decision is {request.decision} and the "
             f"text alignment is {request.text_alignment}."
         )
+
+
+# ===========================================================================
+# The real Azure GPT-5 mini provider
+#
+# Same two-call contract as the fake, against the team's approved deployment.
+# The transport is the one this repository already uses in
+# `smoke_test_azure.py`: the OpenAI SDK pointed at an Azure base URL, calling
+# the Responses API with the deployment name as `model`. Nothing about the
+# endpoint, the key, the API version or the resource name is invented here -
+# every one of them comes from the environment.
+#
+# Failure policy, deliberately blunt: any problem - a timeout, a refusal, a
+# malformed body, an unparseable plan - returns None exactly once. There is no
+# retry and no corrective second attempt, because the deterministic path is
+# always available and a request must never cost more than its two calls.
+# ===========================================================================
+
+_ENV_TIMEOUT = "AZURE_OPENAI_TIMEOUT_SECONDS"
+
+
+class AzureConfigurationError(RuntimeError):
+    """Raised when azure mode is selected but not fully configured.
+
+    The message names the missing VARIABLES, never their values.
+    """
+
+
+@dataclass(frozen=True)
+class AzureSettings:
+    """Connection settings. Holds the key only in memory, never logged."""
+
+    base_url: str
+    api_key: str
+    deployment: str
+    reasoning_effort: str = "low"
+    max_output_tokens: int = 400
+    timeout_seconds: float = 20.0
+
+    @classmethod
+    def from_env(cls) -> AzureSettings:
+        missing = [
+            name for name in (_ENV_BASE_URL, _ENV_API_KEY, _ENV_DEPLOYMENT)
+            if not os.getenv(name)
+        ]
+        if missing:
+            raise AzureConfigurationError(
+                "Azure mode is selected but these variables are unset: "
+                + ", ".join(missing)
+                + ". Set them in the agent's git-ignored .env, or switch "
+                "RECOGNITION_LLM_PROVIDER_MODE back to 'fake'."
+            )
+        try:
+            max_tokens = int(os.getenv(_ENV_MAX_OUTPUT_TOKENS, "400"))
+        except ValueError as exc:
+            raise AzureConfigurationError(
+                f"{_ENV_MAX_OUTPUT_TOKENS} must be an integer"
+            ) from exc
+        try:
+            timeout = float(os.getenv(_ENV_TIMEOUT, "20"))
+        except ValueError as exc:
+            raise AzureConfigurationError(f"{_ENV_TIMEOUT} must be a number") from exc
+
+        return cls(
+            base_url=os.environ[_ENV_BASE_URL],
+            api_key=os.environ[_ENV_API_KEY],
+            deployment=os.environ[_ENV_DEPLOYMENT],
+            reasoning_effort=os.getenv(_ENV_REASONING_EFFORT, "low"),
+            max_output_tokens=max_tokens,
+            timeout_seconds=timeout,
+        )
+
+
+def _extract_json_object(text: str) -> Any:
+    """Pull the JSON object out of a model reply.
+
+    Models wrap JSON in prose or a ``` fence often enough that not handling it
+    would send perfectly good plans to the fallback. This is parsing, not
+    retrying: one reply in, one result out.
+    """
+    import json
+
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```[a-zA-Z]*\s*", "", stripped)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    try:
+        return json.loads(stripped)
+    except (ValueError, TypeError):
+        pass
+
+    start, end = stripped.find("{"), stripped.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        return json.loads(stripped[start:end + 1])
+    except (ValueError, TypeError):
+        return None
+
+
+class AzureGPT5MiniProvider:
+    """GPT-5 mini on the team's approved Azure deployment."""
+
+    name = "azure-gpt-5-mini"
+    enabled = True
+
+    _PLAN_SYSTEM = (
+        "You are the planning module of a species-recognition agent.\n"
+        "Return ONLY a JSON object, no prose, with exactly these keys: "
+        "steps, intent, top_k, taxon_hint, location_hint, habitat_hint, language, "
+        "requested_capability.\n"
+        f"steps must be a subset of {list(ALLOWED_PLAN_STEPS)} and MUST include "
+        f"{list(MANDATORY_PLAN_STEPS)}.\n"
+        "intent must be exactly one of: recognition, similarity, scientific_follow_up.\n"
+        "top_k must be an integer between 1 and 50.\n"
+        "Use null for any hint the instruction does not state. Never guess a species. "
+        "You are NOT identifying anything in an image - you only read the sentence and "
+        "decide which internal steps to run."
+    )
+
+    _EXPLAIN_SYSTEM = (
+        "You write the final explanation for a species-recognition agent.\n"
+        "Use ONLY the structured evidence given to you. Write two or three short "
+        "sentences of plain prose.\n"
+        "Never name a species that is not in the candidate list. Never invent a GBIF or "
+        "NCBI identifier, a score, or a biological fact. Never describe the similarity "
+        "score as a probability or a percentage of certainty. Do not add a disclaimer - "
+        "one is appended automatically."
+    )
+
+    def __init__(self, settings: AzureSettings, *, client: Any = None) -> None:
+        self._settings = settings
+        # Injectable so unit tests exercise the whole path with no network.
+        self._client = client
+        self.plan_calls = 0
+        self.explain_calls = 0
+
+    @property
+    def deployment(self) -> str:
+        return self._settings.deployment
+
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            from openai import OpenAI  # lazy: importing this module opens nothing
+
+            self._client = OpenAI(
+                base_url=self._settings.base_url,
+                api_key=self._settings.api_key,
+                timeout=self._settings.timeout_seconds,
+            )
+        return self._client
+
+    def _call(self, system_prompt: str, payload: str) -> str | None:
+        """One request to Azure. One. No retry, no second attempt."""
+        try:
+            response = self._ensure_client().responses.create(
+                model=self._settings.deployment,
+                input=f"{system_prompt}\n\n{payload}",
+                reasoning={"effort": self._settings.reasoning_effort},
+                max_output_tokens=self._settings.max_output_tokens,
+                store=False,
+            )
+            text = getattr(response, "output_text", None)
+            return text if isinstance(text, str) and text.strip() else None
+        except Exception as exc:  # noqa: BLE001 - any failure means "use the rules"
+            # Only the exception TYPE is logged: a message could echo the
+            # request, and the request is not ours to leak.
+            _logger.info(
+                "[Recognition] Azure reasoning call failed (%s); deterministic "
+                "fallback used.", type(exc).__name__,
+            )
+            return None
+
+    # -- call 1 of 2 --------------------------------------------------------
+
+    def plan(self, request: PlanRequest) -> Any:
+        self.plan_calls += 1
+        payload = (
+            f"instruction: {request.instruction or '(none supplied)'}\n"
+            f"image_present: {request.has_image}\n"
+            f"image_media_type: {request.image_media_type}\n"
+            f"rule_intent: {request.rule_intent}"
+        )
+        text = self._call(self._PLAN_SYSTEM, payload)
+        if text is None:
+            return None
+        return _extract_json_object(text)
+
+    # -- call 2 of 2 --------------------------------------------------------
+
+    def explain(self, request: ExplainRequest) -> Any:
+        self.explain_calls += 1
+        payload = (
+            f"decision: {request.decision}\n"
+            f"text_alignment: {request.text_alignment}\n"
+            f"primary_species: {request.primary_species or 'none'}\n"
+            f"candidates: {', '.join(request.candidate_names) or 'none'}\n"
+            f"top_similarity_score: {request.top_score}\n"
+            f"margin_over_next_species: {request.margin}\n"
+            f"taxonomy_status: {request.taxonomy_status}\n"
+            f"retrieval_mode: {request.retrieval_mode}\n"
+            f"embedding_mode: {request.embedding_mode}\n"
+            f"visual_evidence_sufficient: {request.visual_evidence_sufficient}"
+        )
+        return self._call(self._EXPLAIN_SYSTEM, payload)
+
+
+def build_recognition_llm(
+    mode: str,
+    *,
+    timeout_seconds: float = 20.0,
+    client: Any = None,
+) -> Any:
+    """Choose the reasoning provider. `disabled` unless asked otherwise.
+
+    The code default is deliberately `disabled`, not `fake`: a fake brain must
+    never switch itself on in a running service. `.env.example` documents
+    `fake` as the value to set for local development.
+    """
+    normalized = (mode or "disabled").strip().lower()
+    if normalized in ("disabled", "off", "none", ""):
+        return NullRecognitionLLM()
+    if normalized == "fake":
+        return FakeGPT5MiniProvider()
+    if normalized == "azure":
+        # Raises AzureConfigurationError, naming the missing variables, if the
+        # deployment is not fully configured. Never a silent fallback: asking
+        # for the real model and quietly getting a fake one would be worse.
+        return AzureGPT5MiniProvider(AzureSettings.from_env(), client=client)
+    raise AzureConfigurationError(
+        f"RECOGNITION_LLM_PROVIDER_MODE must be 'disabled', 'fake' or 'azure', "
+        f"not {normalized!r}"
+    )

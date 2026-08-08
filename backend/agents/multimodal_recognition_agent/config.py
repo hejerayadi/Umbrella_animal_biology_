@@ -188,6 +188,10 @@ class RecognitionConfig:
     reasoning_llm_enabled: bool = False
     reasoning_llm_max_calls_per_request: int = 2
     reasoning_llm_timeout_seconds: float = 10.0
+    # "disabled" | "fake" | "azure". The code default is `disabled` so a fake
+    # brain can never switch itself on in a running service; `.env.example`
+    # documents `fake` as the local-development value.
+    reasoning_llm_provider_mode: str = "disabled"
 
     @classmethod
     def from_env(cls) -> RecognitionConfig:
@@ -299,4 +303,22 @@ class RecognitionConfig:
                 min(_int("RECOGNITION_LLM_MAX_CALLS_PER_REQUEST", 2) or 2, 2),
             ),
             reasoning_llm_timeout_seconds=_float("RECOGNITION_LLM_TIMEOUT_SECONDS", 10.0),
+            reasoning_llm_provider_mode=_provider_mode(),
         )
+
+
+def _provider_mode() -> str:
+    """Resolve the reasoning provider mode.
+
+    `RECOGNITION_LLM_PROVIDER_MODE` is the switch. The older
+    `RECOGNITION_REASONING_LLM_ENABLED=true` still selects Azure, so an existing
+    .env keeps working without being rewritten.
+    """
+    mode = (_str("RECOGNITION_LLM_PROVIDER_MODE") or "").strip().lower()
+    if mode:
+        if mode not in ("disabled", "fake", "azure"):
+            raise ConfigError(
+                "RECOGNITION_LLM_PROVIDER_MODE must be 'disabled', 'fake' or 'azure'"
+            )
+        return mode
+    return "azure" if _flag("RECOGNITION_REASONING_LLM_ENABLED") else "disabled"

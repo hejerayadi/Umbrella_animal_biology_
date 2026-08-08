@@ -347,7 +347,23 @@ def make_explain_node(llm: Any, config: RecognitionConfig) -> Node:
         calls = 0
         # The remaining half of the two-call budget, and only that.
         remaining = config.reasoning_llm_max_calls_per_request - state.llm_plan_calls
-        if getattr(llm, "enabled", False) and hasattr(llm, "explain") and remaining > 0:
+
+        # A planner that failed forfeits the explanation call.
+        #
+        # Whatever went wrong - timeout, auth error, empty body, malformed JSON,
+        # invalid schema, forbidden step - the provider has already shown it is
+        # not answering to contract on this request. Spending the second call to
+        # ask it again would be a retry wearing a different hat, and the
+        # deterministic explanation is right there. So the explainer runs only
+        # when the plan genuinely came from the model.
+        planner_succeeded = state.plan_source == "llm"
+
+        if (
+            getattr(llm, "enabled", False)
+            and hasattr(llm, "explain")
+            and remaining > 0
+            and planner_succeeded
+        ):
             calls = 1
             try:
                 produced = llm.explain(request)
