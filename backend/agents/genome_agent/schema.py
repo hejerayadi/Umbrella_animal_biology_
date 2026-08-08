@@ -1,28 +1,29 @@
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any
+from .schemas.common import AgentRequest, AgentResult, AgentStatus
+from .schemas.inputs import (
+    GeneAnnotationRequest,
+    GenomeMetadataRequest,
+    SpeciesResolverRequest,
+    VisualizationRequest,
+)
+from .schemas.outputs import (
+    GeneAnnotationOutput,
+    GenomeAgentOutput,
+    GenomeMetadataOutput,
+    SpeciesResolverOutput,
+    VisualizationOutput,
+)
 
-
-class AgentStatus(Enum):
-    COMPLETED = "completed"
-    NEEDS_AGENT = "needs_agent"
-    CONTINUE = "continue"
-    FAILED = "failed"
-
-
-@dataclass
-class AgentRequest:
-    instruction: str
-    context: dict[str, Any]
-
-
-@dataclass
-class AgentResult:
-
-    status: AgentStatus
-
-    target_agent: str | None = None
-
-    prompt_to_target_agent: str | None = None
-
-    output: Any | None = None
+__all__ = [
+    "AgentStatus",
+    "AgentRequest",
+    "AgentResult",
+    "SpeciesResolverRequest",
+    "SpeciesResolverOutput",
+    "GenomeMetadataRequest",
+    "GenomeMetadataOutput",
+    "GeneAnnotationRequest",
+    "GeneAnnotationOutput",
+    "VisualizationRequest",
+    "VisualizationOutput",
+    "GenomeAgentOutput",
+]
