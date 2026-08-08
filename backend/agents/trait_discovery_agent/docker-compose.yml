@@ -38,3 +38,11 @@ services:
     volumes:
       - .:/app
     command: pytest tests/integration -v -s
+
+  orchestration-retrieval-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.orchestration_retrieval_scenarios --scenario all --verbose
