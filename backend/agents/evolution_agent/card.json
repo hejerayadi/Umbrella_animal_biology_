@@ -1,7 +1,7 @@
 {
-  "name": "Evolution Agent",
-  "type": "worker",
-  "description": "Analyzes evolutionary relationships between species using NCBI Taxonomy and TimeTree. Covers how species are related, their ancestry, lineage and common ancestors; when two lineages diverged and the phylogenetic trees showing it; how a trait, species or group evolved over time; and taxonomy, classification and a species' place in the tree of life.",
+  "name": "Evolution Agent Orchestrator",
+  "type": "orchestrator",
+  "description": "Plans and coordinates evolutionary analysis tasks: molecular comparison of protein/gene sequences, phylogenetic tree construction, and divergence time estimation. Uses MAFFT alignment, ESMC protein embeddings, and TimeTree to infer evolutionary relationships between species.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
@@ -9,19 +9,37 @@
     "Genome Agent",
     "Literature Agent"
   ],
+  "managed_agents": [
+    "Molecular Comparison Agent",
+    "Phylogenetic Tree Agent",
+    "Divergence Time Agent"
+  ],
   "managed_services": [
+    "GenBank",
+    "UniProt",
+    "MAFFT",
+    "ESMC",
+    "IQ-TREE",
+    "TimeTree",
     "NCBI Taxonomy",
-    "TimeTree"
+    "Qdrant (evolution_embeddings)"
   ],
   "capabilities": [
-    "Phylogenetic analysis",
-    "Evolutionary comparison"
+    "Planning",
+    "Skill selection",
+    "Species name normalization",
+    "Sequential and parallel worker execution",
+    "Conditional routing",
+    "Result aggregation",
+    "Cross-agent escalation (NEEDS_AGENT)"
   ],
   "input": {
     "instruction": "string",
     "context": "dict"
   },
   "output": {
-    "evolution_analysis": "string"
+    "evolution_report": "dict",
+    "alignment_url": "string | null",
+    "tree_url": "string | null"
   }
 }

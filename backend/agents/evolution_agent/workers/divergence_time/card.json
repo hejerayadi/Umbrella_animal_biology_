@@ -1,0 +1,28 @@
+{
+  "name": "Divergence Time Agent",
+  "type": "worker",
+  "description": "Estimates when two species lineages diverged using TimeTree and molecular clock data, returning the divergence time in millions of years ago.",
+  "reports_to": [
+    "Evolution Agent Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "TimeTree",
+    "NCBI Taxonomy"
+  ],
+  "capabilities": [
+    "Divergence time estimation",
+    "Molecular clock calibration",
+    "Lineage split dating"
+  ],
+  "input": {
+    "species_list": "list[string] (exactly 2)",
+    "feature": "divergence_time"
+  },
+  "output": {
+    "species_a": "string",
+    "species_b": "string",
+    "divergence_mya": "float",
+    "confidence": "float"
+  }
+}
