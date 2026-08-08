@@ -1,0 +1,24 @@
+{
+  "name": "Protein Structure Visualization Agent",
+  "type": "worker",
+  "description": "Renders interactive 3D protein structures from genomic data.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "managed_services": [
+    "AlphaFold DB",
+    "PDB"
+  ],
+  "capabilities": [
+    "3D protein structure rendering",
+    "Interactive visualization",
+    "Molecular structure display"
+  ],
+  "role": "external",
+  "call_when": "The Genome Agent needs a 3D protein structure rendered and cannot do it internally.",
+  "cannot_help_with": [
+    "Genome retrieval",
+    "Gene annotation",
+    "Species resolution"
+  ]
+}
