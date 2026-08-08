@@ -169,19 +169,12 @@ async def classify_intent(prompt: str, llm=None) -> RecognizedIntent:
 
     if llm is None:
         try:
-            # Re-use the shared LLM client (Azure → Groq → GitHub Models).
-            from ..biodiversity_agent.framework.llm_client import (
-                LLMUnavailable,
-                get_llm,
-            )
+            # Use the evolution agent's own LLM client (Azure → Groq → GitHub Models).
+            from .framework.llm_client import LLMUnavailable, get_llm
             llm = get_llm()
-        except Exception:
-            try:
-                from .framework.llm_client import LLMUnavailable, get_llm  # type: ignore
-                llm = get_llm()
-            except Exception as exc:
-                _logger.warning("[Intent] no LLM backend configured: %s", exc)
-                return RecognizedIntent(source="llm_unavailable")
+        except Exception as exc:
+            _logger.warning("[Intent] no LLM backend configured: %s", exc)
+            return RecognizedIntent(source="llm_unavailable")
 
     try:
         response = await llm.ainvoke(
