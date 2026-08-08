@@ -6,7 +6,9 @@
     "Global Scientific Orchestrator"
   ],
   "may_need": [
-    "Literature Agent"
+    "Literature Agent",
+    "Protein Structure Visualization Agent",
+    "Reconstruction Agent"
   ],
   "managed_services": [
     "NCBI",
