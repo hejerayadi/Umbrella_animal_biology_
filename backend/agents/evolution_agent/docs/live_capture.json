@@ -1,0 +1,922 @@
+﻿{
+  "captured_at": "2026-08-08",
+  "cases": [
+    {
+      "label": "molcomp-2species",
+      "instruction": "How similar are human and chimpanzee proteins?",
+      "status": "failed",
+      "confidence": null,
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Phylogenetic Tree Agent"
+      ],
+      "output": "Phylogenetic reconstruction failed: Phylogenetic reconstruction requires at least 3 species; got 2: ['homo sapiens', 'pan troglodytes']."
+    },
+    {
+      "label": "molcomp-3species",
+      "instruction": "Compare the protein sequences of human, mouse and zebrafish.",
+      "status": "completed",
+      "confidence": 0.7167,
+      "newick_tree": "('homo sapiens':1.0,'mus musculus':1.0,'danio rerio':1.0);",
+      "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_homo_sapiens_mus_musculus.svg",
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": 0.85
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "danio rerio",
+          "score": 0.54
+        },
+        {
+          "species_a": "mus musculus",
+          "species_b": "danio rerio",
+          "score": 0.51
+        }
+      ],
+      "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_homo_sapiens_vs_mus_musculus.html",
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent",
+        "Phylogenetic Tree Agent"
+      ],
+      "output": {
+        "evolution_report": {
+          "species_list": [
+            "Homo sapiens",
+            "Mus musculus",
+            "Danio rerio"
+          ],
+          "molecular": {
+            "species_list": [
+              "homo sapiens",
+              "mus musculus",
+              "danio rerio"
+            ],
+            "alignment": ">homo_sapiens\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT\n>mus_musculus\nMTNIRKTHPLFKIVNHCFVDLPTPSNISALWNFGSLLGACLIVQILTGLFLAMHYSSDTL\n>danio_rerio\nMANIRKTHPLFKIVNHSFVDLPTPANISPLWNFGSLLGTCLIVQILTGLFLAMHYSSDTK",
+            "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_homo_sapiens_vs_mus_musculus.html",
+            "similarity_scores": [
+              {
+                "species_a": "homo sapiens",
+                "species_b": "mus musculus",
+                "score": 0.85
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "danio rerio",
+                "score": 0.54
+              },
+              {
+                "species_a": "mus musculus",
+                "species_b": "danio rerio",
+                "score": 0.51
+              }
+            ],
+            "species_groups": [
+              {
+                "group_id": 0,
+                "species": [
+                  "homo sapiens",
+                  "mus musculus"
+                ],
+                "mean_score": 0.85
+              },
+              {
+                "group_id": 1,
+                "species": [
+                  "danio rerio"
+                ],
+                "mean_score": 1.0
+              }
+            ],
+            "similarity_network": {
+              "homo sapiens": [
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.54
+                }
+              ],
+              "mus musculus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.51
+                }
+              ],
+              "danio rerio": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.54
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.51
+                }
+              ]
+            }
+          },
+          "phylogenetic": {
+            "newick_tree": "('homo sapiens':1.0,'mus musculus':1.0,'danio rerio':1.0);",
+            "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_homo_sapiens_mus_musculus.svg",
+            "model": "LG+G4",
+            "bootstrap_support": {
+              "node_root": 80
+            },
+            "confidence_values": {
+              "homo sapiens": 0.97,
+              "mus musculus": 0.93,
+              "danio rerio": 0.85
+            },
+            "overall_confidence": 0.8
+          },
+          "overall_confidence": 0.7167,
+          "source_agents": [
+            "Evolution Agent Orchestrator",
+            "Molecular Comparison Agent",
+            "Phylogenetic Tree Agent"
+          ]
+        },
+        "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_homo_sapiens_vs_mus_musculus.html",
+        "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_homo_sapiens_mus_musculus.svg"
+      }
+    },
+    {
+      "label": "phylo-4species",
+      "instruction": "Show me the evolutionary tree for human, mouse, chicken and zebrafish.",
+      "status": "completed",
+      "confidence": 0.7267,
+      "newick_tree": "('homo sapiens':1.0,'mus musculus':1.0,'gallus gallus':1.0,'danio rerio':1.0);",
+      "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_gallus_gallus_homo_sapiens_mus_musculus.svg",
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": 0.85
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "gallus gallus",
+          "score": 0.72
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "danio rerio",
+          "score": 0.54
+        },
+        {
+          "species_a": "mus musculus",
+          "species_b": "gallus gallus",
+          "score": 0.68
+        },
+        {
+          "species_a": "mus musculus",
+          "species_b": "danio rerio",
+          "score": 0.51
+        },
+        {
+          "species_a": "gallus gallus",
+          "species_b": "danio rerio",
+          "score": 0.62
+        }
+      ],
+      "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_gallus_gallus_vs_homo_sapiens_vs_mus_musculus.html",
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent",
+        "Phylogenetic Tree Agent"
+      ],
+      "output": {
+        "evolution_report": {
+          "species_list": [
+            "Homo sapiens",
+            "Mus musculus",
+            "Gallus gallus",
+            "Danio rerio"
+          ],
+          "molecular": {
+            "species_list": [
+              "homo sapiens",
+              "mus musculus",
+              "gallus gallus",
+              "danio rerio"
+            ],
+            "alignment": ">homo_sapiens\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT\n>mus_musculus\nMTNIRKTHPLFKIVNHCFVDLPTPSNISALWNFGSLLGACLIVQILTGLFLAMHYSSDTL\n>gallus_gallus\nMPNIRKTHPLFKIVNHAFVDLPTPANISPLWNFGSLLGACLIVQILTGLFLAMHYSSDTV\n>danio_rerio\nMANIRKTHPLFKIVNHSFVDLPTPANISPLWNFGSLLGTCLIVQILTGLFLAMHYSSDTK",
+            "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_gallus_gallus_vs_homo_sapiens_vs_mus_musculus.html",
+            "similarity_scores": [
+              {
+                "species_a": "homo sapiens",
+                "species_b": "mus musculus",
+                "score": 0.85
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "gallus gallus",
+                "score": 0.72
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "danio rerio",
+                "score": 0.54
+              },
+              {
+                "species_a": "mus musculus",
+                "species_b": "gallus gallus",
+                "score": 0.68
+              },
+              {
+                "species_a": "mus musculus",
+                "species_b": "danio rerio",
+                "score": 0.51
+              },
+              {
+                "species_a": "gallus gallus",
+                "species_b": "danio rerio",
+                "score": 0.62
+              }
+            ],
+            "species_groups": [
+              {
+                "group_id": 0,
+                "species": [
+                  "homo sapiens",
+                  "mus musculus"
+                ],
+                "mean_score": 0.85
+              },
+              {
+                "group_id": 1,
+                "species": [
+                  "gallus gallus"
+                ],
+                "mean_score": 1.0
+              },
+              {
+                "group_id": 2,
+                "species": [
+                  "danio rerio"
+                ],
+                "mean_score": 1.0
+              }
+            ],
+            "similarity_network": {
+              "homo sapiens": [
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.72
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.54
+                }
+              ],
+              "mus musculus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.68
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.51
+                }
+              ],
+              "gallus gallus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.72
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.68
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.62
+                }
+              ],
+              "danio rerio": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.54
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.51
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.62
+                }
+              ]
+            }
+          },
+          "phylogenetic": {
+            "newick_tree": "('homo sapiens':1.0,'mus musculus':1.0,'gallus gallus':1.0,'danio rerio':1.0);",
+            "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_gallus_gallus_homo_sapiens_mus_musculus.svg",
+            "model": "LG+G4",
+            "bootstrap_support": {
+              "node_root": 80
+            },
+            "confidence_values": {
+              "homo sapiens": 0.97,
+              "mus musculus": 0.93,
+              "gallus gallus": 0.89,
+              "danio rerio": 0.85
+            },
+            "overall_confidence": 0.8
+          },
+          "overall_confidence": 0.7267,
+          "source_agents": [
+            "Evolution Agent Orchestrator",
+            "Molecular Comparison Agent",
+            "Phylogenetic Tree Agent"
+          ]
+        },
+        "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_gallus_gallus_vs_homo_sapiens_vs_mus_musculus.html",
+        "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_gallus_gallus_homo_sapiens_mus_musculus.svg"
+      }
+    },
+    {
+      "label": "full-3species",
+      "instruction": "Compare homo sapiens, pan troglodytes and mus musculus evolutionarily.",
+      "status": "completed",
+      "confidence": 0.9325,
+      "newick_tree": "(('homo sapiens':0.6,'pan troglodytes':0.6):8.4,'mus musculus':9.0);",
+      "tree_url": "https://evolution.umbrella.local/tree/homo_sapiens_mus_musculus_pan_troglodytes.svg",
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "pan troglodytes",
+          "score": 0.98
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": 0.85
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "mus musculus",
+          "score": 0.84
+        }
+      ],
+      "alignment_url": "https://evolution.umbrella.local/alignment/homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent",
+        "Phylogenetic Tree Agent"
+      ],
+      "output": {
+        "evolution_report": {
+          "species_list": [
+            "Homo sapiens",
+            "Pan troglodytes",
+            "Mus musculus"
+          ],
+          "molecular": {
+            "species_list": [
+              "homo sapiens",
+              "pan troglodytes",
+              "mus musculus"
+            ],
+            "alignment": ">homo_sapiens\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT\n>pan_troglodytes\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTA\n>mus_musculus\nMTNIRKTHPLFKIVNHCFVDLPTPSNISALWNFGSLLGACLIVQILTGLFLAMHYSSDTL",
+            "alignment_url": "https://evolution.umbrella.local/alignment/homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+            "similarity_scores": [
+              {
+                "species_a": "homo sapiens",
+                "species_b": "pan troglodytes",
+                "score": 0.98
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "mus musculus",
+                "score": 0.85
+              },
+              {
+                "species_a": "pan troglodytes",
+                "species_b": "mus musculus",
+                "score": 0.84
+              }
+            ],
+            "species_groups": [
+              {
+                "group_id": 0,
+                "species": [
+                  "homo sapiens",
+                  "pan troglodytes",
+                  "mus musculus"
+                ],
+                "mean_score": 0.89
+              }
+            ],
+            "similarity_network": {
+              "homo sapiens": [
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.98
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.85
+                }
+              ],
+              "pan troglodytes": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.98
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.84
+                }
+              ],
+              "mus musculus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.84
+                }
+              ]
+            }
+          },
+          "phylogenetic": {
+            "newick_tree": "(('homo sapiens':0.6,'pan troglodytes':0.6):8.4,'mus musculus':9.0);",
+            "tree_url": "https://evolution.umbrella.local/tree/homo_sapiens_mus_musculus_pan_troglodytes.svg",
+            "model": "LG+G4",
+            "bootstrap_support": {
+              "node_human_chimp": 100,
+              "node_mammals": 95
+            },
+            "confidence_values": {
+              "homo sapiens": 0.97,
+              "pan troglodytes": 0.97,
+              "mus musculus": 0.93
+            },
+            "overall_confidence": 0.975
+          },
+          "overall_confidence": 0.9325,
+          "source_agents": [
+            "Evolution Agent Orchestrator",
+            "Molecular Comparison Agent",
+            "Phylogenetic Tree Agent"
+          ]
+        },
+        "alignment_url": "https://evolution.umbrella.local/alignment/homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+        "tree_url": "https://evolution.umbrella.local/tree/homo_sapiens_mus_musculus_pan_troglodytes.svg"
+      }
+    },
+    {
+      "label": "full-5species",
+      "instruction": "Compare the evolution of human, chimp, mouse, chicken and zebrafish.",
+      "status": "completed",
+      "confidence": 0.8053,
+      "newick_tree": "((('homo sapiens':0.6,'pan troglodytes':0.6):8.4,'mus musculus':9.0):81.0,'gallus gallus':90.0,'danio rerio':360.0);",
+      "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_gallus_gallus_homo_sapiens_mus_musculus_pan_troglodytes.svg",
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "pan troglodytes",
+          "score": 0.98
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": 0.85
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "gallus gallus",
+          "score": 0.72
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "danio rerio",
+          "score": 0.54
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "mus musculus",
+          "score": 0.84
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "gallus gallus",
+          "score": 0.71
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "danio rerio",
+          "score": 0.53
+        },
+        {
+          "species_a": "mus musculus",
+          "species_b": "gallus gallus",
+          "score": 0.68
+        },
+        {
+          "species_a": "mus musculus",
+          "species_b": "danio rerio",
+          "score": 0.51
+        },
+        {
+          "species_a": "gallus gallus",
+          "species_b": "danio rerio",
+          "score": 0.62
+        }
+      ],
+      "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_gallus_gallus_vs_homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent",
+        "Phylogenetic Tree Agent"
+      ],
+      "output": {
+        "evolution_report": {
+          "species_list": [
+            "Homo sapiens",
+            "Pan troglodytes",
+            "Mus musculus",
+            "Gallus gallus",
+            "Danio rerio"
+          ],
+          "molecular": {
+            "species_list": [
+              "homo sapiens",
+              "pan troglodytes",
+              "mus musculus",
+              "gallus gallus",
+              "danio rerio"
+            ],
+            "alignment": ">homo_sapiens\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT\n>pan_troglodytes\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTA\n>mus_musculus\nMTNIRKTHPLFKIVNHCFVDLPTPSNISALWNFGSLLGACLIVQILTGLFLAMHYSSDTL\n>gallus_gallus\nMPNIRKTHPLFKIVNHAFVDLPTPANISPLWNFGSLLGACLIVQILTGLFLAMHYSSDTV\n>danio_rerio\nMANIRKTHPLFKIVNHSFVDLPTPANISPLWNFGSLLGTCLIVQILTGLFLAMHYSSDTK",
+            "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_gallus_gallus_vs_homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+            "similarity_scores": [
+              {
+                "species_a": "homo sapiens",
+                "species_b": "pan troglodytes",
+                "score": 0.98
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "mus musculus",
+                "score": 0.85
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "gallus gallus",
+                "score": 0.72
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "danio rerio",
+                "score": 0.54
+              },
+              {
+                "species_a": "pan troglodytes",
+                "species_b": "mus musculus",
+                "score": 0.84
+              },
+              {
+                "species_a": "pan troglodytes",
+                "species_b": "gallus gallus",
+                "score": 0.71
+              },
+              {
+                "species_a": "pan troglodytes",
+                "species_b": "danio rerio",
+                "score": 0.53
+              },
+              {
+                "species_a": "mus musculus",
+                "species_b": "gallus gallus",
+                "score": 0.68
+              },
+              {
+                "species_a": "mus musculus",
+                "species_b": "danio rerio",
+                "score": 0.51
+              },
+              {
+                "species_a": "gallus gallus",
+                "species_b": "danio rerio",
+                "score": 0.62
+              }
+            ],
+            "species_groups": [
+              {
+                "group_id": 0,
+                "species": [
+                  "homo sapiens",
+                  "pan troglodytes",
+                  "mus musculus"
+                ],
+                "mean_score": 0.89
+              },
+              {
+                "group_id": 1,
+                "species": [
+                  "gallus gallus"
+                ],
+                "mean_score": 1.0
+              },
+              {
+                "group_id": 2,
+                "species": [
+                  "danio rerio"
+                ],
+                "mean_score": 1.0
+              }
+            ],
+            "similarity_network": {
+              "homo sapiens": [
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.98
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.72
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.54
+                }
+              ],
+              "pan troglodytes": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.98
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.84
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.71
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.53
+                }
+              ],
+              "mus musculus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.84
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.68
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.51
+                }
+              ],
+              "gallus gallus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.72
+                },
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.71
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.68
+                },
+                {
+                  "neighbour": "danio rerio",
+                  "score": 0.62
+                }
+              ],
+              "danio rerio": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.54
+                },
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.53
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.51
+                },
+                {
+                  "neighbour": "gallus gallus",
+                  "score": 0.62
+                }
+              ]
+            }
+          },
+          "phylogenetic": {
+            "newick_tree": "((('homo sapiens':0.6,'pan troglodytes':0.6):8.4,'mus musculus':9.0):81.0,'gallus gallus':90.0,'danio rerio':360.0);",
+            "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_gallus_gallus_homo_sapiens_mus_musculus_pan_troglodytes.svg",
+            "model": "LG+G4",
+            "bootstrap_support": {
+              "node_human_chimp": 100,
+              "node_mammals": 95,
+              "node_amniotes": 88,
+              "node_vertebrates": 82
+            },
+            "confidence_values": {
+              "homo sapiens": 0.97,
+              "pan troglodytes": 0.97,
+              "mus musculus": 0.93,
+              "gallus gallus": 0.89,
+              "danio rerio": 0.85
+            },
+            "overall_confidence": 0.9125
+          },
+          "overall_confidence": 0.8053,
+          "source_agents": [
+            "Evolution Agent Orchestrator",
+            "Molecular Comparison Agent",
+            "Phylogenetic Tree Agent"
+          ]
+        },
+        "alignment_url": "https://evolution.umbrella.local/alignment/danio_rerio_vs_gallus_gallus_vs_homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+        "tree_url": "https://evolution.umbrella.local/tree/danio_rerio_gallus_gallus_homo_sapiens_mus_musculus_pan_troglodytes.svg"
+      }
+    },
+    {
+      "label": "rejected-nonbio",
+      "instruction": "What is the capital of France?",
+      "status": "failed",
+      "confidence": null,
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator"
+      ],
+      "output": "The Evolution Agent could not determine what this question is asking for. It can run a full evolutionary analysis (sequence similarity + phylogenetic tree), a molecular comparison only, or a phylogenetic tree only. Could you rephrase the question?"
+    },
+    {
+      "label": "common-names",
+      "instruction": "How are humans, chimpanzees and mice related evolutionarily?",
+      "status": "completed",
+      "confidence": 0.9325,
+      "newick_tree": "(('homo sapiens':0.6,'pan troglodytes':0.6):8.4,'mus musculus':9.0);",
+      "tree_url": "https://evolution.umbrella.local/tree/homo_sapiens_mus_musculus_pan_troglodytes.svg",
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "pan troglodytes",
+          "score": 0.98
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": 0.85
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "mus musculus",
+          "score": 0.84
+        }
+      ],
+      "alignment_url": "https://evolution.umbrella.local/alignment/homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent",
+        "Phylogenetic Tree Agent"
+      ],
+      "output": {
+        "evolution_report": {
+          "species_list": [
+            "Homo sapiens",
+            "Pan troglodytes",
+            "Mus musculus"
+          ],
+          "molecular": {
+            "species_list": [
+              "homo sapiens",
+              "pan troglodytes",
+              "mus musculus"
+            ],
+            "alignment": ">homo_sapiens\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT\n>pan_troglodytes\nMTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTA\n>mus_musculus\nMTNIRKTHPLFKIVNHCFVDLPTPSNISALWNFGSLLGACLIVQILTGLFLAMHYSSDTL",
+            "alignment_url": "https://evolution.umbrella.local/alignment/homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+            "similarity_scores": [
+              {
+                "species_a": "homo sapiens",
+                "species_b": "pan troglodytes",
+                "score": 0.98
+              },
+              {
+                "species_a": "homo sapiens",
+                "species_b": "mus musculus",
+                "score": 0.85
+              },
+              {
+                "species_a": "pan troglodytes",
+                "species_b": "mus musculus",
+                "score": 0.84
+              }
+            ],
+            "species_groups": [
+              {
+                "group_id": 0,
+                "species": [
+                  "homo sapiens",
+                  "pan troglodytes",
+                  "mus musculus"
+                ],
+                "mean_score": 0.89
+              }
+            ],
+            "similarity_network": {
+              "homo sapiens": [
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.98
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.85
+                }
+              ],
+              "pan troglodytes": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.98
+                },
+                {
+                  "neighbour": "mus musculus",
+                  "score": 0.84
+                }
+              ],
+              "mus musculus": [
+                {
+                  "neighbour": "homo sapiens",
+                  "score": 0.85
+                },
+                {
+                  "neighbour": "pan troglodytes",
+                  "score": 0.84
+                }
+              ]
+            }
+          },
+          "phylogenetic": {
+            "newick_tree": "(('homo sapiens':0.6,'pan troglodytes':0.6):8.4,'mus musculus':9.0);",
+            "tree_url": "https://evolution.umbrella.local/tree/homo_sapiens_mus_musculus_pan_troglodytes.svg",
+            "model": "LG+G4",
+            "bootstrap_support": {
+              "node_human_chimp": 100,
+              "node_mammals": 95
+            },
+            "confidence_values": {
+              "homo sapiens": 0.97,
+              "pan troglodytes": 0.97,
+              "mus musculus": 0.93
+            },
+            "overall_confidence": 0.975
+          },
+          "overall_confidence": 0.9325,
+          "source_agents": [
+            "Evolution Agent Orchestrator",
+            "Molecular Comparison Agent",
+            "Phylogenetic Tree Agent"
+          ]
+        },
+        "alignment_url": "https://evolution.umbrella.local/alignment/homo_sapiens_vs_mus_musculus_vs_pan_troglodytes.html",
+        "tree_url": "https://evolution.umbrella.local/tree/homo_sapiens_mus_musculus_pan_troglodytes.svg"
+      }
+    }
+  ]
+}
