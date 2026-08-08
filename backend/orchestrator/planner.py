@@ -59,8 +59,29 @@ _SYSTEM_PROMPT = (
     "Each agent's description below spells out the specific topics it covers. Match the "
     "topics named in the user's message against those descriptions rather than guessing "
     "from the agent's name alone.\n\n"
+    "{image_note}"
     "Always fill in `reasoning` with one short sentence explaining your choice.\n\n"
     "Available agents:\n{agent_catalog}"
+)
+
+# Swapped into `{image_note}` depending on whether the user attached a photo.
+# Stated as a fact about THIS message rather than a general rule, because the
+# model cannot see the attachment and would otherwise have to infer it from
+# wording like "this photo" - which is exactly what users leave out.
+_IMAGE_ATTACHED_NOTE = (
+    "IMPORTANT - the user attached an IMAGE to this message. Only the Multimodal "
+    "agent can look at it, and it is the agent that identifies a species from a "
+    "photograph. Unless the message is clearly asking for something else entirely, "
+    "set `needs_agent` to true and choose Multimodal as `initial_agent`: whatever "
+    "else the user wants to know, the species has to be identified from the image "
+    "first, and Multimodal will request the other agents itself afterwards.\n\n"
+)
+
+_NO_IMAGE_NOTE = (
+    "No image is attached to this message. Do NOT choose the Multimodal agent: it "
+    "requires an image and cannot identify a species from a text description. If "
+    "the user talks as though they attached a photo but none arrived, pick the "
+    "agent that fits the text.\n\n"
 )
 
 # Bundles the system instructions above with the user's actual question into
@@ -125,8 +146,13 @@ class Planner:
         # it to the model."
         self._chain = _PROMPT | get_llm().with_structured_output(_PlannerOutput)
 
-    def plan(self, user_query: str) -> ExecutionPlan:
-        """Ask the LLM how `user_query` should be handled."""
+    def plan(self, user_query: str, *, has_image: bool = False) -> ExecutionPlan:
+        """Ask the LLM how `user_query` should be handled.
+
+        `has_image` is not in the text the model reads, so it has to be stated
+        explicitly: the same sentence means something different when a photo is
+        attached, and only one agent can act on one.
+        """
 
         # Actually call the model: fill in the prompt's placeholders and get
         # back a `_PlannerOutput` object.
@@ -134,6 +160,7 @@ class Planner:
             {
                 "agent_catalog": _format_agent_catalog(self._agent_cards),
                 "user_query": user_query,
+                "image_note": _IMAGE_ATTACHED_NOTE if has_image else _NO_IMAGE_NOTE,
             }
         )
 

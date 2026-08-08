@@ -131,8 +131,26 @@ def _format_capabilities(agent_cards: dict[str, AgentCard]) -> str:
     )
 
 
+# No single finding needs more than this to be summarised, and everything past
+# it is prompt tokens spent on nothing. The cap is a backstop, not a policy:
+# large values reach here by accident (a base64 image, a full sequence, a
+# thousand-row result), and the failure without it is an opaque context-length
+# error from the model rather than an obviously truncated finding.
+_MAX_FINDING_CHARS = 4000
+
+
+def _render_value(value: Any) -> str:
+    text = str(value)
+    if len(text) <= _MAX_FINDING_CHARS:
+        return text
+    return (
+        f"{text[:_MAX_FINDING_CHARS]}... [truncated, {len(text)} characters total - "
+        f"summarise from what is shown]"
+    )
+
+
 def _format_findings(context: dict[str, Any]) -> str:
     """Plain-text rendering of everything the agents produced."""
     if not context:
         return "(the agents did not produce any findings)"
-    return "\n".join(f"- {key}: {value}" for key, value in context.items())
+    return "\n".join(f"- {key}: {_render_value(value)}" for key, value in context.items())

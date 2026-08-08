@@ -9,7 +9,12 @@ import {
 } from "react";
 
 import { MOCK_AGENT_ACTIVITY, MOCK_CONVERSATIONS, MOCK_MESSAGES } from "./mock-data";
-import { askOrchestrator, parseExecutionHistory } from "./orchestrator-client";
+import {
+  askOrchestrator,
+  imageUrlFor,
+  parseExecutionHistory,
+  type UploadedImage,
+} from "./orchestrator-client";
 import type { AgentActivity, Conversation, Message, User } from "./umbrella-types";
 
 const STORAGE_KEY = "umbrella.mock.state.v1";
@@ -58,7 +63,7 @@ interface UmbrellaContextValue extends PersistedState {
   createConversation: (title?: string) => Conversation;
   renameConversation: (id: string, title: string) => void;
   deleteConversation: (id: string) => void;
-  sendMessage: (conversationId: string, content: string) => void;
+  sendMessage: (conversationId: string, content: string, image?: UploadedImage | null) => void;
   messagesFor: (conversationId: string) => Message[];
   activitiesFor: (conversationId: string) => AgentActivity[];
 }
@@ -122,7 +127,9 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       conversations: prev.conversations.map((c) =>
-        c.id === id ? { ...c, title: title.trim() || c.title, updatedAt: new Date().toISOString() } : c,
+        c.id === id
+          ? { ...c, title: title.trim() || c.title, updatedAt: new Date().toISOString() }
+          : c,
       ),
     }));
   }, []);
@@ -137,7 +144,7 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendMessage = useCallback(
-    (conversationId: string, content: string) => {
+    (conversationId: string, content: string, image?: UploadedImage | null) => {
       const now = new Date().toISOString();
       const userMessage: Message = {
         id: uid("msg"),
@@ -145,6 +152,9 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
         sender: "user",
         content,
         timestamp: now,
+        // Served back from the backend rather than kept as the composer's
+        // blob: URL, which is revoked as soon as the attachment clears.
+        ...(image ? { imageUrl: imageUrlFor(image.image_id), imageName: image.filename } : {}),
       };
 
       setState((prev) => ({
@@ -167,7 +177,7 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
 
       setIsThinking(true);
 
-      askOrchestrator(content)
+      askOrchestrator(content, image)
         .then((response) => {
           const activities = parseExecutionHistory(response.execution_history, conversationId);
           const assistantId = uid("msg");
