@@ -6,7 +6,12 @@ from typing import Any
 from backend.agents.Protein_visualization.app.capabilities.retrieval import RetrievalCapability
 from backend.agents.Protein_visualization.app.domain.models import EvidenceRef
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
-from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import degraded, executed, failure_code, logger
+from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import (
+    degraded,
+    executed,
+    failure_code,
+    logger,
+)
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import RETRIEVE_KNOWLEDGE
 from backend.agents.Protein_visualization.app.orchestrators.protein.state import ProteinWorkflowState
 

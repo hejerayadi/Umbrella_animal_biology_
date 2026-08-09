@@ -4,7 +4,10 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
 
-from backend.agents.Protein_visualization.app.api.v1.dependencies import get_analysis_repository, get_orchestrator
+from backend.agents.Protein_visualization.app.api.v1.dependencies import (
+    get_analysis_repository,
+    get_orchestrator,
+)
 from backend.agents.Protein_visualization.app.contracts.agent_result import AgentResult
 from backend.agents.Protein_visualization.app.contracts.envelope import ApiResponse, success
 from backend.agents.Protein_visualization.app.contracts.protein_request import ProteinAnalysisRequest

@@ -11,7 +11,10 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from backend.agents.Protein_visualization.app.contracts.problem_details import ProblemDetails
-from backend.agents.Protein_visualization.app.observability.context import get_log_context, request_duration_ms
+from backend.agents.Protein_visualization.app.observability.context import (
+    get_log_context,
+    request_duration_ms,
+)
 
 API_VERSION = "v1"
 

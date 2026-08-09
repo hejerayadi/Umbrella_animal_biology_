@@ -4,7 +4,11 @@ This is where the workflow stops being a fixed chain: each function reads the
 state and names the next node. All of them are pure and synchronously testable.
 """
 
-from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus, PreferredSource, ValidationStatus
+from backend.agents.Protein_visualization.app.domain.enums import (
+    AnalysisStatus,
+    PreferredSource,
+    ValidationStatus,
+)
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.mapping import mapping_required
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import (
     BUILD_EVIDENCE,

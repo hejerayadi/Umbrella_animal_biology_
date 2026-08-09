@@ -19,7 +19,10 @@ from backend.agents.Protein_visualization.app.domain.models import StructureCand
 from backend.agents.Protein_visualization.app.observability.context import log_context
 from backend.agents.Protein_visualization.app.observability.logging import log_event
 from backend.agents.Protein_visualization.app.orchestrators.protein.result_policy import to_agent_result
-from backend.agents.Protein_visualization.app.orchestrators.protein.state import ProteinWorkflowState, initial_state
+from backend.agents.Protein_visualization.app.orchestrators.protein.state import (
+    ProteinWorkflowState,
+    initial_state,
+)
 
 logger = logging.getLogger("app.orchestrator")
 

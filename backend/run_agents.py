@@ -20,12 +20,17 @@ Run from the repository root:
 interleaved on this terminal, prefixed with the agent name.
 
 This is a convenience for local development only - in a real deployment each
-agent is its own container, which is why each has its own requirements.txt.
+agent is its own container, which is why each declares its own dependencies.
+
+Two declaration styles are supported, and `--setup` picks per agent:
+`pyproject.toml` + `uv.lock`, installed with `uv sync`, or the older
+`requirements.txt`, installed with pip into a `python -m venv` environment.
 """
 from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -87,8 +92,52 @@ def _explain(pip_output: str) -> str | None:
     return None
 
 
+def _manifest(folder: str) -> Path:
+    """The dependency file one agent declares, whichever style it uses."""
+    pyproject = _AGENTS_DIR / folder / "pyproject.toml"
+    return pyproject if pyproject.exists() else _AGENTS_DIR / folder / "requirements.txt"
+
+
+def _setup_with_uv(folder: str) -> tuple[bool, str]:
+    """Build one agent's environment from its pyproject.toml + uv.lock.
+
+    `uv sync` creates the `.venv` itself and installs the exact versions the
+    lock file records, so a developer's environment matches the one CI resolved
+    rather than whatever the ranges happen to allow today.
+    """
+    if shutil.which("uv") is None:
+        return False, "uv is not on PATH. Install it from https://docs.astral.sh/uv/"
+    result = subprocess.run(
+        ["uv", "sync", "--project", str(_AGENTS_DIR / folder)],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0, result.stdout + result.stderr
+
+
+def _setup_with_pip(folder: str) -> tuple[bool, str]:
+    """Build one agent's environment from its requirements.txt."""
+    venv_dir = _venv_dir(folder)
+    if not venv_dir.exists():
+        created = subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            capture_output=True,
+            text=True,
+        )
+        if created.returncode != 0:
+            return False, created.stdout + created.stderr
+
+    python = venv_dir / _VENV_PYTHON
+    installed = subprocess.run(
+        [str(python), "-m", "pip", "install", "-q", "-r", str(_AGENTS_DIR / folder / "requirements.txt")],
+        capture_output=True,
+        text=True,
+    )
+    return installed.returncode == 0, installed.stdout + installed.stderr
+
+
 def setup() -> None:
-    """Create a virtual environment per agent and install its requirements.
+    """Create a virtual environment per agent and install its dependencies.
 
     One agent failing must not stop the other eight: each is independent, so
     every failure is collected and reported at the end instead of aborting.
@@ -101,36 +150,22 @@ def setup() -> None:
     failures: list[tuple[str, str, str]] = []
 
     for agent_name, folder in _AGENT_FOLDERS.items():
-        venv_dir = _venv_dir(folder)
-        requirements = _AGENTS_DIR / folder / "requirements.txt"
+        manifest = _manifest(folder)
 
         print(f"--- {agent_name} ({folder})")
-        if not venv_dir.exists():
-            created = subprocess.run(
-                [sys.executable, "-m", "venv", str(venv_dir)],
-                capture_output=True,
-                text=True,
-            )
-            if created.returncode != 0:
-                print("    FAILED to create venv\n")
-                failures.append((agent_name, folder, created.stdout + created.stderr))
-                continue
-            print(f"    created {venv_dir.relative_to(_REPO_ROOT)}")
+        if manifest.name == "pyproject.toml":
+            ok, output = _setup_with_uv(folder)
+            tool = "uv sync"
         else:
-            print("    venv already exists, reusing")
+            ok, output = _setup_with_pip(folder)
+            tool = "pip install"
 
-        python = venv_dir / _VENV_PYTHON
-        installed = subprocess.run(
-            [str(python), "-m", "pip", "install", "-q", "-r", str(requirements)],
-            capture_output=True,
-            text=True,
-        )
-        if installed.returncode != 0:
-            print("    FAILED to install requirements\n")
-            failures.append((agent_name, folder, installed.stdout + installed.stderr))
+        if not ok:
+            print(f"    FAILED ({tool})\n")
+            failures.append((agent_name, folder, output))
             continue
 
-        print(f"    installed {requirements.relative_to(_REPO_ROOT)}\n")
+        print(f"    {tool} -> {manifest.relative_to(_REPO_ROOT)}\n")
 
     succeeded = len(_AGENT_FOLDERS) - len(failures)
     print(f"\n{'=' * 72}")
@@ -142,7 +177,7 @@ def setup() -> None:
 
     print(f"\n{len(failures)} failed:\n")
     for agent_name, folder, output in failures:
-        print(f"  {agent_name}  (backend/agents/{folder}/requirements.txt)")
+        print(f"  {agent_name}  ({_manifest(folder).relative_to(_REPO_ROOT)})")
         hint = _explain(output)
         if hint:
             print(f"    -> {hint}")

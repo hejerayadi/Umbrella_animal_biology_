@@ -2,7 +2,11 @@ import asyncio
 from typing import Any
 
 from backend.agents.Protein_visualization.app.domain.enums import PreferredSource, StructureSource
-from backend.agents.Protein_visualization.app.domain.models import ProteinStructureRequest, ResolvedProtein, StructureCandidate
+from backend.agents.Protein_visualization.app.domain.models import (
+    ProteinStructureRequest,
+    ResolvedProtein,
+    StructureCandidate,
+)
 from backend.agents.Protein_visualization.app.tools.alphafold_client import AlphaFoldClient
 from backend.agents.Protein_visualization.app.tools.rcsb_client import RCSBClient
 

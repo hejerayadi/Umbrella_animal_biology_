@@ -1,11 +1,10 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
 from backend.agents.Protein_visualization.app.persistence import models  # noqa: F401
 from backend.agents.Protein_visualization.app.persistence.db import Base
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

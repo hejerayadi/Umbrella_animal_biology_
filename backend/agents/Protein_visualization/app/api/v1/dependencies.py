@@ -11,7 +11,10 @@ from backend.agents.Protein_visualization.app.capabilities.retrieval import Retr
 from backend.agents.Protein_visualization.app.capabilities.structures import StructureCapability
 from backend.agents.Protein_visualization.app.capabilities.visualization import VisualizationCapability
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
-from backend.agents.Protein_visualization.app.knowledge_base.embeddings import BgeM3Embedding, EmbeddingProvider
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import (
+    BgeM3Embedding,
+    EmbeddingProvider,
+)
 from backend.agents.Protein_visualization.app.knowledge_base.ingestion import KnowledgeIngestionService
 from backend.agents.Protein_visualization.app.knowledge_base.qdrant import QdrantDependencyError, QdrantStore
 from backend.agents.Protein_visualization.app.knowledge_base.retrieval import KnowledgeBase
@@ -19,7 +22,13 @@ from backend.agents.Protein_visualization.app.llm.azure_foundry import AzureFoun
 from backend.agents.Protein_visualization.app.orchestrators.protein.graph import build_graph
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes import ProteinNodes
 from backend.agents.Protein_visualization.app.orchestrators.protein.orchestrator import ProteinOrchestrator
-from backend.agents.Protein_visualization.app.tools import AlphaFoldClient, InterProClient, RCSBClient, SiftsClient, UniProtClient
+from backend.agents.Protein_visualization.app.tools import (
+    AlphaFoldClient,
+    InterProClient,
+    RCSBClient,
+    SiftsClient,
+    UniProtClient,
+)
 
 if TYPE_CHECKING:  # SQLAlchemy is only imported when persistence is enabled
     from app.persistence.repositories import AnalysisRepository

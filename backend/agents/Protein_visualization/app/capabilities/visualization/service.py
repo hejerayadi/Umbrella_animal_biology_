@@ -1,6 +1,11 @@
 from typing import Any
 
-from backend.agents.Protein_visualization.app.domain.models import Annotation, ResidueMapping, StructureCandidate, VisualizationSpec
+from backend.agents.Protein_visualization.app.domain.models import (
+    Annotation,
+    ResidueMapping,
+    StructureCandidate,
+    VisualizationSpec,
+)
 
 
 class VisualizationCapability:

@@ -13,7 +13,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from backend.agents.Protein_visualization.app.configuration.settings import Settings
-from backend.agents.Protein_visualization.app.llm.prompts import PROTEIN_EXPLANATION_SYSTEM_PROMPT, SCIENTIFIC_CRITIC_SYSTEM_PROMPT
+from backend.agents.Protein_visualization.app.llm.prompts import (
+    PROTEIN_EXPLANATION_SYSTEM_PROMPT,
+    SCIENTIFIC_CRITIC_SYSTEM_PROMPT,
+)
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
 
 logger = logging.getLogger("app.llm")

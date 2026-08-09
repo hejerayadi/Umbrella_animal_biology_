@@ -8,7 +8,12 @@ from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus
 from backend.agents.Protein_visualization.app.domain.exceptions import ProteinAgentError
 from backend.agents.Protein_visualization.app.domain.models import EvidenceRef, StructureCandidate
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
-from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import degraded, executed, failure_code, logger
+from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import (
+    degraded,
+    executed,
+    failure_code,
+    logger,
+)
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import (
     EVALUATE_PDB,
     SEARCH_ALPHAFOLD,

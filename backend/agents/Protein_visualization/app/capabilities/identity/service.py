@@ -2,7 +2,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.agents.Protein_visualization.app.domain.exceptions import ProteinNotFoundError
-from backend.agents.Protein_visualization.app.domain.models import EvidenceRef, ProteinStructureRequest, ResolvedProtein
+from backend.agents.Protein_visualization.app.domain.models import (
+    EvidenceRef,
+    ProteinStructureRequest,
+    ResolvedProtein,
+)
 from backend.agents.Protein_visualization.app.tools.uniprot_client import UniProtClient
 
 

@@ -6,7 +6,10 @@ model may then confirm it or make it stricter — never more permissive.
 
 import logging
 
-from backend.agents.Protein_visualization.app.capabilities.explanation.service import LanguageModel, evidence_context
+from backend.agents.Protein_visualization.app.capabilities.explanation.service import (
+    LanguageModel,
+    evidence_context,
+)
 from backend.agents.Protein_visualization.app.domain.enums import ValidationStatus
 from backend.agents.Protein_visualization.app.domain.models import (
     CriticReport,

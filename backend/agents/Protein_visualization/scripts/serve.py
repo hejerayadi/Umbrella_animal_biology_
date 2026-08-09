@@ -8,7 +8,7 @@ from backend.agents.Protein_visualization.app.configuration.settings import get_
 def main() -> None:
     settings = get_settings()
     uvicorn.run(
-        "app.main:app",
+        "backend.agents.Protein_visualization.app.main:app",
         host=settings.app_host,
         port=settings.app_port,
         reload=settings.app_reload,

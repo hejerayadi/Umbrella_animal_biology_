@@ -1,5 +1,8 @@
 from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit
-from backend.agents.Protein_visualization.app.knowledge_base.embeddings import EmbeddingProvider, HashEmbedding
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import (
+    EmbeddingProvider,
+    HashEmbedding,
+)
 from backend.agents.Protein_visualization.app.knowledge_base.qdrant import QdrantStore
 from backend.agents.Protein_visualization.app.knowledge_base.schemas import KnowledgeDocument
 

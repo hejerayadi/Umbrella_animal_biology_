@@ -13,24 +13,36 @@ on:
       - ".github/workflows/protein-agent-ci.yml"
   workflow_dispatch:
 
+env:
+  # Every step runs from the repository root, because the agent imports itself
+  # as backend.agents.Protein_visualization.* and that package is rooted here.
+  AGENT: backend/agents/Protein_visualization
+  UV_PYTHON: "3.12"
+
 jobs:
   offline-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+
+      - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: backend/agents/Protein_visualization/requirements*.txt
+          enable-cache: true
+          cache-dependency-glob: backend/agents/Protein_visualization/uv.lock
+
+      # --locked fails the build if pyproject.toml and uv.lock have drifted
+      # apart, so a dependency can never change without its lock entry.
       - name: Install dependencies
-        working-directory: backend/agents/Protein_visualization
-        run: pip install -r requirements-dev.txt
+        run: uv sync --project "$AGENT" --locked
+
       - name: Lint
-        run: ruff check backend/agents/Protein_visualization
+        run: uv run --project "$AGENT" ruff check "$AGENT"
+
       - name: Format check
-        run: ruff format --check backend/agents/Protein_visualization
+        run: uv run --project "$AGENT" ruff format --check "$AGENT"
+
       - name: Type check
-        run: mypy --config-file backend/agents/Protein_visualization/mypy.ini backend/agents/Protein_visualization/app
+        run: uv run --project "$AGENT" mypy --config-file "$AGENT/pyproject.toml" "$AGENT/app"
+
       - name: Offline tests
-        run: pytest backend/agents/Protein_visualization/tests -q -m "not live and not bge and not qdrant"
+        run: uv run --project "$AGENT" pytest "$AGENT/tests" -q -m "not live and not bge and not qdrant"

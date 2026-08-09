@@ -4,7 +4,12 @@ from backend.agents.Protein_visualization.app.capabilities.explanation import Ex
 from backend.agents.Protein_visualization.app.capabilities.structures import StructureCapability
 from backend.agents.Protein_visualization.app.capabilities.visualization import VisualizationCapability
 from backend.agents.Protein_visualization.app.domain.enums import ValidationStatus
-from backend.agents.Protein_visualization.app.domain.models import CriticReport, EvidencePack, EvidenceRef, KnowledgeHit
+from backend.agents.Protein_visualization.app.domain.models import (
+    CriticReport,
+    EvidencePack,
+    EvidenceRef,
+    KnowledgeHit,
+)
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
 from backend.agents.Protein_visualization.tests.factories import (
     P53,

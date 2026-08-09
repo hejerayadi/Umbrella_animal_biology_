@@ -15,6 +15,8 @@ from backend.agents.Protein_visualization.app.observability.logging import (
     log_stage,
 )
 
+LOGGING_MODULE = "backend.agents.Protein_visualization.app.observability.logging"
+
 
 def _record(caplog: pytest.LogCaptureFixture) -> dict[str, object]:
     assert len(caplog.records) == 1
@@ -123,12 +125,12 @@ def test_pretty_marks_revise_verdict_as_warning() -> None:
 
 
 def test_text_alias_selects_rich_handler_and_json_keeps_json_formatter() -> None:
-    with patch("app.observability.logging.logging.basicConfig") as basic_config:
+    with patch(f"{LOGGING_MODULE}.logging.basicConfig") as basic_config:
         configure_logging("INFO", "text")
         pretty_handler = basic_config.call_args.kwargs["handlers"][0]
     assert isinstance(pretty_handler, RichStructuredHandler)
 
-    with patch("app.observability.logging.logging.basicConfig") as basic_config:
+    with patch(f"{LOGGING_MODULE}.logging.basicConfig") as basic_config:
         configure_logging("INFO", "json")
         json_handler = basic_config.call_args.kwargs["handlers"][0]
     assert isinstance(json_handler.formatter, JsonFormatter)

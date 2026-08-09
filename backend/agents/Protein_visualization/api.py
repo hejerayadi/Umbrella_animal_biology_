@@ -10,6 +10,7 @@ Run it (from the repository root, with this agent's venv active):
 
     python -m uvicorn backend.agents.Protein_visualization.api:app --port 8008
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI
@@ -36,6 +37,4 @@ def execute(request: AgentRequest) -> AgentResult:
         # one schema back every time, and it already knows how to handle a
         # FAILED status. A 500 with FastAPI's {"detail": ...} body would break
         # that contract.
-        return AgentResult(
-            status=AgentStatus.FAILED, output=f"Protein Visualization Agent error: {exc}"
-        )
+        return AgentResult(status=AgentStatus.FAILED, output=f"Protein Visualization Agent error: {exc}")
