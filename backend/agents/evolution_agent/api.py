@@ -1,26 +1,41 @@
 """HTTP boundary for the Evolution Agent.
 
-Communication only — this layer holds no business logic. It receives a
-request from the Global Orchestrator, validates it into ``AgentRequest``,
-hands it to the agent implementation, and returns whatever ``AgentResult``
-comes back. The orchestrator is the only caller; the frontend never
-reaches an agent directly.
+Follows the exact same pattern as multimodal_recognition_agent:
+  - POST /execute accepts AgentRequest (instruction + context)
+  - Returns AgentResult with status / target_agent / output
+  - output is a rich dict with all domain fields
+  - Never raises — exceptions become FAILED AgentResult
+
+The output dict shape mirrors what the recognition agent returns:
+  {
+    "evolution": {
+      "decision": "analysis_complete",
+      "text_alignment": "neutral",
+      "score_is_mock": true,
+      "explanation": "Analysed 3 species...",
+      "clarification_question": null
+    },
+    "species_list":       [...],
+    "closest_species":    [...],
+    "species_groups":     [[...]],
+    "similarity_network": {...},
+    "similarity_scores":  [...],
+    "evolutionary_tree":  "(...);",
+    "model":              "LG+G4",
+    "bootstrap_support":  {...},
+    "confidence_values":  {...},
+    "overall_confidence": 0.93,
+    "alignment_url":      "https://...",
+    "tree_url":           "https://...",
+    "source_agents":      [...]
+  }
 
 Which implementation answers is chosen by EVOLUTION_AGENT_IMPL:
+  mock         (default) the stub in mock.py
+  orchestrator the real LangGraph pipeline via orchestrator_adapter.py
 
-    EVOLUTION_AGENT_IMPL=mock          (default) the stub in ``mock.py``
-    EVOLUTION_AGENT_IMPL=orchestrator  the real LangGraph orchestrator,
-                                       reached through
-                                       ``orchestrator_adapter.py``
-
-The default stays ``mock`` so this endpoint cannot start failing because
-an LLM key is missing on someone's machine. The orchestrator path needs
-this agent's own venv and a configured LLM backend for intent
-classification.
-
-Run it (from the repository root, with this agent's venv active):
-
-    python -m uvicorn backend.agents.evolution_agent.api:app --port 8002
+Run (from repo root):
+  python -m uvicorn backend.agents.evolution_agent.api:app --port 8002 --reload
 """
 
 from __future__ import annotations
@@ -36,80 +51,92 @@ from .schema import AgentRequest, AgentResult, AgentStatus
 
 _logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Evolution Agent")
+app = FastAPI(
+    title="Evolution Agent",
+    description=(
+        "Analyses evolutionary relationships between species.\n\n"
+        "Pipeline: **Molecular Comparison** (MAFFT + ESM-C) "
+        "→ **Phylogenetic Reconstruction** (IQ-TREE + UFBoot).\n\n"
+        "All tools are mocked in Sprint 2 (`score_is_mock: true`)."
+    ),
+    version="2.0.0",
+)
 
+
+# ---------------------------------------------------------------------------
+# Agent builder
+# ---------------------------------------------------------------------------
 
 def _build_agent():
-    """Pick the implementation this process serves.
-
-    A failure to build the orchestrator falls back to the mock rather than
-    killing the service: an agent that answers something is more useful to
-    the Global Orchestrator than a port that never opens.
-    """
     impl = os.getenv("EVOLUTION_AGENT_IMPL", "mock").strip().lower()
 
     if impl != "orchestrator":
         print(
             f"[Evolution] serving MOCK (EVOLUTION_AGENT_IMPL={impl!r}). "
-            f"Set EVOLUTION_AGENT_IMPL=orchestrator for the real orchestrator.",
+            "Set EVOLUTION_AGENT_IMPL=orchestrator for the real orchestrator.",
             flush=True,
         )
         return EvolutionMock()
 
     try:
         from .orchestrator_adapter import OrchestratorEvolutionAgent
-
         agent = OrchestratorEvolutionAgent()
         print("[Evolution] serving the LangGraph ORCHESTRATOR", flush=True)
         return agent
-    except Exception as exc:  # noqa: BLE001 — startup must not crash the service
+    except Exception as exc:  # noqa: BLE001
         print(
-            f"[Evolution] EVOLUTION_AGENT_IMPL=orchestrator but it could NOT be "
-            f"built ({type(exc).__name__}: {exc}); falling back to MOCK.",
+            f"[Evolution] orchestrator failed to build "
+            f"({type(exc).__name__}: {exc}); falling back to MOCK.",
             flush=True,
         )
         _logger.warning("orchestrator build failed", exc_info=True)
         return EvolutionMock()
 
 
-# Built once at startup rather than per request: mocks are free to construct,
-# but real implementations compile LangGraph graphs and open connections, and
-# this keeps that cost out of the request path.
 _agent = _build_agent()
 
 
-@app.get("/health")
-def health() -> dict:
-    """Which implementation this process is actually serving.
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
-    Cheap way to answer "did the environment variable take?" without
-    sending a real request and inferring the answer from the shape of
-    the output.
-    """
+@app.get("/health", summary="Health check")
+def health() -> dict:
+    """Returns which implementation is currently active."""
     return {
-        "agent": "Evolution",
-        "implementation": type(_agent).__name__,
+        "agent":           "Evolution",
+        "implementation":  type(_agent).__name__,
         "is_orchestrator": type(_agent).__name__ == "OrchestratorEvolutionAgent",
     }
 
 
-@app.post("/execute", response_model=AgentResult)
+@app.post(
+    "/execute",
+    response_model=AgentResult,
+    summary="Run evolutionary analysis",
+    description=(
+        "Send a species list and a question. "
+        "Returns similarity scores, species groups, and a phylogenetic tree.\n\n"
+        "**Minimal request:**\n"
+        "```json\n"
+        '{"instruction": "Compare human, chimp and mouse.", '
+        '"context": {"species_list": ["homo sapiens", "pan troglodytes", "mus musculus"]}}\n'
+        "```\n\n"
+        "**With GPT-5-mini intent classification** "
+        "(set `EVOLUTION_AGENT_IMPL=orchestrator`):\n"
+        "```json\n"
+        '{"instruction": "How are human and chimp related evolutionarily?", "context": {}}\n'
+        "```"
+    ),
+)
 async def execute(request: AgentRequest) -> AgentResult:
-    """The agent's single endpoint. Always answers with an ``AgentResult``."""
-
+    """The agent's single endpoint. Always answers with an AgentResult."""
     try:
-        # The mock answers synchronously; the orchestrator is async.
-        # Awaiting only when there is something to await lets one code path
-        # serve both without duplicating the error handling below.
         result = _agent.run(request)
         if inspect.isawaitable(result):
             result = await result
         return result
-    except Exception as exc:  # noqa: BLE001 — boundary must not leak exceptions
-        # Deliberately not an HTTPException: the Global Orchestrator expects
-        # one schema back every time, and it already knows how to handle
-        # FAILED. A 500 with FastAPI's {"detail": ...} body would break that
-        # contract.
+    except Exception as exc:  # noqa: BLE001
         return AgentResult(
             status=AgentStatus.FAILED,
             output=f"Evolution Agent error: {exc}",

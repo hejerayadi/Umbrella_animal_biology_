@@ -38,7 +38,12 @@
     "context": "dict"
   },
   "output": {
-    "evolution_report": "dict",
+    "evolution": "dict",
+    "species_list": "list[string]",
+    "newick_tree": "string",
+    "model": "string",
+    "similarity_scores": "list[dict]",
+    "species_groups": "list[dict]",
     "alignment_url": "string | null",
     "tree_url": "string | null"
   }

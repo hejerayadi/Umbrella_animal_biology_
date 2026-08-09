@@ -1,34 +1,35 @@
 """Shared data contracts for the Evolution Agent domain.
 
-Sprint 2 introduces three rich result types that flow through the
-sequential pipeline:
+Two layers of contracts live here:
 
-    MolecularComparisonResult   — output of the Molecular Comparison subagent
-    PhylogeneticResult          — output of the Phylogenetic Reconstruction subagent
-    EvolutionAnalysisResult     — the final assembled payload returned to the
-                                  Global Orchestrator
+  PUBLIC CONTRACT (Swagger-visible, presentation-aligned)
+  -------------------------------------------------------
+  EvolutionInput   — exactly what the presentation slide defines
+  EvolutionOutput  — exactly what the presentation slide defines
 
-The platform-wide contract (AgentRequest / AgentResult / AgentStatus)
-is kept unchanged so the HTTP boundary and every existing caller continues
-to work without modification.  EvolutionAnalysisResult is wrapped inside
-AgentResult.output by the adapter.
+  INTERNAL PIPELINE TYPES (Sprint 2)
+  -----------------------------------
+  MolecularComparisonResult  — output of Subagent 1
+  PhylogeneticResult         — output of Subagent 2
+  EvolutionAnalysisResult    — assembled result handed to the adapter
+
+  PLATFORM CONTRACT (unchanged, compatible with Global Orchestrator)
+  ------------------------------------------------------------------
+  AgentRequest / AgentResult / AgentStatus
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 # ---------------------------------------------------------------------------
 # Platform-wide status & feature enum
 # ---------------------------------------------------------------------------
 
-
 class AgentStatus(Enum):
-    """Universal execution status used across every agent in the platform."""
-
     COMPLETED   = "completed"
     NEEDS_AGENT = "needs_agent"
     CONTINUE    = "continue"
@@ -36,121 +37,140 @@ class AgentStatus(Enum):
 
 
 class EvolutionaryFeature(str, Enum):
-    """The skills the Evolution Agent can route to.
-
-    Sprint 2: the full run always executes BOTH in sequence
-    (molecular_comparison → phylogenetic_tree).  The single-feature
-    values are kept so the router and adapter stay backwards-compatible.
-    """
-
     MOLECULAR_COMPARISON = "molecular_comparison"
     PHYLOGENETIC_TREE    = "phylogenetic_tree"
 
 
 # ---------------------------------------------------------------------------
-# Platform-wide request / result
+# PUBLIC CONTRACT — exactly as defined in the presentation
 # ---------------------------------------------------------------------------
+
+@dataclass
+class EvolutionInput:
+    """Public input contract shown in the presentation.
+
+    The /execute endpoint accepts this shape from Swagger / the Global
+    Orchestrator.
+
+    Fields
+    ------
+    species                : list of species names to compare (min 2).
+                             Common names are accepted ("human", "chimp").
+    question               : the free-text question driving the analysis.
+    target_gene_or_protein : optional gene or protein to focus on
+                             (e.g. "cytochrome b", "hemoglobin").
+    protein_inputs         : optional pre-fetched protein sequences in
+                             FASTA format; skips NCBI/UniProt fetch when set.
+    outgroup               : optional outgroup species for tree rooting.
+    """
+
+    species:                list[str]
+    question:               str
+    target_gene_or_protein: Optional[str]       = None
+    protein_inputs:         Optional[list[str]] = None
+    outgroup:               Optional[str]        = None
 
 
 @dataclass
-class AgentRequest:
-    """Standard input contract for any agent, extended for evolution.
+class EvolutionOutput:
+    """Public output contract shown in the presentation.
 
-    ``instruction`` and ``context`` are the minimal platform contract.
-    The remaining fields are optional evolution hints — when absent the
-    orchestrator infers them from ``context`` or falls back to defaults.
+    The /execute endpoint always returns this shape.
+
+    Fields
+    ------
+    status              : "completed" | "failed"
+    species             : canonical scientific names that were analysed
+    molecular_comparison: plain-language summary of the MC step
+    closest_species     : the two most similar species in the comparison
+    species_groups      : clusters of evolutionarily close species
+                          [[species_a, species_b], [species_c], ...]
+    similarity_network  : JSON string of the full adjacency-list graph
+    evolutionary_tree   : Newick tree string
+    explanation         : one-sentence plain-language summary of the result
+    """
+
+    status:               str
+    species:              list[str]
+    molecular_comparison: Optional[str]             = None
+    closest_species:      Optional[list[str]]        = None
+    species_groups:       Optional[list[list[str]]]  = None
+    similarity_network:   Optional[str]              = None
+    evolutionary_tree:    Optional[str]              = None
+    explanation:          Optional[str]              = None
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM CONTRACT — minimal change, keeps Global Orchestrator compatible
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AgentRequest:
+    """Standard platform input contract, extended with all EvolutionInput fields.
+
+    The /execute endpoint converts EvolutionInput → AgentRequest before
+    handing off to the orchestrator.
     """
 
     instruction: str
     context: dict[str, Any] = field(default_factory=dict)
 
-    # Which skill to run (set by adapter; "full_analysis" triggers the
-    # full sequential pipeline).
-    feature: str | None = None
+    feature:          str | None  = None
+    species_list:     list[str]   = field(default_factory=list)
+    reference_species: str | None = None   # maps to EvolutionInput.outgroup
+    session_id:       str | None  = None
 
-    # Molecular comparison and phylogenetic tree both work on a list of
-    # species (at least 2).
-    species_list: list[str] = field(default_factory=list)
-
-    # Optional anchor species for tree rooting.
-    reference_species: str | None = None
-
-    session_id: str | None = None
+    # EvolutionInput extras — carried through to workers
+    target_gene_or_protein: str | None       = None
+    protein_inputs:         list[str] | None = None
 
 
 @dataclass
 class AgentResult:
-    """Standard output contract, extended with evolution payload fields.
-
-    ``output`` carries the EvolutionAnalysisResult (or an error string).
-    The domain-specific convenience fields let downstream agents read the
-    most important results without unpacking ``output``.
-    """
+    """Standard platform output contract."""
 
     status: AgentStatus
 
-    # Escalation fields — populated when status == NEEDS_AGENT
-    target_agent: str | None = None
-    prompt_to_target_agent: str | None = None
+    target_agent:            str | None = None
+    prompt_to_target_agent:  str | None = None
+    output:                  Any | None = None
 
-    # Free-form payload — EvolutionAnalysisResult on success, str on failure
-    output: Any | None = None
-
-    # Convenience fields (mirrors what's inside output.phylogenetic)
-    newick_tree: str | None = None
-    tree_url:    str | None = None
-
-    # Convenience fields (mirrors what's inside output.molecular)
+    newick_tree:       str | None                 = None
+    tree_url:          str | None                 = None
     similarity_scores: list[dict[str, Any]] | None = None
-    alignment_url:     str | None = None
+    alignment_url:     str | None                 = None
 
-    # Provenance / trust
-    confidence:    float | None = None
-    source_agents: list[str] = field(default_factory=list)
+    confidence:    float | None  = None
+    source_agents: list[str]     = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
-# Sprint 2 rich result types
+# INTERNAL PIPELINE TYPES
 # ---------------------------------------------------------------------------
-
 
 @dataclass
 class SimilarityEdge:
-    """A single edge in the similarity network."""
-
     species_a: str
     species_b: str
-    score:     float   # cosine similarity of ESMC embeddings, in [0, 1]
+    score:     float
 
 
 @dataclass
 class SpeciesGroup:
-    """A cluster of evolutionarily close species."""
-
     group_id:   int
     species:    list[str]
-    mean_score: float   # average intra-group similarity
+    mean_score: float
 
 
 @dataclass
 class MolecularComparisonResult:
-    """Everything the Molecular Comparison subagent produces.
+    """Output of Subagent 1 (Molecular Comparison).
 
     Tools mocked in Sprint 2: NCBI, UniProt, MAFFT, ESM-C, NetworkX.
-
-    Fields
-    ------
-    species_list    : canonical scientific names that were compared
-    alignment       : mock FASTA-format multiple sequence alignment
-    alignment_url   : URL to a rendered HTML alignment viewer
-    similarity_scores : pairwise cosine-similarity scores (ESMC embeddings)
-    species_groups  : clusters of evolutionarily similar species
-    similarity_network : adjacency-list representation of the similarity graph
-                         {species_name: [{"neighbour": str, "score": float}]}
     """
 
     species_list:       list[str]
-    alignment:          str                      # FASTA text
+    alignment:          str
     alignment_url:      str
     similarity_scores:  list[SimilarityEdge]
     species_groups:     list[SpeciesGroup]
@@ -159,41 +179,25 @@ class MolecularComparisonResult:
 
 @dataclass
 class PhylogeneticResult:
-    """Everything the Phylogenetic Reconstruction subagent produces.
+    """Output of Subagent 2 (Phylogenetic Reconstruction).
 
     Tools mocked in Sprint 2: IQ-TREE, ModelFinder, UFBoot.
-
-    Fields
-    ------
-    newick_tree       : Newick-format tree string
-    tree_url          : URL to rendered SVG/HTML tree
-    model             : substitution model selected by ModelFinder (mock)
-    bootstrap_support : per-node bootstrap values {node_label: int (0-100)}
-    confidence_values : per-leaf confidence {species: float in [0,1]}
-    overall_confidence: mean UFBoot support across all internal nodes
     """
 
     newick_tree:        str
     tree_url:           str
-    model:              str                      # e.g. "LG+G4"
-    bootstrap_support:  dict[str, int]           # node label → UFBoot %
-    confidence_values:  dict[str, float]         # leaf → confidence
+    model:              str
+    bootstrap_support:  dict[str, int]
+    confidence_values:  dict[str, float]
     overall_confidence: float
 
 
 @dataclass
 class EvolutionAnalysisResult:
-    """The final assembled output of the full pipeline.
+    """Final assembled result — input to the adapter's to_platform_result()."""
 
-    Produced by the orchestrator's assemble node after both subagents
-    have run.  This is what gets wrapped inside AgentResult.output and
-    then inside {"evolution_report": ...} by the adapter.
-    """
-
-    species_list: list[str]
-    molecular:    MolecularComparisonResult
-    phylogenetic: PhylogeneticResult
-
-    # Flat convenience fields for quick access by downstream agents
-    overall_confidence: float           # mean of MC mean-score + phylo confidence
+    species_list:       list[str]
+    molecular:          MolecularComparisonResult
+    phylogenetic:       PhylogeneticResult
+    overall_confidence: float
     source_agents:      list[str] = field(default_factory=list)

@@ -43,41 +43,42 @@ def _sep(label: str) -> None:
 
 
 def _as_analysis(result) -> EvolutionAnalysisResult:
-    """Normalise result.output (dataclass or wrapped evolution_report dict)."""
+    """Normalise result.output (dataclass or flat platform dict)."""
     output = result.output
     if isinstance(output, EvolutionAnalysisResult):
         return output
-    if isinstance(output, dict) and "evolution_report" in output:
-        output = output["evolution_report"]
-    if isinstance(output, dict) and "molecular" in output:
+    if isinstance(output, dict) and "newick_tree" in output:
         from backend.agents.evolution_agent.schema import (
             MolecularComparisonResult,
             PhylogeneticResult,
             SimilarityEdge,
             SpeciesGroup,
         )
-        m = output["molecular"]
-        p = output["phylogenetic"]
+        species = output["species_list"]
         return EvolutionAnalysisResult(
-            species_list=output["species_list"],
+            species_list=species,
             molecular=MolecularComparisonResult(
-                species_list=m["species_list"],
-                alignment=m["alignment"],
-                alignment_url=m["alignment_url"],
-                similarity_scores=[SimilarityEdge(**e) for e in m["similarity_scores"]],
-                species_groups=[SpeciesGroup(**g) for g in m["species_groups"]],
-                similarity_network=m["similarity_network"],
+                species_list=[s.lower() for s in species],
+                alignment="",
+                alignment_url=output.get("alignment_url", ""),
+                similarity_scores=[
+                    SimilarityEdge(**e) for e in output["similarity_scores"]
+                ],
+                species_groups=[
+                    SpeciesGroup(**g) for g in output["species_groups"]
+                ],
+                similarity_network={},
             ),
             phylogenetic=PhylogeneticResult(
-                newick_tree=p["newick_tree"],
-                tree_url=p["tree_url"],
-                model=p["model"],
-                bootstrap_support=p["bootstrap_support"],
-                confidence_values=p["confidence_values"],
-                overall_confidence=p["overall_confidence"],
+                newick_tree=output["newick_tree"],
+                tree_url=output.get("tree_url", ""),
+                model=output["model"],
+                bootstrap_support=output.get("bootstrap_support", {}),
+                confidence_values=output.get("confidence_values", {}),
+                overall_confidence=output.get("overall_confidence", 0.0),
             ),
-            overall_confidence=output["overall_confidence"],
-            source_agents=output.get("source_agents", []),
+            overall_confidence=output.get("overall_confidence", 0.0),
+            source_agents=["Evolution Agent Orchestrator"],
         )
     raise TypeError(f"cannot interpret output of type {type(output)!r}")
 

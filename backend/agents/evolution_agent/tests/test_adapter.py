@@ -236,7 +236,7 @@ def test_to_orchestrator_request_sets_feature_and_species() -> None:
 # adapter: result reshaping
 # ---------------------------------------------------------------------------
 
-def test_completed_result_publishes_evolution_report() -> None:
+def test_completed_result_publishes_flat_evolution_output() -> None:
     analysis = _make_mock_analysis()
     mapped = to_platform_result(
         AgentResult(
@@ -249,12 +249,19 @@ def test_completed_result_publishes_evolution_report() -> None:
         )
     )
     assert mapped.status is AgentStatus.COMPLETED
-    assert "evolution_report" in mapped.output
+    # Flat structure — all keys at top level, no nested "evolution" wrapper
+    assert mapped.output["status"]        == "completed"
+    assert mapped.output["decision"]      == "analysis_complete"
+    assert mapped.output["explanation"]
+    assert mapped.output["score_is_mock"] is True
+    assert mapped.output["species_list"]
+    assert mapped.output["newick_tree"]
+    assert mapped.output["model"]
     assert mapped.output["alignment_url"]
     assert mapped.output["tree_url"]
 
 
-def test_evolution_report_is_json_serialisable() -> None:
+def test_evolution_output_is_json_serialisable() -> None:
     mapped = to_platform_result(
         AgentResult(status=AgentStatus.COMPLETED, output=_make_mock_analysis())
     )
