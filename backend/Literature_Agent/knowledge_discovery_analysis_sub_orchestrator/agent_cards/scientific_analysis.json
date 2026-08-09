@@ -1,0 +1,30 @@
+{
+  "name": "scientific_analysis",
+  "display_name": "Scientific Analysis Sub Agent",
+  "description": "Analyse scientifique : réponse factuelle (QA/RAG), détection de contradictions dans la littérature, ou détection de lacunes de recherche.",
+  "capabilities": [
+    {
+      "id": "qa",
+      "description": "Répondre à une question factuelle précise via RAG"
+    },
+    {
+      "id": "contradiction_detection",
+      "description": "Détecter des contradictions/désaccords entre différentes sources de la littérature"
+    },
+    {
+      "id": "gap_detection",
+      "description": "Identifier des lacunes ou zones peu explorées dans la recherche"
+    }
+  ],
+  "input_schema": {
+    "capability": {
+      "type": "string",
+      "enum": ["qa", "contradiction_detection", "gap_detection"]
+    },
+    "query": {
+      "type": "string",
+      "description": "La requête reformulée à transmettre à cet agent"
+    }
+  },
+  "status": "planned"
+}

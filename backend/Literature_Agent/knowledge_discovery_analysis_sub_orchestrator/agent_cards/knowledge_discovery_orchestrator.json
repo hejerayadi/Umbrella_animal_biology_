@@ -1,0 +1,10 @@
+{
+  "name": "knowledge_discovery_orchestrator",
+  "display_name": "Knowledge Discovery & Analysis Sub-Orchestrator",
+  "description": "Sous-orchestrateur responsable de la découverte et l'analyse de connaissances scientifiques. Route les requêtes vers ses agents enfants (Retrieval and Knowledge Processing, Scientific Analysis).",
+  "children_agents": [
+    "retrieval_processing",
+    "scientific_analysis"
+  ],
+  "status": "in_development"
+}

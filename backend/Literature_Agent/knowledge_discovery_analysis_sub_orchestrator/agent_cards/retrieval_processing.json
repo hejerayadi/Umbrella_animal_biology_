@@ -1,0 +1,26 @@
+{
+  "name": "retrieval_processing",
+  "display_name": "Retrieval and Knowledge Processing Sub Agent",
+  "description": "Récupère et traite des connaissances : synthèse d'informations multi-sources ou résumé d'un document/ensemble de documents.",
+  "capabilities": [
+    {
+      "id": "synthesis",
+      "description": "Intégrer et synthétiser des informations issues de plusieurs sources différentes"
+    },
+    {
+      "id": "summary",
+      "description": "Résumer un document ou un ensemble de documents précis"
+    }
+  ],
+  "input_schema": {
+    "capability": {
+      "type": "string",
+      "enum": ["synthesis", "summary"]
+    },
+    "query": {
+      "type": "string",
+      "description": "La requête reformulée à transmettre à cet agent"
+    }
+  },
+  "status": "planned"
+}
