@@ -13,7 +13,7 @@ from app.capabilities.visualization import VisualizationCapability
 from app.configuration.settings import get_settings
 from app.knowledge_base.embeddings import BgeM3Embedding, EmbeddingProvider
 from app.knowledge_base.ingestion import KnowledgeIngestionService
-from app.knowledge_base.qdrant import QdrantStore
+from app.knowledge_base.qdrant import QdrantDependencyError, QdrantStore
 from app.knowledge_base.retrieval import KnowledgeBase
 from app.llm.azure_foundry import AzureFoundryClient
 from app.orchestrators.protein.graph import build_graph
@@ -39,16 +39,20 @@ def get_embedding_provider() -> EmbeddingProvider:
 def get_knowledge_base() -> KnowledgeBase:
     """Knowledge base backed by the managed Qdrant cluster when ``QDRANT_URL`` is set."""
     settings = get_settings()
-    store = (
-        QdrantStore(
+    if not settings.qdrant_url:
+        return KnowledgeBase(embedding=get_embedding_provider())
+    try:
+        store = QdrantStore(
             settings.qdrant_url,
             settings.qdrant_collection,
             settings.qdrant_api_key,
             settings.http_timeout_seconds,
         )
-        if settings.qdrant_url
-        else None
-    )
+    except (QdrantDependencyError, ValueError) as exc:
+        return KnowledgeBase(
+            embedding=get_embedding_provider(),
+            unavailable_reason=f"{type(exc).__name__}: {exc}",
+        )
     return KnowledgeBase(embedding=get_embedding_provider(), store=store)
 
 

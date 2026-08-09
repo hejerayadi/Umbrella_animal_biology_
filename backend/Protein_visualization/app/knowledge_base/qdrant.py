@@ -1,20 +1,55 @@
+from importlib import import_module
+from types import ModuleType
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
-
-from qdrant_client import AsyncQdrantClient, models
 
 from app.domain.models import KnowledgeHit
 from app.knowledge_base.schemas import KnowledgeDocument
 
 
+class QdrantDependencyError(RuntimeError):
+    """Raised when the optional Qdrant client cannot be loaded locally."""
+
+
+def _load_qdrant_client() -> tuple[type[Any], ModuleType]:
+    """Load Qdrant only when it is configured.
+
+    qdrant-client imports its local SQLite backend from ``__init__`` even when
+    the application only uses a remote cluster. Some managed Windows machines
+    block that SQLite DLL. Keeping the import lazy lets the rest of the protein
+    agent start and report Qdrant as degraded instead of crashing at import time.
+    """
+    try:
+        qdrant_client = import_module("qdrant_client")
+    except (ImportError, OSError) as exc:
+        raise QdrantDependencyError(
+            "qdrant-client could not be loaded; knowledge retrieval is disabled"
+        ) from exc
+    return qdrant_client.AsyncQdrantClient, qdrant_client.models
+
+
 class QdrantStore:
+    client: Any
+    _models: ModuleType | None
+
     def __init__(self, url: str, collection: str, api_key: str | None = None, timeout: float = 15.0) -> None:
-        self.client = AsyncQdrantClient(
+        async_qdrant_client, self._models = _load_qdrant_client()
+        self.client = async_qdrant_client(
             url=url,
             api_key=api_key,
             timeout=max(1, int(timeout)),
             check_compatibility=False,
         )
         self.collection = collection
+
+    @property
+    def models(self) -> ModuleType:
+        """Expose Qdrant models, including for lightweight test doubles."""
+        models = getattr(self, "_models", None)
+        if models is None:
+            _, models = _load_qdrant_client()
+            self._models = models
+        return models
 
     async def healthy(self) -> bool:
         try:
@@ -41,17 +76,20 @@ class QdrantStore:
         else:
             await self.client.create_collection(
                 self.collection,
-                vectors_config=models.VectorParams(size=dimensions, distance=models.Distance.COSINE),
+                vectors_config=self.models.VectorParams(
+                    size=dimensions,
+                    distance=self.models.Distance.COSINE,
+                ),
             )
 
         await self._ensure_payload_indexes()
 
     async def _ensure_payload_indexes(self) -> None:
         indexes = {
-            "domain": models.PayloadSchemaType.KEYWORD,
-            "protein_id": models.PayloadSchemaType.KEYWORD,
-            "taxonomy_id": models.PayloadSchemaType.INTEGER,
-            "document_type": models.PayloadSchemaType.KEYWORD,
+            "domain": self.models.PayloadSchemaType.KEYWORD,
+            "protein_id": self.models.PayloadSchemaType.KEYWORD,
+            "taxonomy_id": self.models.PayloadSchemaType.INTEGER,
+            "document_type": self.models.PayloadSchemaType.KEYWORD,
         }
         for field_name, field_schema in indexes.items():
             await self.client.create_payload_index(
@@ -83,7 +121,7 @@ class QdrantStore:
         await self.client.upsert(
             self.collection,
             points=[
-                models.PointStruct(
+                self.models.PointStruct(
                     id=str(uuid5(NAMESPACE_URL, f"umbrella:protein-knowledge:{document.document_id}")),
                     vector=vector,
                     payload=document.model_dump(mode="json"),
@@ -103,16 +141,21 @@ class QdrantStore:
         document_types: list[str] | None = None,
     ) -> list[KnowledgeHit]:
         must = [
-            models.FieldCondition(key="domain", match=models.MatchValue(value="protein")),
-            models.FieldCondition(key="protein_id", match=models.MatchValue(value=protein_id)),
-            models.FieldCondition(key="taxonomy_id", match=models.MatchValue(value=taxonomy_id)),
+            self.models.FieldCondition(key="domain", match=self.models.MatchValue(value="protein")),
+            self.models.FieldCondition(key="protein_id", match=self.models.MatchValue(value=protein_id)),
+            self.models.FieldCondition(key="taxonomy_id", match=self.models.MatchValue(value=taxonomy_id)),
         ]
         if document_types:
-            must.append(models.FieldCondition(key="document_type", match=models.MatchAny(any=document_types)))
+            must.append(
+                self.models.FieldCondition(
+                    key="document_type",
+                    match=self.models.MatchAny(any=document_types),
+                )
+            )
         response = await self.client.query_points(
             self.collection,
             query=vector,
-            query_filter=models.Filter(must=must),
+            query_filter=self.models.Filter(must=must),
             limit=limit,
             with_payload=True,
         )

@@ -5,9 +5,15 @@ from app.knowledge_base.schemas import KnowledgeDocument
 
 
 class KnowledgeBase:
-    def __init__(self, embedding: EmbeddingProvider | None = None, store: QdrantStore | None = None) -> None:
+    def __init__(
+        self,
+        embedding: EmbeddingProvider | None = None,
+        store: QdrantStore | None = None,
+        unavailable_reason: str | None = None,
+    ) -> None:
         self.embedding = embedding or HashEmbedding()
         self.store = store
+        self.unavailable_reason = unavailable_reason
         self._documents: dict[str, tuple[KnowledgeDocument, list[float]]] = {}
 
     async def ingest(self, documents: list[KnowledgeDocument]) -> int:
@@ -31,6 +37,8 @@ class KnowledgeBase:
         taxonomy_id: int | None = None,
         document_types: list[str] | None = None,
     ) -> list[KnowledgeHit]:
+        if self.unavailable_reason:
+            return []
         if not protein_id or taxonomy_id is None:
             return []
         vector = await self.embedding.embed(query)

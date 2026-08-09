@@ -49,15 +49,18 @@ async def ready() -> ApiResponse[ReadinessResponse]:
     settings = get_settings()
     knowledge_base = get_knowledge_base()
     store = knowledge_base.store
-    qdrant_reachable, qdrant_detail = (
-        await store.readiness(knowledge_base.embedding.dimensions)
-        if store
-        else (False, "QDRANT_URL is not set; retrieval is disabled")
-    )
+    if store:
+        qdrant_reachable, qdrant_detail = await store.readiness(knowledge_base.embedding.dimensions)
+    elif settings.qdrant_url:
+        qdrant_reachable = False
+        qdrant_detail = knowledge_base.unavailable_reason or "Qdrant client is unavailable"
+    else:
+        qdrant_reachable = False
+        qdrant_detail = "QDRANT_URL is not set; retrieval is disabled"
     qdrant = DependencyStatus(
         name="qdrant",
         configured=bool(settings.qdrant_url),
-        reachable=qdrant_reachable if store else None,
+        reachable=qdrant_reachable if settings.qdrant_url else None,
         detail=qdrant_detail,
     )
     llm = DependencyStatus(
