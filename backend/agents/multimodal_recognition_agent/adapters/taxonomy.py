@@ -340,3 +340,36 @@ class MockTaxonomyProvider:
                 degraded = True
                 enriched.append(candidate.model_copy(update={"taxonomy_status": "unverified"}))
         return enriched, degraded
+
+
+def build_taxonomy_provider(config: "RecognitionConfig") -> MockTaxonomyProvider:
+    """Construct the taxonomy provider the configured mode names, or refuse.
+
+    Same contract as `bioclip.build_classifier`: the fixture-backed provider is
+    reachable only through `mode == "mock"`, and a mode with no implementation
+    behind it raises instead of degrading to fixture data. Fixture taxonomy
+    served as though it were GBIF and NCBI would attach real-looking identifiers
+    to a species nobody looked up.
+    """
+    from ..config import (
+        TAXONOMY_PROVIDER_MODES,
+        ConfigError,
+    )
+
+    mode = (config.taxonomy_provider_mode or "").strip().lower()
+
+    if mode == "mock":
+        return MockTaxonomyProvider()
+
+    if mode in TAXONOMY_PROVIDER_MODES:
+        raise ConfigError(
+            f"TAXONOMY_PROVIDER_MODE={mode!r} has no implementation yet "
+            "(live GBIF and NCBI lookups arrive in Phase 4). Refusing to start "
+            "rather than serving fixture taxonomy as live lookups."
+        )
+
+    raise ConfigError(
+        "TAXONOMY_PROVIDER_MODE must be one of: "
+        + ", ".join(TAXONOMY_PROVIDER_MODES)
+        + f". Got {mode!r}."
+    )

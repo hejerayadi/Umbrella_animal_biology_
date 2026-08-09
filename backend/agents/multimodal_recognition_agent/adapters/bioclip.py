@@ -38,8 +38,12 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from ..config import (
+    BIOCLIP_IMPLEMENTED_MODES,
+    BIOCLIP_PROVIDER_MODES,
     MOCK_CLASSIFIER_VERSION,
     RECOGNITION_MODE_MOCK_CLASSIFICATION,
+    ConfigError,
+    RecognitionConfig,
 )
 from ..domain.errors import ErrorCode, RecognitionError
 from ..domain.models import BioCLIPTaxonPrediction, NormalizedRecognitionInput
@@ -220,3 +224,43 @@ class MockBioCLIP2Provider:
         )
 
         return predictions[:top_k]
+
+
+def build_classifier(config: RecognitionConfig) -> BioCLIP2Classifier:
+    """Construct the classifier the configured mode names, or refuse.
+
+    The mock is reachable only through `mode == "mock"`. That is the whole
+    reason this function exists: the agent used to build `MockBioCLIP2Provider`
+    unconditionally whenever no classifier was injected, so a deployment that
+    asked for real inference and never noticed the request was ignored would
+    have served fixture predictions under a production banner.
+
+    `real` raises here as well as in `RecognitionConfig.from_env`, because a
+    config object can also be built directly in code, and the guarantee this
+    function makes is "no mock outside mock mode" - not "no mock, provided
+    someone went through the environment".
+    """
+    mode = (config.bioclip_provider_mode or "").strip().lower()
+
+    if mode == "mock":
+        return MockBioCLIP2Provider(
+            version=config.mock_provider_version,
+            fixture_path=config.classification_fixture_path,
+        )
+
+    if mode in BIOCLIP_PROVIDER_MODES:
+        raise ConfigError(
+            f"BIOCLIP_PROVIDER_MODE={mode!r} has no implementation yet "
+            "(real BioCLIP-2 inference arrives in Phase 3). Refusing to start "
+            "rather than serving mock predictions as real ones."
+        )
+
+    raise ConfigError(
+        "BIOCLIP_PROVIDER_MODE must be one of: "
+        + ", ".join(BIOCLIP_PROVIDER_MODES)
+        + f". Got {mode!r}."
+    )
+
+
+# Named so a test can assert the two lists have not drifted apart.
+IMPLEMENTED_CLASSIFIER_MODES = BIOCLIP_IMPLEMENTED_MODES

@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import logging
 
-from .adapters.bioclip import BioCLIP2Classifier, MockBioCLIP2Provider
+from .adapters.bioclip import BioCLIP2Classifier, build_classifier
 from .adapters.reasoning_llm import ReasoningLLM, build_recognition_llm
-from .adapters.taxonomy import MockTaxonomyProvider
+from .adapters.taxonomy import MockTaxonomyProvider, build_taxonomy_provider
 from .config import RecognitionConfig
 from .domain.errors import RecognitionError
 from .schema import AgentRequest, AgentResult, AgentStatus
@@ -43,17 +43,28 @@ class RecognitionAgent:
     ) -> None:
         self.config = config or RecognitionConfig.from_env()
 
+        # An injected provider wins outright - that is how the offline suite
+        # supplies stubs with no environment, no network and no credentials.
+        # Nothing else may choose a provider: when none is injected the factory
+        # decides, and the factory refuses any mode it cannot honestly build.
         if classifier is None:
+            classifier = build_classifier(self.config)
             _logger.info(
-                "[Recognition] classification mode 'mock': deterministic Sprint 2 test "
-                "oracle. Real BioCLIP-2 inference is NOT executed."
-            )
-            classifier = MockBioCLIP2Provider(
-                version=self.config.mock_provider_version,
-                fixture_path=self.config.classification_fixture_path,
+                "[Recognition] classifier mode=%s provider=%s. Real BioCLIP-2 "
+                "inference is NOT executed in mock mode.",
+                self.config.bioclip_provider_mode,
+                getattr(classifier, "provider_name", "unknown"),
             )
 
-        taxonomy = taxonomy_provider or MockTaxonomyProvider()
+        if taxonomy_provider is None:
+            taxonomy = build_taxonomy_provider(self.config)
+            _logger.info(
+                "[Recognition] taxonomy mode=%s. No GBIF or NCBI call is made in "
+                "mock mode.",
+                self.config.taxonomy_provider_mode,
+            )
+        else:
+            taxonomy = taxonomy_provider
 
         # The analyser knows which names exist so it can tell "a species I know
         # that the classifier did not return" (a conflict) from "a word I do not

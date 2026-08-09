@@ -34,6 +34,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from ..config import (
+    DEFAULT_REASONING_LLM_TIMEOUT_SECONDS,
+    REASONING_LLM_PROVIDER_MODES,
+)
 from ..domain.models import Intent
 
 _logger = logging.getLogger(__name__)
@@ -559,7 +563,18 @@ class FakeGPT5MiniProvider:
 # always available and a request must never cost more than its two calls.
 # ===========================================================================
 
-_ENV_TIMEOUT = "AZURE_OPENAI_TIMEOUT_SECONDS"
+# There is deliberately no timeout variable here. The one bounded timeout for a
+# reasoning call is `RECOGNITION_LLM_TIMEOUT_SECONDS`, parsed once in `config.py`
+# and passed down to `AzureSettings`. This module used to read its own
+# `AZURE_OPENAI_TIMEOUT_SECONDS`, which silently won over the configured value -
+# two competing sources where the documented one had no effect.
+
+# Transport-level retries, forced off. The agent contract is one logical call =
+# one HTTP attempt: the deterministic path is always available, so a retry buys
+# nothing and costs a second charged request the budget never accounted for.
+# This is a constant rather than a literal so a test can assert the exact value
+# the production client is built with.
+SDK_MAX_RETRIES = 0
 
 
 class AzureConfigurationError(RuntimeError):
@@ -578,10 +593,18 @@ class AzureSettings:
     deployment: str
     reasoning_effort: str = "low"
     max_output_tokens: int = 400
-    timeout_seconds: float = 20.0
+    timeout_seconds: float = DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
 
     @classmethod
-    def from_env(cls) -> AzureSettings:
+    def from_env(
+        cls, *, timeout_seconds: float = DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
+    ) -> AzureSettings:
+        """Connection settings from the environment.
+
+        `timeout_seconds` is passed IN rather than read here, so the value an
+        operator sets in `RECOGNITION_LLM_TIMEOUT_SECONDS` is the value that
+        bounds the call. No timeout variable is read in this method.
+        """
         missing = [
             name for name in (_ENV_BASE_URL, _ENV_API_KEY, _ENV_DEPLOYMENT)
             if not os.getenv(name)
@@ -599,18 +622,13 @@ class AzureSettings:
             raise AzureConfigurationError(
                 f"{_ENV_MAX_OUTPUT_TOKENS} must be an integer"
             ) from exc
-        try:
-            timeout = float(os.getenv(_ENV_TIMEOUT, "20"))
-        except ValueError as exc:
-            raise AzureConfigurationError(f"{_ENV_TIMEOUT} must be a number") from exc
-
         return cls(
             base_url=os.environ[_ENV_BASE_URL],
             api_key=os.environ[_ENV_API_KEY],
             deployment=os.environ[_ENV_DEPLOYMENT],
             reasoning_effort=os.getenv(_ENV_REASONING_EFFORT, "low"),
             max_output_tokens=max_tokens,
-            timeout_seconds=timeout,
+            timeout_seconds=timeout_seconds,
         )
 
 
@@ -691,6 +709,12 @@ class AzureGPT5MiniProvider:
                 base_url=self._settings.base_url,
                 api_key=self._settings.api_key,
                 timeout=self._settings.timeout_seconds,
+                # One logical call must be at most ONE HTTP attempt. The SDK
+                # defaults to `max_retries=2`, i.e. up to three attempts, which
+                # retried underneath the agent's no-retry rule: the workflow
+                # counted one call while the transport spent three, and the
+                # bounded timeout silently became three times as long.
+                max_retries=SDK_MAX_RETRIES,
             )
         return self._client
 
@@ -752,7 +776,7 @@ class AzureGPT5MiniProvider:
 def build_recognition_llm(
     mode: str,
     *,
-    timeout_seconds: float = 20.0,
+    timeout_seconds: float = DEFAULT_REASONING_LLM_TIMEOUT_SECONDS,
     client: Any = None,
 ) -> Any:
     """Choose the reasoning provider. `disabled` unless asked otherwise.
@@ -760,6 +784,10 @@ def build_recognition_llm(
     The code default is deliberately `disabled`, not `fake`: a fake brain must
     never switch itself on in a running service. `.env.example` documents
     `fake` as the value to set for local development.
+
+    `timeout_seconds` reaches the Azure client from here. It previously did not:
+    this function accepted the argument and then built `AzureSettings.from_env()`
+    without it, so the configured timeout was discarded at the last step.
     """
     normalized = (mode or "disabled").strip().lower()
     if normalized in ("disabled", "off", "none", ""):
@@ -770,8 +798,11 @@ def build_recognition_llm(
         # Raises AzureConfigurationError, naming the missing variables, if the
         # deployment is not fully configured. Never a silent fallback: asking
         # for the real model and quietly getting a fake one would be worse.
-        return AzureGPT5MiniProvider(AzureSettings.from_env(), client=client)
+        return AzureGPT5MiniProvider(
+            AzureSettings.from_env(timeout_seconds=timeout_seconds), client=client
+        )
     raise AzureConfigurationError(
-        f"RECOGNITION_LLM_PROVIDER_MODE must be 'disabled', 'fake' or 'azure', "
-        f"not {normalized!r}"
+        "RECOGNITION_LLM_PROVIDER_MODE must be one of: "
+        + ", ".join(REASONING_LLM_PROVIDER_MODES)
+        + f". Got {normalized!r}."
     )
