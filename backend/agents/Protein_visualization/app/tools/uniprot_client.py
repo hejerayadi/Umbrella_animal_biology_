@@ -20,6 +20,22 @@ class UniProtClient(JsonHttpClient):
     async def get_entry(self, accession: str) -> dict[str, Any]:
         return await self.request_json("GET", f"/uniprotkb/{quote(accession)}.json")
 
+    async def search_taxonomy(self, name: str) -> list[dict[str, Any]]:
+        """Look a species name up in UniProt's taxonomy.
+
+        The Grand Orchestrator's shared context carries a species *name*, which
+        is what the user wrote, while every downstream provider here is keyed by
+        NCBI taxonomy id. This is the real lookup that bridges the two; it
+        accepts scientific and common names alike, because the extractor upstream
+        passes through whichever the user used.
+        """
+        payload = await self.request_json(
+            "GET",
+            "/taxonomy/search",
+            params={"query": name, "format": "json", "size": 10},
+        )
+        return list(payload.get("results", []))
+
     async def search(self, query: str, organism: str | None = None) -> list[dict[str, Any]]:
         terms = [f"({query})"]
         if organism:

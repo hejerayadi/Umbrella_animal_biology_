@@ -9,6 +9,7 @@ from backend.agents.Protein_visualization.app.capabilities.identity import Ident
 from backend.agents.Protein_visualization.app.capabilities.residue_mapping import ResidueMappingCapability
 from backend.agents.Protein_visualization.app.capabilities.retrieval import RetrievalCapability
 from backend.agents.Protein_visualization.app.capabilities.structures import StructureCapability
+from backend.agents.Protein_visualization.app.capabilities.taxonomy import TaxonomyCapability
 from backend.agents.Protein_visualization.app.capabilities.visualization import VisualizationCapability
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
 from backend.agents.Protein_visualization.app.knowledge_base.embeddings import (
@@ -73,6 +74,12 @@ def get_ingestion_service() -> KnowledgeIngestionService:
 @lru_cache
 def get_llm_client() -> AzureFoundryClient:
     return AzureFoundryClient(get_settings())
+
+
+@lru_cache
+def get_taxonomy_capability() -> TaxonomyCapability:
+    """Species name -> taxonomy id, for callers that only have the user's wording."""
+    return TaxonomyCapability(UniProtClient(get_settings()))
 
 
 @lru_cache

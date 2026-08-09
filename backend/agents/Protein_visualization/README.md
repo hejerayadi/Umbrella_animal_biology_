@@ -2,12 +2,44 @@
 
 A FastAPI service that resolves gene/protein identifiers, discovers experimental and predicted structures, maps functional annotations, and returns a viewer-ready Mol* specification. External evidence is kept distinct by source and optional failures produce a partial response.
 
+**There is no mock implementation.** Every request runs the LangGraph workflow
+against the real UniProt, RCSB PDB, AlphaFold, InterPro and SIFTS endpoints.
+Deterministic fakes exist only inside `tests/` and cannot be selected through
+application configuration.
+
+## Two entry points, one process
+
+`api.py` is the service. `backend/run_agents.py` starts it on port 8008 and it
+answers on both:
+
+| Route | Caller | Body |
+|---|---|---|
+| `POST /execute` | Grand Orchestrator | `{instruction, context}` in, `{status, target_agent, prompt_to_target_agent, output}` out — the contract every agent in this repo speaks |
+| `POST /api/v1/protein-structure-analyses` | frontend viewer | the full `AgentTask`, answering with the complete analysis: Mol* scene, every annotation, every evidence record |
+
+`/execute` is a translation layer only (`app/api/execute.py`); the scientific
+decisions stay in the workflow and in `result_policy.to_agent_result`. It reads
+`species` plus a gene symbol or accession out of the shared context, resolves
+the species name to an NCBI taxonomy id against UniProt, and returns a
+**summary** rather than the full payload — whatever an agent returns under
+`completed` is merged into every later agent's context and rendered into the
+Responder's prompt, so the Mol* scene would cost thousands of tokens a turn.
+
+Without a species, or without any of gene / accession / sequence, it answers
+`needs_agent` with a prompt describing what it is missing. That is a real
+dependency on upstream agents, read from the context it was actually given.
+
+```powershell
+curl.exe -X POST http://localhost:8008/execute -H "Content-Type: application/json" `
+  -d '{\"instruction\":\"3D structure of TP53 in humans\",\"context\":{\"species\":\"Homo sapiens\",\"gene_name\":\"TP53\",\"residue_position\":273}}'
+```
+
 ## Infrastructure in this sprint
 
 - **Qdrant** — a managed cluster; set `QDRANT_URL` and `QDRANT_API_KEY` in `.env`. There is no `docker-compose.yml`: nothing is provisioned locally.
 - **PostgreSQL** — out of scope for this sprint. `PERSISTENCE_ENABLED=false` keeps the repository layer dormant; the API answers without a database.
 - **Azure** — the LLM provider for explanation and critic generation (`LLM_PROVIDER=azure`).
-- **BGE-M3** — the embedding model for ingestion and retrieval.
+- **BGE-M3** — the embedding model for ingestion and retrieval, and the only one `get_embedding_provider` will build. It ships in the `embeddings` extra (`uv sync --extra embeddings`), because it pulls torch; without that extra, the retrieval node reports `RETRIEVAL_UNAVAILABLE` in the response warnings rather than falling back to anything. `HashEmbedding` carries no semantics and is reachable only from `tests/`.
 
 ## Run locally
 
@@ -30,7 +62,9 @@ Optional extras, installed only when you want them:
 
 ```powershell
 # BAAI/bge-m3 retrieval through sentence-transformers (pulls torch, ~2 GB).
-# Without it, app.knowledge_base.embeddings falls back to HashEmbedding.
+# Required for knowledge retrieval to run at all: without it the retrieval node
+# degrades to RETRIEVAL_UNAVAILABLE, which is reported in the response warnings.
+# Identity, structures, annotations and residue mapping do not need it.
 uv sync --project backend\agents\Protein_visualization --extra embeddings
 
 # the psycopg driver, needed only when DATABASE_URL points at PostgreSQL

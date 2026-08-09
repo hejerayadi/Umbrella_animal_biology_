@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from backend.agents.Protein_visualization.app.api.v1.dependencies import get_knowledge_base, get_orchestrator
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import HashEmbedding
 from backend.agents.Protein_visualization.app.knowledge_base.retrieval import KnowledgeBase
 from backend.agents.Protein_visualization.app.main import create_app
 from backend.agents.Protein_visualization.tests.factories import agent_task
@@ -99,7 +100,7 @@ def test_unknown_route_uses_the_envelope() -> None:
 
 def test_knowledge_search_returns_filtered_hits() -> None:
     app = create_app()
-    app.dependency_overrides[get_knowledge_base] = lambda: KnowledgeBase()
+    app.dependency_overrides[get_knowledge_base] = lambda: KnowledgeBase(HashEmbedding())
     with TestClient(app) as client:
         response = client.post(
             f"{PREFIX}/knowledge/search",
@@ -116,7 +117,7 @@ def test_ingestion_without_api_key_is_rejected(monkeypatch) -> None:  # type: ig
     get_settings.cache_clear()
     monkeypatch.setenv("INTERNAL_INGESTION_API_KEY", "expected-key")
     app = create_app()
-    app.dependency_overrides[get_knowledge_base] = lambda: KnowledgeBase()
+    app.dependency_overrides[get_knowledge_base] = lambda: KnowledgeBase(HashEmbedding())
     try:
         with TestClient(app) as client:
             response = client.post(f"{PREFIX}/knowledge/protein/ingestions", json=[])

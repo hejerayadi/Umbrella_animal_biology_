@@ -21,10 +21,38 @@ class IdentityCapability:
             records = await self.client.search(
                 f"gene_exact:{request.resolved_gene_id}", request.species.scientific_name
             )
-            if len(records) != 1:
-                raise ProteinNotFoundError("Protein identity is ambiguous")
-            entry = records[0]
+            entry = self._canonical(records)
         return self._normalize(entry, request)
+
+    @staticmethod
+    def _canonical(records: list[dict[str, Any]]) -> dict[str, Any]:
+        """The one entry a gene symbol denotes, out of everything UniProt returns.
+
+        A gene search never comes back with a single record for a well-studied
+        gene: TP53 in human answers with the Swiss-Prot entry plus a handful of
+        TrEMBL fragments and isoforms, all carrying the same protein name. That
+        is not ambiguity - Swiss-Prot review is exactly the curation that marks
+        one of them canonical, so a single reviewed entry settles it.
+
+        Ambiguity is when curation cannot: no reviewed entry and several
+        unreviewed candidates, or two reviewed entries for one symbol. Picking
+        the first would silently model a fragment, so those still raise.
+        """
+
+        def is_reviewed(record: dict[str, Any]) -> bool:
+            entry_type = str(record.get("entryType", "")).casefold()
+            return "reviewed" in entry_type and "unreviewed" not in entry_type
+
+        reviewed = [record for record in records if is_reviewed(record)]
+        if len(reviewed) == 1:
+            return reviewed[0]
+        if not reviewed and len(records) == 1:
+            return records[0]
+        if not records:
+            raise ProteinNotFoundError("UniProt returned no protein for this gene and species")
+        raise ProteinNotFoundError(
+            f"Protein identity is ambiguous: {len(reviewed)} reviewed of {len(records)} candidates"
+        )
 
     @staticmethod
     def _normalize(

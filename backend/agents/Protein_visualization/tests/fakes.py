@@ -13,7 +13,7 @@ from backend.agents.Protein_visualization.app.capabilities.residue_mapping impor
 from backend.agents.Protein_visualization.app.capabilities.retrieval import RetrievalCapability
 from backend.agents.Protein_visualization.app.capabilities.structures import StructureCapability
 from backend.agents.Protein_visualization.app.capabilities.visualization import VisualizationCapability
-from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit
+from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit, SpeciesRef
 from backend.agents.Protein_visualization.app.orchestrators.protein.graph import build_graph
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes import ProteinNodes
 from backend.agents.Protein_visualization.app.orchestrators.protein.orchestrator import ProteinOrchestrator
@@ -98,6 +98,21 @@ class FakeRetriever:
         if self.error:
             raise self.error
         return self.hits
+
+
+class FakeTaxonomy:
+    """Species name -> `SpeciesRef` without calling UniProt's taxonomy index."""
+
+    def __init__(self, species: SpeciesRef | None = None, error: Exception | None = None):
+        self.species = species or SpeciesRef(scientific_name="Homo sapiens", taxon_id=9606)
+        self.error = error
+        self.calls: list[str] = []
+
+    async def resolve(self, name: str) -> SpeciesRef:
+        self.calls.append(name)
+        if self.error:
+            raise self.error
+        return self.species
 
 
 def build_orchestrator(

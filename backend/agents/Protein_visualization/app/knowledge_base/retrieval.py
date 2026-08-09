@@ -1,8 +1,5 @@
 from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit
-from backend.agents.Protein_visualization.app.knowledge_base.embeddings import (
-    EmbeddingProvider,
-    HashEmbedding,
-)
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import EmbeddingProvider
 from backend.agents.Protein_visualization.app.knowledge_base.qdrant import QdrantStore
 from backend.agents.Protein_visualization.app.knowledge_base.schemas import KnowledgeDocument
 
@@ -10,11 +7,15 @@ from backend.agents.Protein_visualization.app.knowledge_base.schemas import Know
 class KnowledgeBase:
     def __init__(
         self,
-        embedding: EmbeddingProvider | None = None,
+        embedding: EmbeddingProvider,
         store: QdrantStore | None = None,
         unavailable_reason: str | None = None,
     ) -> None:
-        self.embedding = embedding or HashEmbedding()
+        # Required, with no default: the only other provider in this package is
+        # HashEmbedding, whose vectors carry no semantics. Defaulting to it would
+        # let a misconfiguration return confident-looking nonsense from a
+        # production search instead of failing.
+        self.embedding = embedding
         self.store = store
         self.unavailable_reason = unavailable_reason
         self._documents: dict[str, tuple[KnowledgeDocument, list[float]]] = {}
