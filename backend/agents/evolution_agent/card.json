@@ -1,50 +1,46 @@
 {
-  "name": "Evolution Agent Orchestrator",
-  "type": "orchestrator",
-  "description": "Plans and coordinates evolutionary analysis tasks: molecular comparison of protein/gene sequences, phylogenetic tree construction, and divergence time estimation. Uses MAFFT alignment, ESMC protein embeddings, and TimeTree to infer evolutionary relationships between species.",
+  "name": "Evolution Agent",
+  "type": "worker",
+  "description": "Compares molecular sequences to reconstruct phylogenetic relationships, and separately builds a functional similarity network from protein embeddings.",
   "reports_to": [
-    "Global Scientific Orchestrator"
+    "Umbrella Global Orchestrator"
   ],
   "may_need": [
     "Genome Agent",
+    "Biodiversity Agent",
     "Literature Agent"
   ],
-  "managed_agents": [
-    "Molecular Comparison Agent",
-    "Phylogenetic Tree Agent",
-    "Divergence Time Agent"
+  "sub_agents": [
+    "Molecular Comparison Sub-agent",
+    "Phylogenetic Reconstruction Sub-agent"
   ],
   "managed_services": [
-    "GenBank",
-    "UniProt",
-    "MAFFT",
-    "ESMC",
-    "IQ-TREE",
-    "TimeTree",
-    "NCBI Taxonomy",
-    "Qdrant (evolution_embeddings)"
+    "NCBI GenBank (provisional)",
+    "UniProt (provisional)",
+    "ESM2 embeddings (provisional)",
+    "MAFFT / IQ-TREE (provisional)"
   ],
   "capabilities": [
-    "Planning",
-    "Skill selection",
-    "Species name normalization",
-    "Sequential and parallel worker execution",
-    "Conditional routing",
-    "Result aggregation",
-    "Cross-agent escalation (NEEDS_AGENT)"
+    "Homology-based molecular comparison",
+    "Multiple sequence alignment",
+    "Maximum-likelihood phylogenetic reconstruction",
+    "Branch support estimation",
+    "Functional similarity network generation"
   ],
   "input": {
-    "instruction": "string",
-    "context": "dict"
+    "species_ids": "string[] | null",
+    "sequences": "string[] | null"
   },
   "output": {
-    "evolution": "dict",
-    "species_list": "list[string]",
-    "newick_tree": "string",
-    "model": "string",
-    "similarity_scores": "list[dict]",
-    "species_groups": "list[dict]",
-    "alignment_url": "string | null",
-    "tree_url": "string | null"
-  }
+    "phylogenetic_tree": {
+      "topology": "newick | null",
+      "branch_support": "float[] | null"
+    },
+    "similarity_network": {
+      "nodes": "string[] | null",
+      "edges": "Edge[] | null"
+    }
+  },
+  "result": "EvolutionAnalysisResult",
+  "clarification_required": "boolean"
 }
