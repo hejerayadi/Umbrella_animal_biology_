@@ -1,0 +1,27 @@
+{
+  "name": "3D Protein Structure Agent",
+  "type": "worker",
+  "description": "Predicts protein structures and generates protein visualizations using AlphaFold and ESMFold. Covers the 3D structure, shape and folding of a protein; structure prediction from a gene or amino-acid sequence; protein domains, binding sites and structural comparison; and rendered molecular views of a protein.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [
+    "Genome Agent",
+    "Trait Discovery Agent"
+  ],
+  "managed_services": [
+    "AlphaFold",
+    "ESMFold"
+  ],
+  "capabilities": [
+    "Protein prediction",
+    "3D visualization"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "protein_structure": "string"
+  }
+}

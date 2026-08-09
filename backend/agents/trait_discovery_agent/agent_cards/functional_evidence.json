@@ -1,0 +1,29 @@
+{
+  "name": "Functional Evidence",
+  "type": "sub-orchestrator",
+  "description": "Cross-references KEGG pathway membership and UniProt protein function over the same candidate gene set, in parallel.",
+  "reports_to": "Trait Discovery Agent",
+  "may_need": [
+    {
+      "agent": "Gene Mapper",
+      "note": "data dependency only: supplies gene_list and go_annotations upstream"
+    }
+  ],
+  "managed_agents": ["Pathways", "Protein Data"],
+  "managed_services": [],
+  "capabilities": [
+    "Parallel evidence retrieval",
+    "Cross-referencing gene function across two sources"
+  ],
+  "input": [
+    { "name": "gene_list", "type": "list[str]", "source": "from Gene Mapper, via orchestrator" },
+    { "name": "go_annotations", "type": "list[GOAnnotation]", "source": null }
+  ],
+  "output": {
+    "fields": [
+      { "name": "pathway_data", "type": "list[PathwayEntry]" },
+      { "name": "protein_data", "type": "list[ProteinEntry]" }
+    ],
+    "control_fields": ["status", "target_agent", "prompt_to_target_agent"]
+  }
+}

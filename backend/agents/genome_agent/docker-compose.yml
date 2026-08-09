@@ -1,0 +1,72 @@
+services:
+  # Real, end-to-end execution of the LangGraph orchestrator across five
+  # scenarios (happy path, unknown species / error_end, NEEDS_AGENT
+  # escalation, hard visualization failure, partial results). Prints a
+  # readable trace to stdout — this is a script run, not a pytest suite.
+  #
+  # NVIDIA_API_KEY is optional: if it's set in .env, query_router,
+  # capability_resolver, and explanation_writer call the real LLM. If it's
+  # absent, each of them falls back to its deterministic keyword-based
+  # logic automatically, so this runs fine with no key at all.
+  genome-agent-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    command: python -m genome_agent.scripts.run_orchestrator_scenarios
+
+  # Optional: pytest suite (routing/capability-resolver unit tests +
+  # live LLM smoke test, the latter auto-skips without NVIDIA_API_KEY).
+  test:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    command: python -m pytest genome_agent/tests -v
+
+  # Live check of the real NCBI subagents (species_resolver, genome_metadata,
+  # gene_annotation, sequence_window, and the size_comparison visualization,
+  # which itself calls resolve_species/get_genome_metadata again for the
+  # reference species). No mocking, no LLM involved, no API key needed —
+  # NCBI eutils is unauthenticated. Requires outbound network access to
+  # eutils.ncbi.nlm.nih.gov.
+  #
+  # Species defaults to "tiger"; override at run time, e.g.:
+  #   docker compose run --rm ncbi-live-check --species "house mouse"
+  #   docker compose run --rm ncbi-live-check --species dragon
+  #   docker compose run --rm ncbi-live-check --skip-sequence --skip-comparison
+  ncbi-live-check:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    entrypoint: ["python", "-m", "genome_agent.scripts.run_ncbi_live_check"]
+    command: []
+
+  # Full integration demo: retrieval (real NCBI) + sub-orchestrator<->agent
+  # communication (visualization calling other subagents live, and
+  # capability_resolver escalating to an agent picked from agent_cards/) +
+  # end-to-end data flow through the compiled graph, all in one run with
+  # pass/fail assertions instead of just a printed trace. Exits non-zero if
+  # any check fails, so it also works as a CI smoke test. Requires outbound
+  # network access to eutils.ncbi.nlm.nih.gov. NVIDIA_API_KEY optional (see
+  # genome-agent-scenarios above — same fallback behavior applies).
+  #
+  # Species defaults to "tiger"; override at run time, e.g.:
+  #   docker compose run --rm full-integration-demo --species "house mouse"
+  #   docker compose run --rm full-integration-demo --part suborchestrator
+  #   docker compose run --rm full-integration-demo --part e2e
+  full-integration-demo:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    entrypoint: ["python", "-m", "genome_agent.scripts.run_full_integration_demo"]
+    command: []

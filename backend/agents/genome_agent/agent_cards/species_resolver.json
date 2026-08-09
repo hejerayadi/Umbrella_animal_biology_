@@ -1,0 +1,25 @@
+{
+  "name": "Species Resolver",
+  "type": "worker",
+  "description": "Resolves a species name to its genome assembly ID.",
+  "reports_to": [
+    "Genome Agent"
+  ],
+  "managed_services": [
+    "NCBI Taxonomy",
+    "NCBI Assembly"
+  ],
+  "capabilities": [
+    "Species name resolution",
+    "Assembly ID lookup"
+  ],
+  "input": {
+    "species_name": "string"
+  },
+  "output": {
+    "assembly_id": "string",
+    "scientific_name": "string",
+    "common_name": "string",
+    "confidence": "float"
+  }
+}

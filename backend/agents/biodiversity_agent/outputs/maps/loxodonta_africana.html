@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    
+        <script>
+            L_NO_TOUCH = false;
+            L_DISABLE_3D = false;
+        </script>
+    
+    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
+    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_e59b07988d57e0d623f712d3542cc01e {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+        
+</head>
+<body>
+    
+    
+    <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
+                background: white; padding: 8px 12px; border: 1px solid #ccc;
+                border-radius: 4px; font-family: sans-serif; font-size: 12px;">
+      <b>Loxodonta africana</b><br>
+      5 observations (mock)<br>
+      <span style="color: #666;">Sprint 2 — Biodiversity Agent</span>
+    </div>
+    
+    
+            <div class="folium-map" id="map_e59b07988d57e0d623f712d3542cc01e" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_e59b07988d57e0d623f712d3542cc01e = L.map(
+                "map_e59b07988d57e0d623f712d3542cc01e",
+                {
+                    center: [-6.1659999999999995, 28.46],
+                    crs: L.CRS.EPSG3857,
+                    zoom: 2,
+                    zoomControl: true,
+                    preferCanvas: false,
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_e3783b3b481e3883a151b08296b26a1c = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
+            );
+        
+    
+            tile_layer_e3783b3b481e3883a151b08296b26a1c.addTo(map_e59b07988d57e0d623f712d3542cc01e);
+        
+    
+            var circle_marker_9eab4b609779bcdc33e7a1ac01e860b2 = L.circleMarker(
+                [-1.29, 36.82],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_e59b07988d57e0d623f712d3542cc01e);
+        
+    
+        var popup_681de52f1da34485abccb21637126c6a = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_da9d0875616769329e5cb1d6212f9af4 = $(`<div id="html_da9d0875616769329e5cb1d6212f9af4" style="width: 100.0%; height: 100.0%;"><b>Loxodonta africana</b><br>(-1.290, 36.820)</div>`)[0];
+                popup_681de52f1da34485abccb21637126c6a.setContent(html_da9d0875616769329e5cb1d6212f9af4);
+            
+        
+
+        circle_marker_9eab4b609779bcdc33e7a1ac01e860b2.bindPopup(popup_681de52f1da34485abccb21637126c6a)
+        ;
+
+        
+    
+    
+            var circle_marker_08d9c2e9591e3eee76d64201fd17cf74 = L.circleMarker(
+                [-2.65, 34.83],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_e59b07988d57e0d623f712d3542cc01e);
+        
+    
+        var popup_7e308ae5aaab58e2dc3bfb93bdd1fa3d = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_3c185331d72e1a5bc8561d27d348a6d5 = $(`<div id="html_3c185331d72e1a5bc8561d27d348a6d5" style="width: 100.0%; height: 100.0%;"><b>Loxodonta africana</b><br>(-2.650, 34.830)</div>`)[0];
+                popup_7e308ae5aaab58e2dc3bfb93bdd1fa3d.setContent(html_3c185331d72e1a5bc8561d27d348a6d5);
+            
+        
+
+        circle_marker_08d9c2e9591e3eee76d64201fd17cf74.bindPopup(popup_7e308ae5aaab58e2dc3bfb93bdd1fa3d)
+        ;
+
+        
+    
+    
+            var circle_marker_d9c4a1a29cb92e6619d5a709fa4ad2a6 = L.circleMarker(
+                [-19.02, 23.44],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_e59b07988d57e0d623f712d3542cc01e);
+        
+    
+        var popup_2b8c21c9b0320ff5a231bf904f868177 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_33e4aafd6a36ab248f7a8575050f25d5 = $(`<div id="html_33e4aafd6a36ab248f7a8575050f25d5" style="width: 100.0%; height: 100.0%;"><b>Loxodonta africana</b><br>(-19.020, 23.440)</div>`)[0];
+                popup_2b8c21c9b0320ff5a231bf904f868177.setContent(html_33e4aafd6a36ab248f7a8575050f25d5);
+            
+        
+
+        circle_marker_d9c4a1a29cb92e6619d5a709fa4ad2a6.bindPopup(popup_2b8c21c9b0320ff5a231bf904f868177)
+        ;
+
+        
+    
+    
+            var circle_marker_aa69d4e76d89c3adbf3b057544df9248 = L.circleMarker(
+                [-13.19, 27.15],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_e59b07988d57e0d623f712d3542cc01e);
+        
+    
+        var popup_f57ea930067d12594cc8680517e00180 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_ccb06dbac082470ce2fe59651072212b = $(`<div id="html_ccb06dbac082470ce2fe59651072212b" style="width: 100.0%; height: 100.0%;"><b>Loxodonta africana</b><br>(-13.190, 27.150)</div>`)[0];
+                popup_f57ea930067d12594cc8680517e00180.setContent(html_ccb06dbac082470ce2fe59651072212b);
+            
+        
+
+        circle_marker_aa69d4e76d89c3adbf3b057544df9248.bindPopup(popup_f57ea930067d12594cc8680517e00180)
+        ;
+
+        
+    
+    
+            var circle_marker_576943d7e2ecabaec6ca67f75b8694cf = L.circleMarker(
+                [5.32, 20.06],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_e59b07988d57e0d623f712d3542cc01e);
+        
+    
+        var popup_a01fbc0abbacc86f120298298cd7315b = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_804898cdc3ede032cbcfa6ed5583f361 = $(`<div id="html_804898cdc3ede032cbcfa6ed5583f361" style="width: 100.0%; height: 100.0%;"><b>Loxodonta africana</b><br>(5.320, 20.060)</div>`)[0];
+                popup_a01fbc0abbacc86f120298298cd7315b.setContent(html_804898cdc3ede032cbcfa6ed5583f361);
+            
+        
+
+        circle_marker_576943d7e2ecabaec6ca67f75b8694cf.bindPopup(popup_a01fbc0abbacc86f120298298cd7315b)
+        ;
+
+        
+    
+</script>
+</html>

@@ -1,0 +1,43 @@
+{
+  "_fixture_note": "LOCAL DEVELOPMENT FIXTURE DATA. These records were NOT retrieved from GBIF, NCBI or IUCN, and no live taxonomy API is called anywhere in this agent. Identifiers present here are fixture values and must be verified against the real databases before any scientific claim is made. Where a value is null it stays null - the agent never fills one in.",
+  "dataset": "local-dev-taxonomy-fixtures-v0",
+  "species": {
+    "panthera_leo": {
+      "scientific_name": "Panthera leo",
+      "common_names": ["lion"],
+      "gbif_id": 5219404,
+      "ncbi_taxid": 9689
+    },
+    "panthera_tigris": {
+      "scientific_name": "Panthera tigris",
+      "common_names": ["tiger"],
+      "gbif_id": 5219426,
+      "ncbi_taxid": 9694
+    },
+    "panthera_pardus": {
+      "scientific_name": "Panthera pardus",
+      "common_names": ["leopard"],
+      "gbif_id": 5219436,
+      "ncbi_taxid": 9691
+    },
+    "loxodonta_africana": {
+      "scientific_name": "Loxodonta africana",
+      "common_names": ["african bush elephant", "african elephant"],
+      "gbif_id": 2433451,
+      "ncbi_taxid": 9785
+    },
+    "ursus_maritimus": {
+      "scientific_name": "Ursus maritimus",
+      "common_names": ["polar bear"],
+      "gbif_id": null,
+      "ncbi_taxid": 29073
+    },
+    "vulpes_lagopus": {
+      "scientific_name": "Vulpes lagopus",
+      "common_names": ["arctic fox"],
+      "gbif_id": null,
+      "ncbi_taxid": null
+    }
+  },
+  "unavailable_species_ids": []
+}

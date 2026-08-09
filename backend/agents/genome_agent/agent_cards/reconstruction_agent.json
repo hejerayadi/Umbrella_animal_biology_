@@ -1,0 +1,24 @@
+{
+  "name": "Reconstruction Agent",
+  "type": "worker",
+  "description": "Reconstructs incomplete genomes using related species data.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "managed_services": [
+    "NCBI",
+    "Ensembl"
+  ],
+  "capabilities": [
+    "Genome reconstruction",
+    "Missing region filling",
+    "Comparative genomics"
+  ],
+  "role": "external",
+  "call_when": "The Genome Agent needs to reconstruct an incomplete genome and cannot do it internally.",
+  "cannot_help_with": [
+    "Protein structure visualization",
+    "Gene annotation",
+    "Species resolution"
+  ]
+}

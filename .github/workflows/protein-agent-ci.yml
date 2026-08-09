@@ -4,12 +4,12 @@ on:
   push:
     branches: [Group_B, main]
     paths:
-      - "backend/Protein_visualization/**"
+      - "backend/agents/Protein_visualization/**"
       - ".github/workflows/protein-agent-ci.yml"
   pull_request:
     branches: [Group_B, main]
     paths:
-      - "backend/Protein_visualization/**"
+      - "backend/agents/Protein_visualization/**"
       - ".github/workflows/protein-agent-ci.yml"
   workflow_dispatch:
 
@@ -22,15 +22,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/Protein_visualization/requirements*.txt
+          cache-dependency-path: backend/agents/Protein_visualization/requirements*.txt
       - name: Install dependencies
-        working-directory: backend/Protein_visualization
+        working-directory: backend/agents/Protein_visualization
         run: pip install -r requirements-dev.txt
       - name: Lint
-        run: ruff check backend/Protein_visualization
+        run: ruff check backend/agents/Protein_visualization
       - name: Format check
-        run: ruff format --check backend/Protein_visualization
+        run: ruff format --check backend/agents/Protein_visualization
       - name: Type check
-        run: mypy --config-file backend/Protein_visualization/mypy.ini backend/Protein_visualization/app
+        run: mypy --config-file backend/agents/Protein_visualization/mypy.ini backend/agents/Protein_visualization/app
       - name: Offline tests
-        run: pytest backend/Protein_visualization/tests -q -m "not live and not bge and not qdrant"
+        run: pytest backend/agents/Protein_visualization/tests -q -m "not live and not bge and not qdrant"

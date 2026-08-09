@@ -1,0 +1,24 @@
+{
+  "name": "Gene Annotation",
+  "type": "worker",
+  "description": "Retrieves gene/feature annotation data for a resolved assembly.",
+  "reports_to": [
+    "Genome Agent"
+  ],
+  "managed_services": [
+    "NCBI Gene",
+    "Ensembl"
+  ],
+  "capabilities": [
+    "Gene list retrieval",
+    "Gene annotation lookup",
+    "Feature annotation"
+  ],
+  "input": {
+    "assembly_id": "string"
+  },
+  "output": {
+    "gene_table": "array",
+    "gene_list": "array"
+  }
+}
