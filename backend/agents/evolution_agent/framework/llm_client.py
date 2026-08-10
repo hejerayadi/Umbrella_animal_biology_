@@ -68,9 +68,7 @@ def get_llm(temperature: float | None = None):
     )
 
 
-# ---------------------------------------------------------------------------
 # Backend factories
-# ---------------------------------------------------------------------------
 
 def _azure(endpoint: str, api_key: str, temperature: float | None):
     from langchain_openai import AzureChatOpenAI  # type: ignore
