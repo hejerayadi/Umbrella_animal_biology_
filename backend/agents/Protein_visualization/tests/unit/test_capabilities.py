@@ -9,6 +9,7 @@ from backend.agents.Protein_visualization.app.domain.models import (
     EvidencePack,
     EvidenceRef,
     KnowledgeHit,
+    LlmUsage,
 )
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
 from backend.agents.Protein_visualization.tests.factories import (
@@ -32,17 +33,17 @@ class StubModel:
     def enabled(self) -> bool:
         return True
 
-    async def explain(self, context: dict[str, object]) -> ExplanationOutput:
+    async def explain(self, context: dict[str, object], node: str) -> tuple[ExplanationOutput, LlmUsage]:
         self.seen.append(context)
         if self._explanation is None:
             raise RuntimeError("model unavailable")
-        return self._explanation
+        return self._explanation, LlmUsage(node=node, model="stub", duration_ms=1, total_tokens=10)
 
-    async def critique(self, context: dict[str, object]) -> CriticOutput:
+    async def critique(self, context: dict[str, object], node: str) -> tuple[CriticOutput, LlmUsage]:
         self.seen.append(context)
         if self._critic is None:
             raise RuntimeError("model unavailable")
-        return self._critic
+        return self._critic, LlmUsage(node=node, model="stub", duration_ms=1, total_tokens=10)
 
 
 # --- selection ---------------------------------------------------------------
@@ -167,10 +168,13 @@ async def test_explanation_falls_back_to_the_facts_when_the_model_fails() -> Non
     pack = EvidencePack(
         facts=("UniProt P04637 is the canonical entry.",), limitations=("Coverage is partial.",)
     )
-    explanation = await ExplanationCapability(StubModel()).explain(pack)
+    explanation, usage = await ExplanationCapability(StubModel()).explain(
+        pack, "generate_grounded_explanation"
+    )
     assert explanation.generated is False
     assert "canonical entry" in explanation.summary
     assert explanation.limitations == ("Coverage is partial.",)
+    assert usage is None, "the fallback path never called the model, so there is nothing to bill"
 
 
 async def test_the_model_only_ever_sees_the_evidence_pack() -> None:
@@ -178,9 +182,11 @@ async def test_the_model_only_ever_sees_the_evidence_pack() -> None:
     pack = EvidencePack(
         facts=("fact",), limitations=("limit",), evidence=(EvidenceRef("UniProt", "P04637", "now"),)
     )
-    explanation = await ExplanationCapability(model).explain(pack)
+    explanation, usage = await ExplanationCapability(model).explain(pack, "generate_grounded_explanation")
     assert explanation.generated is True
     assert set(model.seen[0]) == {"facts", "limitations", "sources"}
+    assert usage is not None
+    assert usage.node == "generate_grounded_explanation"
 
 
 # --- critic ------------------------------------------------------------------
@@ -201,9 +207,30 @@ def test_prediction_forces_revise() -> None:
     assert report.verdict == ValidationStatus.revise.value
 
 
+def test_partial_experimental_coverage_forces_revise() -> None:
+    report = CriticCapability().review(structure_request(), P53, pdb_candidate(), [])
+    assert report.verdict == ValidationStatus.revise.value
+    assert "72%" in report.reasons[0]
+
+
+def test_upstream_warning_forces_revise() -> None:
+    report = CriticCapability().review(
+        structure_request(),
+        P53,
+        pdb_candidate(sequence_coverage=1.0),
+        [],
+        ["RETRIEVAL_UNAVAILABLE: vector store down"],
+    )
+    assert report.verdict == ValidationStatus.revise.value
+    assert "degraded evidence" in report.reasons[0]
+
+
 def test_complete_evidence_is_accepted() -> None:
     report = CriticCapability().review(
-        structure_request(residue_position=273), P53, pdb_candidate(), [residue_mapping()]
+        structure_request(residue_position=273),
+        P53,
+        pdb_candidate(sequence_coverage=1.0),
+        [residue_mapping()],
     )
     assert report.verdict == ValidationStatus.accept.value
 
@@ -212,24 +239,29 @@ async def test_the_model_may_tighten_the_verdict() -> None:
     model = StubModel(
         critic=CriticOutput(verdict="ABSTAIN", reasons=["Coverage does not include the residue."])
     )
-    audited = await CriticCapability().audit(
+    audited, usage = await CriticCapability().audit(
         CriticReport(verdict="REVISE", reasons=("deterministic",)), EvidencePack(), model
     )
     assert audited.verdict == "ABSTAIN"
     assert "deterministic" in audited.reasons
+    assert usage is not None
+    assert model.seen[0]["deterministic_verdict"] == "REVISE"
+    assert model.seen[0]["deterministic_reasons"] == ["deterministic"]
 
 
 async def test_the_model_may_not_loosen_the_verdict() -> None:
     model = StubModel(critic=CriticOutput(verdict="ACCEPT", reasons=["Looks fine to me."]))
-    audited = await CriticCapability().audit(
+    audited, usage = await CriticCapability().audit(
         CriticReport(verdict="REVISE", reasons=("deterministic",)), EvidencePack(), model
     )
     assert audited.verdict == "REVISE"
     assert audited.reasons == ("deterministic",)
+    assert usage is not None, "the model still ran and cost tokens, even though its verdict was discarded"
 
 
 async def test_a_failing_model_leaves_the_deterministic_verdict_intact() -> None:
-    audited = await CriticCapability().audit(
+    audited, usage = await CriticCapability().audit(
         CriticReport(verdict="ACCEPT", reasons=("deterministic",)), EvidencePack(), StubModel()
     )
     assert audited.verdict == "ACCEPT"
+    assert usage is None

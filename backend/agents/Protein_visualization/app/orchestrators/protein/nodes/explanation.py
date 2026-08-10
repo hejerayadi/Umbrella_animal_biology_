@@ -17,11 +17,18 @@ class ExplanationNode:
     async def __call__(self, state: ProteinWorkflowState) -> dict[str, Any]:
         pack = state["evidence_pack"] or EvidencePack()
         with log_stage(logger, GENERATE_EXPLANATION, node=GENERATE_EXPLANATION) as outcome:
-            explanation = await self.capability.explain(pack)
+            explanation, usage = await self.capability.explain(pack, GENERATE_EXPLANATION)
             outcome["generated"] = self.capability.llm is not None and self.capability.llm.enabled
             outcome["characters"] = len(explanation.summary)
+            if usage:
+                outcome["tokens"] = usage.total_tokens
 
         warnings = []
         if self.capability.llm is not None and self.capability.llm.enabled and not explanation.generated:
             warnings.append("LLM_UNAVAILABLE: the evidence summary was assembled without the model.")
-        return executed(GENERATE_EXPLANATION, explanation=explanation, warnings=warnings)
+        return executed(
+            GENERATE_EXPLANATION,
+            explanation=explanation,
+            warnings=warnings,
+            llm_usage=[usage] if usage else [],
+        )

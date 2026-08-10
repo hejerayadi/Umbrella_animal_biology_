@@ -49,8 +49,8 @@ def test_execute_runs_the_real_workflow_and_summarises_it_for_the_shared_context
     assert body["target_agent"] is None
 
     structure = body["output"]["protein_structure"]
-    assert structure["status"] == "COMPLETED"
-    assert structure["validation_status"] == "ACCEPT"
+    assert structure["status"] == "PARTIAL"
+    assert structure["validation_status"] == "REVISE"
     assert structure["uniprot_accession"] == "P04637"
     assert structure["gene_symbol"] == "TP53"
     assert structure["structure"]["external_id"] == "1TUP"

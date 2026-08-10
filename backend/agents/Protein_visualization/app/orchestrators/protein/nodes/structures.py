@@ -125,9 +125,15 @@ class StructureNodes:
 
         warnings = []
         if selected.structure_type == "PREDICTED":
-            warnings.append(
-                "ALPHAFOLD_FALLBACK: no experimental structure qualified; the selected model is predicted."
-            )
+            if state["task"].preferred_source is PreferredSource.alphafold:
+                warnings.append(
+                    "ALPHAFOLD_REQUESTED: the caller explicitly requested a predicted AlphaFold model."
+                )
+            else:
+                warnings.append(
+                    "ALPHAFOLD_FALLBACK: no experimental structure qualified; "
+                    "the selected model is predicted."
+                )
         return executed(
             SELECT_STRUCTURE,
             selected_structure=selected,

@@ -28,14 +28,15 @@ async def test_e2e_01_experimental_structure_is_selected() -> None:
         retriever=FakeRetriever([KnowledgeHit(id="doc-1", text="p53 binds DNA.", score=0.8)])
     ).analyze(agent_task())
 
-    assert response.status is AnalysisStatus.completed
-    assert response.validation_status is ValidationStatus.accept
+    assert response.status is AnalysisStatus.partial
+    assert response.validation_status is ValidationStatus.revise
     assert response.selected_structure is not None
     assert response.selected_structure.source == "RCSB_PDB"
     assert response.selected_structure.structure_type == "EXPERIMENTAL"
     assert response.protein is not None and response.protein.uniprot_accession == "P04637"
     assert response.molstar_config["structure"]["id"] == "1TUP"
-    assert response.warnings == []
+    assert any(warning.startswith("CRITIC_REVISE") for warning in response.warnings)
+    assert any("covers 72%" in warning for warning in response.warnings)
     assert response.explanation is not None
 
 
@@ -47,6 +48,17 @@ async def test_e2e_02_alphafold_fallback_is_marked_predicted() -> None:
     assert response.selected_structure.structure_type == "PREDICTED"
     assert response.validation_status is ValidationStatus.revise
     assert any(warning.startswith("ALPHAFOLD_FALLBACK") for warning in response.warnings)
+
+
+async def test_explicit_alphafold_preference_is_not_reported_as_a_fallback() -> None:
+    response = await build_orchestrator().analyze(agent_task(preferred_source="ALPHAFOLD"))
+
+    assert response.status is AnalysisStatus.partial
+    assert response.validation_status is ValidationStatus.revise
+    assert response.selected_structure is not None
+    assert response.selected_structure.structure_type == "PREDICTED"
+    assert any(warning.startswith("ALPHAFOLD_REQUESTED") for warning in response.warnings)
+    assert not any(warning.startswith("ALPHAFOLD_FALLBACK") for warning in response.warnings)
 
 
 async def test_e2e_03_ambiguous_identity_abstains() -> None:
@@ -100,7 +112,7 @@ async def test_e2e_06b_mapped_residue_is_highlighted() -> None:
 
     assert response.residue_mappings[0]["pdb_residue_number"] == "273"
     assert response.molstar_config["selections"][0]["residue_number"] == "273"
-    assert response.validation_status is ValidationStatus.accept
+    assert response.validation_status is ValidationStatus.revise
 
 
 async def test_e2e_07_knowledge_base_down_degrades_the_explanation_only() -> None:
@@ -110,7 +122,9 @@ async def test_e2e_07_knowledge_base_down_degrades_the_explanation_only() -> Non
 
     assert response.selected_structure is not None
     assert response.status is AnalysisStatus.partial
+    assert response.validation_status is ValidationStatus.revise
     assert any(warning.startswith("RETRIEVAL_UNAVAILABLE") for warning in response.warnings)
+    assert any(warning.startswith("CRITIC_REVISE") for warning in response.warnings)
     assert response.explanation is not None
 
 

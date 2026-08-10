@@ -16,6 +16,7 @@ from backend.agents.Protein_visualization.app.domain.models import (
     EvidenceRef,
     Explanation,
     KnowledgeHit,
+    LlmUsage,
     ProteinStructureRequest,
     ResidueMapping,
     ResolvedProtein,
@@ -60,6 +61,10 @@ class ProteinWorkflowState(TypedDict, total=False):
     errors: Annotated[list[str], operator.add]
     executed_nodes: Annotated[set[str], operator.or_]
     retry_counts: Annotated[dict[str, int], merge_counts]
+    # Explanation and the critic's audit each make at most one Azure call; both
+    # write here, so this accumulates rather than overwrites like the rest of
+    # the branch-owned keys above.
+    llm_usage: Annotated[list[LlmUsage], operator.add]
 
 
 def initial_state(task: ProteinStructureRequest, analysis_id: UUID) -> ProteinWorkflowState:
@@ -86,4 +91,5 @@ def initial_state(task: ProteinStructureRequest, analysis_id: UUID) -> ProteinWo
         errors=[],
         executed_nodes=set(),
         retry_counts={},
+        llm_usage=[],
     )

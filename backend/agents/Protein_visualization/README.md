@@ -48,7 +48,7 @@ A form drives either endpoint — species, gene or accession, residue, mutation,
 regions, preferred source, explanation on/off — with presets for the cases worth
 re-running (human TP53 with a residue, a common-name species, an accession that
 falls back to AlphaFold, a request with no gene that ends in a hand-off). Then
-five tabs:
+six tabs:
 
 - **Workflow** — all 18 graph nodes, each marked *ran*, *degraded* (with its
   retry count and error) or *skipped*, so you can see that AlphaFold was never
@@ -61,7 +61,15 @@ five tabs:
 - **JSON** — the request as sent and the response as received, side by side.
 - **Evidence** — evidence records, annotations, residue mappings and the
   structure candidates that lost.
-- **Explanation** — the grounded summary and its stated limitations.
+- **Explanation & usage** — the grounded summary and its stated limitations,
+  plus a table of every Azure OpenAI call this run made: node, model, latency,
+  input/output/total tokens, and an estimated cost if `AZURE_INPUT_PRICE_PER_1K_USD`
+  / `AZURE_OUTPUT_PRICE_PER_1K_USD` are set (see `.env.example`) — tokens and
+  latency always come from Azure's own response either way.
+- **Knowledge search** — queries the RAG store directly (`POST
+  /api/v1/knowledge/search`), independent of any analysis run. Protein and
+  taxon id prefill from the last run, or set them by hand to explore what is
+  indexed for a protein you haven't analyzed yet.
 
 The page is exercised end to end in headless Chromium; `tests/integration/test_console.py`
 covers the API contract it depends on.

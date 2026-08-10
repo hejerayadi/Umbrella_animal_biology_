@@ -6,16 +6,18 @@ from uuid import UUID, uuid4
 
 from langgraph.graph.state import CompiledStateGraph
 
+from backend.agents.Protein_visualization.app.configuration.settings import get_settings
 from backend.agents.Protein_visualization.app.contracts.agent_result import AgentResult
 from backend.agents.Protein_visualization.app.contracts.protein_request import ProteinAnalysisRequest
 from backend.agents.Protein_visualization.app.contracts.protein_response import (
     ExplanationResponse,
+    LlmUsageResponse,
     ProteinAnalysisResponse,
     ProteinSummary,
     StructureResponse,
 )
 from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus, ValidationStatus
-from backend.agents.Protein_visualization.app.domain.models import StructureCandidate
+from backend.agents.Protein_visualization.app.domain.models import LlmUsage, StructureCandidate
 from backend.agents.Protein_visualization.app.observability.context import log_context
 from backend.agents.Protein_visualization.app.observability.logging import log_event
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import WORKFLOW_SEQUENCE
@@ -26,6 +28,31 @@ from backend.agents.Protein_visualization.app.orchestrators.protein.state import
 )
 
 logger = logging.getLogger("app.orchestrator")
+
+
+def _llm_usage(usage: LlmUsage) -> LlmUsageResponse:
+    settings = get_settings()
+    cost = None
+    if (
+        settings.azure_input_price_per_1k_usd is not None
+        and settings.azure_output_price_per_1k_usd is not None
+        and usage.input_tokens is not None
+        and usage.output_tokens is not None
+    ):
+        cost = round(
+            usage.input_tokens / 1000 * settings.azure_input_price_per_1k_usd
+            + usage.output_tokens / 1000 * settings.azure_output_price_per_1k_usd,
+            6,
+        )
+    return LlmUsageResponse(
+        node=usage.node,
+        model=usage.model,
+        duration_ms=usage.duration_ms,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        total_tokens=usage.total_tokens,
+        estimated_cost_usd=cost,
+    )
 
 
 def _structure(candidate: StructureCandidate) -> StructureResponse:
@@ -156,4 +183,5 @@ class ProteinOrchestrator:
             executed_nodes=[node for node in WORKFLOW_SEQUENCE if node in state.get("executed_nodes", set())],
             errors=list(state.get("errors", [])),
             retry_counts=dict(state.get("retry_counts", {})),
+            llm_usage=[_llm_usage(usage) for usage in state.get("llm_usage", [])],
         )

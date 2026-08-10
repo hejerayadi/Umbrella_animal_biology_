@@ -37,10 +37,13 @@ async def return_partial(state: ProteinWorkflowState) -> dict[str, Any]:
         status="partial",
         warnings=len(state.get("warnings", [])),
     )
+    validation_status = state.get("validation_status", ValidationStatus.revise)
+    if validation_status is ValidationStatus.accept:
+        validation_status = ValidationStatus.revise
     return executed(
         RETURN_PARTIAL,
         current_status=_final_status(state, AnalysisStatus.partial),
-        validation_status=state.get("validation_status", ValidationStatus.revise),
+        validation_status=validation_status,
     )
 
 

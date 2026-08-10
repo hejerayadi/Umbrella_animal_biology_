@@ -20,7 +20,12 @@ from backend.agents.Protein_visualization.app.domain.exceptions import (
 )
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import WORKFLOW_SEQUENCE
 from backend.agents.Protein_visualization.tests.factories import agent_task
-from backend.agents.Protein_visualization.tests.fakes import FakeRCSB, FakeTaxonomy, build_orchestrator
+from backend.agents.Protein_visualization.tests.fakes import (
+    FakeLanguageModel,
+    FakeRCSB,
+    FakeTaxonomy,
+    build_orchestrator,
+)
 
 PREFIX = get_settings().api_prefix
 
@@ -112,3 +117,25 @@ def test_a_degraded_provider_is_attributed_to_its_node() -> None:
     assert "search_experimental_structures" in analysis["executed_nodes"]
     assert any(error.startswith("search_experimental_structures:") for error in analysis["errors"])
     assert analysis["retry_counts"]["search_experimental_structures"] == 1
+
+
+def test_llm_usage_is_reported_per_call() -> None:
+    """Explanation and the critic's audit each make one Azure call; both must show up."""
+    agent_app.dependency_overrides[get_orchestrator] = lambda: build_orchestrator(llm=FakeLanguageModel())
+
+    with TestClient(agent_app) as client:
+        response = client.post(
+            f"{PREFIX}/protein-structure-analyses",
+            json=agent_task().model_dump(mode="json"),
+        )
+
+    usage = response.json()["data"]["output"]["llm_usage"]
+    nodes = {entry["node"] for entry in usage}
+
+    assert nodes == {"generate_grounded_explanation", "run_scientific_critic"}
+    for entry in usage:
+        assert entry["model"] == "fake-gpt"
+        assert entry["total_tokens"] == 10
+        # No price configured in .env by default, so cost is left unset rather
+        # than computed from a guessed rate.
+        assert entry["estimated_cost_usd"] is None

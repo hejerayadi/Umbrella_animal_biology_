@@ -200,7 +200,8 @@
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-structure" type="button"><i class="bi bi-badge-3d me-1"></i>Structure</button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-json" type="button"><i class="bi bi-braces me-1"></i>JSON</button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-evidence" type="button"><i class="bi bi-journal-text me-1"></i>Evidence</button></li>
-          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-explanation" type="button"><i class="bi bi-chat-left-quote me-1"></i>Explanation</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-explanation" type="button"><i class="bi bi-chat-left-quote me-1"></i>Explanation & usage</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-knowledge" type="button"><i class="bi bi-search me-1"></i>Knowledge search</button></li>
         </ul>
       </div>
 
@@ -247,6 +248,41 @@
 
           <div class="tab-pane fade" id="tab-explanation">
             <div id="explanation-pane" class="placeholder-pane"><div>No run yet.</div></div>
+            <div id="usage-pane" class="mt-4"></div>
+          </div>
+
+          <div class="tab-pane fade" id="tab-knowledge">
+            <p class="text-secondary small">
+              Queries the RAG store directly — <code>POST /api/v1/knowledge/search</code> — independent of
+              any analysis run. A protein and taxon id are required because retrieval is always scoped to
+              one protein in one species; run a full analysis first to fill them in automatically, or set
+              them by hand.
+            </p>
+            <form id="knowledge-form" class="row gy-2 gx-2 align-items-end mb-3">
+              <div class="col-md-4">
+                <label for="kb-query" class="form-label small mb-1">Query</label>
+                <input type="text" class="form-control form-control-sm" id="kb-query"
+                       placeholder="DNA-binding domain" required>
+              </div>
+              <div class="col-md-3">
+                <label for="kb-protein" class="form-label small mb-1">Protein id</label>
+                <input type="text" class="form-control form-control-sm mono" id="kb-protein" placeholder="P04637" required>
+              </div>
+              <div class="col-md-2">
+                <label for="kb-taxon" class="form-label small mb-1">Taxon id</label>
+                <input type="number" min="1" class="form-control form-control-sm" id="kb-taxon" placeholder="9606" required>
+              </div>
+              <div class="col-md-2">
+                <label for="kb-limit" class="form-label small mb-1">Limit</label>
+                <input type="number" min="1" max="50" class="form-control form-control-sm" id="kb-limit" value="5">
+              </div>
+              <div class="col-md-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" id="kb-run-btn">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </form>
+            <div id="knowledge-pane" class="placeholder-pane"><div>No search yet.</div></div>
           </div>
 
         </div>
@@ -755,6 +791,142 @@ function renderExplanation(analysis, summary) {
       <ul class="small">${limits.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}`;
 }
 
+// Azure OpenAI usage: one row per call this run made (explanation, critic
+// audit). Token counts come from the provider's own response, never estimated
+// locally. Cost is reported only when AZURE_INPUT_PRICE_PER_1K_USD and
+// AZURE_OUTPUT_PRICE_PER_1K_USD are both set in the agent's .env - see
+// app/orchestrators/protein/orchestrator.py::_llm_usage.
+function renderUsage(analysis) {
+  const host = $("usage-pane");
+  const usage = analysis?.llm_usage || [];
+  if (!usage.length) {
+    host.innerHTML = `<div class="alert alert-secondary py-2 mb-0">
+      No Azure OpenAI call was made this run — either <code>include_explanation</code> was off, the LLM
+      is not configured, or both nodes were skipped before reaching the model.
+    </div>`;
+    return;
+  }
+
+  const totalTokens = usage.reduce((sum, u) => sum + (u.total_tokens || 0), 0);
+  const totalCost = usage.every((u) => u.estimated_cost_usd != null)
+    ? usage.reduce((sum, u) => sum + u.estimated_cost_usd, 0)
+    : null;
+  const totalMs = usage.reduce((sum, u) => sum + u.duration_ms, 0);
+
+  const rows = usage.map((u) => `<tr>
+      <td class="mono small">${esc(u.node)}</td>
+      <td class="mono small">${esc(u.model)}</td>
+      <td class="text-end">${esc(u.duration_ms)} ms</td>
+      <td class="text-end mono">${u.input_tokens ?? "—"}</td>
+      <td class="text-end mono">${u.output_tokens ?? "—"}</td>
+      <td class="text-end mono">${u.total_tokens ?? "—"}</td>
+      <td class="text-end mono">${u.estimated_cost_usd != null ? "$" + u.estimated_cost_usd.toFixed(6) : "—"}</td>
+    </tr>`).join("");
+
+  host.innerHTML = `
+    <h6 class="text-secondary text-uppercase small">Azure OpenAI usage</h6>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr>
+          <th>Node</th><th>Model</th><th class="text-end">Latency</th>
+          <th class="text-end">In</th><th class="text-end">Out</th><th class="text-end">Total</th>
+          <th class="text-end">Est. cost</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="fw-semibold">
+          <td colspan="2">Total</td>
+          <td class="text-end">${totalMs} ms</td>
+          <td></td><td></td>
+          <td class="text-end mono">${totalTokens}</td>
+          <td class="text-end mono">${totalCost != null ? "$" + totalCost.toFixed(6) : "—"}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    ${totalCost == null ? `<p class="small text-secondary mb-0">
+      Set <code>AZURE_INPUT_PRICE_PER_1K_USD</code> and <code>AZURE_OUTPUT_PRICE_PER_1K_USD</code> in
+      the agent's <code>.env</code> to see an estimated cost here.</p>` : ""}`;
+}
+
+// ── knowledge search (RAG) ─────────────────────────────────────────────────
+// Retrieval is always scoped to one protein in one species, so the search form
+// needs a protein_id and taxonomy_id; prefilling them from the last analysis
+// saves retyping an accession you just resolved.
+function rememberProteinForKnowledgeSearch(analysis, summary) {
+  const protein = analysis?.protein
+    ? { accession: analysis.protein.uniprot_accession, taxonId: analysis.protein.taxon_id }
+    : summary?.uniprot_accession
+      ? { accession: summary.uniprot_accession, taxonId: null }
+      : null;
+  if (!protein || !protein.accession) return;
+  $("kb-protein").value = protein.accession;
+  if (protein.taxonId) $("kb-taxon").value = protein.taxonId;
+}
+
+async function runKnowledgeSearch(event) {
+  event.preventDefault();
+  const btn = $("kb-run-btn");
+  const pane = $("knowledge-pane");
+  btn.disabled = true;
+  pane.classList.remove("placeholder-pane");
+  pane.innerHTML = `<div class="text-secondary small"><span class="spinner-border spinner-border-sm me-1"></span>Searching…</div>`;
+
+  const body = {
+    query: $("kb-query").value.trim(),
+    protein_id: $("kb-protein").value.trim(),
+    taxonomy_id: parseInt($("kb-taxon").value, 10),
+    limit: parseInt($("kb-limit").value, 10) || 5,
+  };
+
+  try {
+    const response = await fetch(`${API}/knowledge/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error?.detail || `HTTP ${response.status}`);
+    }
+    renderKnowledgeResults(payload.data || [], body);
+  } catch (err) {
+    pane.innerHTML = `<div class="alert alert-danger py-2 mb-0">
+      <strong>Search failed.</strong>
+      <div class="small mt-1 mono">${esc(err && err.message ? err.message : err)}</div>
+      <div class="small mt-1">
+        Is <code>QDRANT_URL</code> configured, and does this protein/taxon have indexed documents?
+        Seed some with <code>scripts/seed_protein_knowledge.py</code>.
+      </div></div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderKnowledgeResults(hits, query) {
+  const pane = $("knowledge-pane");
+  pane.classList.remove("placeholder-pane");
+  if (!hits.length) {
+    pane.innerHTML = `<div class="alert alert-secondary py-2 mb-0">
+      No documents indexed for <code>${esc(query.protein_id)}</code> / taxon
+      <code>${esc(query.taxonomy_id)}</code> matched "${esc(query.query)}".
+    </div>`;
+    return;
+  }
+  const rows = hits.map((hit) => `<tr>
+      <td class="text-end mono">${hit.score.toFixed(3)}</td>
+      <td class="mono small">${esc(hit.id)}</td>
+      <td class="small">${esc(hit.metadata?.document_type || "—")}</td>
+      <td class="small">${esc(hit.metadata?.source || "—")}</td>
+      <td class="small">${esc(hit.text)}</td>
+    </tr>`).join("");
+  pane.innerHTML = `<div class="table-responsive">
+    <table class="table table-sm table-striped align-middle">
+      <thead><tr>
+        <th class="text-end">Score</th><th>Document id</th><th>Type</th><th>Source</th><th>Text</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
 // ── run ─────────────────────────────────────────────────────────────────────
 async function run(event) {
   event.preventDefault();
@@ -802,7 +974,9 @@ async function run(event) {
     // you the node trace and the JSON, which are the whole point of the console.
     paint("evidence-pane", () => renderEvidence(analysis));
     paint("explanation-pane", () => renderExplanation(analysis, summary));
+    paint("usage-pane", () => renderUsage(analysis));
     await paint("structure-meta", () => renderStructure(analysis));
+    rememberProteinForKnowledgeSearch(analysis, summary);
   } catch (err) {
     $("workflow-pane").classList.remove("placeholder-pane");
     $("workflow-pane").innerHTML = `<div class="alert alert-danger">
@@ -888,6 +1062,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateHint();
 
   $("test-form").addEventListener("submit", run);
+  $("knowledge-form").addEventListener("submit", runKnowledgeSearch);
 
   document.querySelectorAll("[data-copy]").forEach((btn) =>
     btn.addEventListener("click", async () => {

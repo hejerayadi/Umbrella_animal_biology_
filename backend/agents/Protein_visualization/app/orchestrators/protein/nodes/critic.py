@@ -24,10 +24,15 @@ class CriticNode:
                 state["resolved_protein"],
                 state["selected_structure"],
                 state["residue_mappings"],
+                state.get("warnings", []),
             )
-            audited = await self.capability.audit(report, state["evidence_pack"] or EvidencePack(), self.llm)
+            audited, usage = await self.capability.audit(
+                report, state["evidence_pack"] or EvidencePack(), self.llm, RUN_CRITIC
+            )
             outcome["deterministic_verdict"] = report.verdict
             outcome["verdict"] = audited.verdict
+            if usage:
+                outcome["tokens"] = usage.total_tokens
 
         verdict = ValidationStatus(audited.verdict)
         warnings = (
@@ -35,4 +40,9 @@ class CriticNode:
             if verdict is not ValidationStatus.accept
             else []
         )
-        return executed(RUN_CRITIC, validation_status=verdict, warnings=warnings)
+        return executed(
+            RUN_CRITIC,
+            validation_status=verdict,
+            warnings=warnings,
+            llm_usage=[usage] if usage else [],
+        )

@@ -7,12 +7,14 @@ workflow is LangGraph's job and the biological facts are the tools' job.
 
 import json
 import logging
+import time
 from functools import cached_property
 from typing import Any
 
 from pydantic import BaseModel
 
 from backend.agents.Protein_visualization.app.configuration.settings import Settings
+from backend.agents.Protein_visualization.app.domain.models import LlmUsage
 from backend.agents.Protein_visualization.app.llm.prompts import (
     PROTEIN_EXPLANATION_SYSTEM_PROMPT,
     SCIENTIFIC_CRITIC_SYSTEM_PROMPT,
@@ -55,23 +57,46 @@ class AzureFoundryClient:
             parameters["temperature"] = self.settings.azure_temperature
         return AzureChatOpenAI(**parameters)
 
-    async def explain(self, context: dict[str, object]) -> ExplanationOutput:
-        return await self._invoke(PROTEIN_EXPLANATION_SYSTEM_PROMPT, context, ExplanationOutput)
+    async def explain(self, context: dict[str, object], node: str) -> tuple[ExplanationOutput, LlmUsage]:
+        return await self._invoke(PROTEIN_EXPLANATION_SYSTEM_PROMPT, context, ExplanationOutput, node)
 
-    async def critique(self, context: dict[str, object]) -> CriticOutput:
-        return await self._invoke(SCIENTIFIC_CRITIC_SYSTEM_PROMPT, context, CriticOutput)
+    async def critique(self, context: dict[str, object], node: str) -> tuple[CriticOutput, LlmUsage]:
+        return await self._invoke(SCIENTIFIC_CRITIC_SYSTEM_PROMPT, context, CriticOutput, node)
 
     async def _invoke[T: BaseModel](
-        self, system_prompt: str, context: dict[str, object], schema: type[T]
-    ) -> T:
+        self, system_prompt: str, context: dict[str, object], schema: type[T], node: str
+    ) -> tuple[T, LlmUsage]:
         if not self.enabled:
             raise RuntimeError("Azure OpenAI is not configured")
-        structured = self._model.with_structured_output(schema)
-        result = await structured.ainvoke(
+        # include_raw=True trades the plain parsed object for {raw, parsed,
+        # parsing_error}: raw is the provider's own AIMessage, and its
+        # usage_metadata is the only trustworthy token count - a local
+        # tokenizer would silently drift from whatever model the deployment
+        # actually routes to.
+        structured = self._model.with_structured_output(schema, include_raw=True)
+        started = time.monotonic()
+        response = await structured.ainvoke(
             [
                 ("system", system_prompt),
                 ("human", json.dumps(context, default=str)),
             ]
         )
-        # Some deployments return the parsed model, others the raw dict.
-        return result if isinstance(result, schema) else schema.model_validate(result)
+        duration_ms = round((time.monotonic() - started) * 1000)
+
+        parsed = response["parsed"]
+        if parsed is None:
+            raise ValueError(f"Azure OpenAI returned no parseable {schema.__name__}: {response['raw']!r}")
+        result = parsed if isinstance(parsed, schema) else schema.model_validate(parsed)
+
+        raw = response["raw"]
+        usage = getattr(raw, "usage_metadata", None) or {}
+        response_metadata = getattr(raw, "response_metadata", None) or {}
+        model_name = str(response_metadata.get("model_name") or self.settings.azure_openai_deployment or "")
+        return result, LlmUsage(
+            node=node,
+            model=model_name,
+            duration_ms=duration_ms,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            total_tokens=usage.get("total_tokens"),
+        )

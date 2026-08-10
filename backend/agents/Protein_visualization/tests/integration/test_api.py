@@ -33,8 +33,8 @@ def test_analysis_runs_the_workflow_and_returns_the_envelope() -> None:
     assert body["data"]["status"] == "completed"
     assert body["data"]["target_agent"] is None
     data = body["data"]["output"]
-    assert data["status"] == "COMPLETED"
-    assert data["validation_status"] == "ACCEPT"
+    assert data["status"] == "PARTIAL"
+    assert data["validation_status"] == "REVISE"
     assert data["selected_structure"]["external_id"] == "1TUP"
     assert data["molstar_config"]["selections"][0]["residue_number"] == "273"
     assert data["evidence"]

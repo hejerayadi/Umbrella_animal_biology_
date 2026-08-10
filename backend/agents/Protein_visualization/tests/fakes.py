@@ -13,7 +13,8 @@ from backend.agents.Protein_visualization.app.capabilities.residue_mapping impor
 from backend.agents.Protein_visualization.app.capabilities.retrieval import RetrievalCapability
 from backend.agents.Protein_visualization.app.capabilities.structures import StructureCapability
 from backend.agents.Protein_visualization.app.capabilities.visualization import VisualizationCapability
-from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit, SpeciesRef
+from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit, LlmUsage, SpeciesRef
+from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
 from backend.agents.Protein_visualization.app.orchestrators.protein.graph import build_graph
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes import ProteinNodes
 from backend.agents.Protein_visualization.app.orchestrators.protein.orchestrator import ProteinOrchestrator
@@ -115,6 +116,36 @@ class FakeTaxonomy:
         return self.species
 
 
+class FakeLanguageModel:
+    """A `LanguageModel` that never leaves the process. Every call costs 10 fake tokens."""
+
+    def __init__(
+        self,
+        explanation: ExplanationOutput | None = None,
+        critic: CriticOutput | None = None,
+        enabled: bool = True,
+    ) -> None:
+        self._explanation = explanation or ExplanationOutput(summary="Grounded summary.", limitations=[])
+        self._critic = critic or CriticOutput(verdict="ACCEPT", reasons=["Consistent with the evidence."])
+        self._enabled = enabled
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    async def explain(self, context: dict[str, object], node: str) -> tuple[ExplanationOutput, LlmUsage]:
+        usage = LlmUsage(
+            node=node, model="fake-gpt", duration_ms=5, input_tokens=6, output_tokens=4, total_tokens=10
+        )
+        return self._explanation, usage
+
+    async def critique(self, context: dict[str, object], node: str) -> tuple[CriticOutput, LlmUsage]:
+        usage = LlmUsage(
+            node=node, model="fake-gpt", duration_ms=5, input_tokens=7, output_tokens=3, total_tokens=10
+        )
+        return self._critic, usage
+
+
 def build_orchestrator(
     uniprot: FakeUniProt | None = None,
     rcsb: FakeRCSB | None = None,
@@ -122,6 +153,7 @@ def build_orchestrator(
     interpro: FakeInterPro | None = None,
     sifts: FakeSifts | None = None,
     retriever: FakeRetriever | None = None,
+    llm: FakeLanguageModel | None = None,
 ) -> ProteinOrchestrator:
     nodes = ProteinNodes.build(
         identity=IdentityCapability(uniprot or FakeUniProt()),  # type: ignore[arg-type]
@@ -131,8 +163,9 @@ def build_orchestrator(
         residue_mapping=ResidueMappingCapability(sifts or FakeSifts()),  # type: ignore[arg-type]
         evidence=EvidenceCapability(),
         visualization=VisualizationCapability(),
-        explanation=ExplanationCapability(None),
+        explanation=ExplanationCapability(llm),  # type: ignore[arg-type]
         critic=CriticCapability(),
         min_sequence_coverage=0.3,
+        llm=llm,  # type: ignore[arg-type]
     )
     return ProteinOrchestrator(build_graph(nodes))

@@ -1,7 +1,7 @@
 import logging
 from typing import Protocol
 
-from backend.agents.Protein_visualization.app.domain.models import EvidencePack, Explanation
+from backend.agents.Protein_visualization.app.domain.models import EvidencePack, Explanation, LlmUsage
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
 
 logger = logging.getLogger("app.explanation")
@@ -11,9 +11,9 @@ class LanguageModel(Protocol):
     @property
     def enabled(self) -> bool: ...
 
-    async def explain(self, context: dict[str, object]) -> ExplanationOutput: ...
+    async def explain(self, context: dict[str, object], node: str) -> tuple[ExplanationOutput, LlmUsage]: ...
 
-    async def critique(self, context: dict[str, object]) -> CriticOutput: ...
+    async def critique(self, context: dict[str, object], node: str) -> tuple[CriticOutput, LlmUsage]: ...
 
 
 def evidence_context(evidence: EvidencePack) -> dict[str, object]:
@@ -32,16 +32,16 @@ class ExplanationCapability:
     def __init__(self, llm: LanguageModel | None = None) -> None:
         self.llm = llm
 
-    async def explain(self, evidence: EvidencePack) -> Explanation:
+    async def explain(self, evidence: EvidencePack, node: str) -> tuple[Explanation, LlmUsage | None]:
         if self.llm is not None and self.llm.enabled:
             try:
-                output = await self.llm.explain(evidence_context(evidence))
+                output, usage = await self.llm.explain(evidence_context(evidence), node)
             except Exception as exc:
                 # A model failure must never cost the caller its structured evidence.
                 logger.warning("explanation_llm_failed", exc_info=exc)
             else:
                 limitations = tuple(dict.fromkeys((*evidence.limitations, *output.limitations)))
-                return Explanation(summary=output.summary, limitations=limitations, generated=True)
+                return Explanation(summary=output.summary, limitations=limitations, generated=True), usage
 
         summary = " ".join(evidence.facts) if evidence.facts else "Insufficient evidence for an explanation."
-        return Explanation(summary=summary, limitations=evidence.limitations, generated=False)
+        return Explanation(summary=summary, limitations=evidence.limitations, generated=False), None
