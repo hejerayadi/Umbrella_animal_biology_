@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Markdown } from "@/components/umbrella/markdown";
 import { UmbrellaMark } from "@/components/umbrella/logo";
+import { ProteinViewer } from "@/components/umbrella/protein-viewer";
 import { UserAvatar } from "@/components/umbrella/user-avatar";
 import type { Message } from "@/lib/umbrella-types";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,10 @@ export function ChatMessage({
         ) : (
           <div className={cn(!done && "typing-caret")}>
             <Markdown content={shown} />
+            {/* Held back until the text finishes typing: mounting Mol* mid-
+                animation makes it initialise its WebGL context while the
+                message above it is still reflowing on every tick. */}
+            {message.proteinViewer && done && <ProteinViewer spec={message.proteinViewer} />}
           </div>
         )}
       </div>

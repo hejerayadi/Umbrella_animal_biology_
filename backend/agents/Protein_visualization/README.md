@@ -9,23 +9,63 @@ A FastAPI service that resolves gene/protein identifiers, discovers experimental
 - **Azure** — the LLM provider for explanation and critic generation (`LLM_PROVIDER=azure`).
 - **BGE-M3** — the embedding model for ingestion and retrieval.
 
+## Two ways this agent runs
+
+| | Port | Serves | Callers |
+|---|---|---|---|
+| `api.py` | 8008 | `POST /execute` | the Global Orchestrator only |
+| `app/main.py` | 8010 | the full scientific API + Swagger | scripts, and you |
+
+`api.py` is the platform boundary: it takes `{instruction, context}` from the
+orchestrator, resolves the gene and species named in the chat message against
+UniProt, runs the same workflow, and returns an `AgentResult`. See
+[orchestrator_adapter.py](orchestrator_adapter.py) for why identity is resolved
+there rather than trusted from the context.
+
+`app/main.py` is the same workflow with its scientific contract exposed
+directly, which is what the scripts below drive.
+
 ## Run locally
 
 ```powershell
-cd backend/Protein_visualization
+cd backend/agents/Protein_visualization
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt
 Copy-Item .env.example .env   # then fill in QDRANT_* and AZURE_*
-.venv\Scripts\python.exe -m scripts.serve
 ```
 
-The backend host and port are read from `.env`:
+Both services are started from the **repository root**, so that the
+`backend.agents.Protein_visualization.*` package path resolves:
+
+```powershell
+# the orchestrator-facing agent (what the chat UI reaches)
+.\backend\agents\Protein_visualization\.venv\Scripts\python.exe -m uvicorn `
+    backend.agents.Protein_visualization.api:app --port 8008
+
+# the standalone scientific service
+.\backend\agents\Protein_visualization\.venv\Scripts\python.exe -m scripts.serve
+```
+
+`python -m backend.run_agents` starts the first one for you, along with every
+other agent.
+
+The standalone service's host and port are read from `.env`. Port 8000 belongs
+to the Global Orchestrator's API and 8008 to the agent above, so it uses a
+third:
 
 ```env
 APP_HOST=127.0.0.1
-APP_PORT=8000
+APP_PORT=8010
 APP_RELOAD=true
 ```
+
+> The first analysis on a fresh machine downloads the BGE-M3 embedding model
+> (~2.3 GB) before it can answer, which takes far longer than any client
+> timeout. Warm the cache once, in advance:
+>
+> ```powershell
+> .venv\Scripts\python.exe -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
+> ```
 
 Open `http://127.0.0.1:${APP_PORT}/docs`, then drive the agent:
 

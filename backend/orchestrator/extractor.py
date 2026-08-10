@@ -15,12 +15,15 @@ code changes.
 
 IMPORTANT - only ever seed keys that describe the QUESTION, never keys an
 agent produces as OUTPUT. Agents read the presence of an output key as "that
-work is already done": `ProteinMock` skips asking the Trait agent once it
-sees `context["traits"]`, and `EvolutionMock` skips the Genome agent once it
-sees `context["genome"]`. Seeding either would make an agent silently skip a
+work is already done": `EvolutionMock` skips the Genome agent once it sees
+`context["genome"]`, and the Trait agent is skipped the same way by anyone who
+sees `context["traits"]`. Seeding either would make an agent silently skip a
 real dependency and answer from nothing. That is why the trait and gene keys
 below are named `trait_name` and `gene_name` - to stay clear of `traits`, the
 Trait agent's output key.
+
+`gene_name` is what the Protein Visualization Agent resolves against UniProt,
+so its spelling matters more than most: it is read as a gene symbol.
 
 `species` is safe despite also being the Multimodal agent's output: no agent
 uses its presence as a "Multimodal already ran" flag, they all read it as
