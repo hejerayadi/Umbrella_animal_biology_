@@ -55,3 +55,14 @@ class ProteinAnalysisResponse(BaseModel):
     explanation: ExplanationResponse | None = None
     warnings: list[str] = Field(default_factory=list)
     evidence: list[dict[str, Any]] = Field(default_factory=list)
+
+    # Which path the graph actually took. A response says what was produced but
+    # not how, and the two differ in ways that matter: an AlphaFold model means
+    # `evaluate_pdb_results` rejected every experimental candidate, and a missing
+    # explanation means either the node was skipped or the LLM failed. Ordered by
+    # `WORKFLOW_SEQUENCE`, so reading it top to bottom follows the run.
+    executed_nodes: list[str] = Field(default_factory=list)
+    # `"<node>: <ExceptionType>"` per provider failure that was degraded into a
+    # warning rather than raised, and how many times each node retried.
+    errors: list[str] = Field(default_factory=list)
+    retry_counts: dict[str, int] = Field(default_factory=dict)

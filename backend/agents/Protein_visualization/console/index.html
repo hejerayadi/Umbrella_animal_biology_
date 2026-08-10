@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Protein Agent · test console</title>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.css">
+
+<style>
+  :root { --console-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+  body { font-size: .925rem; }
+  .mono { font-family: var(--console-mono); }
+
+  /* Sticky request panel, independently scrollable from the results. */
+  @media (min-width: 992px) {
+    .panel-sticky { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; }
+  }
+
+  pre.json {
+    font-family: var(--console-mono); font-size: .8rem; line-height: 1.45;
+    max-height: 60vh; overflow: auto; margin: 0; padding: 1rem;
+    background: var(--bs-tertiary-bg); border-radius: .5rem; tab-size: 2;
+  }
+  .tok-key { color: #7dd3fc; } .tok-str { color: #86efac; }
+  .tok-num { color: #fca5a5; } .tok-bool, .tok-null { color: #d8b4fe; }
+  [data-bs-theme="light"] .tok-key { color: #0369a1; }
+  [data-bs-theme="light"] .tok-str { color: #15803d; }
+  [data-bs-theme="light"] .tok-num { color: #b91c1c; }
+  [data-bs-theme="light"] .tok-bool, [data-bs-theme="light"] .tok-null { color: #7e22ce; }
+
+  /* Workflow rail: a vertical line with one dot per node. */
+  .rail { list-style: none; margin: 0; padding: 0 0 0 1.6rem; position: relative; }
+  .rail::before {
+    content: ""; position: absolute; left: .45rem; top: .4rem; bottom: .4rem;
+    width: 2px; background: var(--bs-border-color);
+  }
+  .rail li { position: relative; padding: .3rem 0 .3rem .1rem; }
+  .rail li::before {
+    content: ""; position: absolute; left: -1.35rem; top: .62rem;
+    width: .72rem; height: .72rem; border-radius: 50%;
+    background: var(--bs-body-bg); border: 2px solid var(--bs-border-color);
+  }
+  .rail li.ran::before      { background: var(--bs-success); border-color: var(--bs-success); }
+  .rail li.degraded::before { background: var(--bs-warning); border-color: var(--bs-warning); }
+  .rail li.skipped          { opacity: .45; }
+  .node-name { font-family: var(--console-mono); font-size: .78rem; }
+
+  #molstar-host { position: relative; width: 100%; height: 65vh; min-height: 420px; }
+  .placeholder-pane {
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    min-height: 220px; color: var(--bs-secondary-color);
+  }
+  .table-sm > :not(caption) > * > * { padding: .35rem .5rem; }
+  .chip { font-size: .7rem; letter-spacing: .02em; text-transform: uppercase; }
+</style>
+</head>
+
+<body class="bg-body-tertiary">
+
+<nav class="navbar navbar-expand bg-body border-bottom sticky-top">
+  <div class="container-fluid">
+    <span class="navbar-brand mb-0 d-flex align-items-center gap-2">
+      <i class="bi bi-diagram-3"></i>
+      <span>Protein Agent <span class="text-secondary fw-normal">test console</span></span>
+    </span>
+    <div class="d-flex align-items-center gap-2">
+      <span id="dep-chips" class="d-flex gap-1"></span>
+      <button id="theme-toggle" class="btn btn-sm btn-outline-secondary" title="Toggle theme">
+        <i class="bi bi-circle-half"></i>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+<div class="row g-3">
+
+  <!-- ───────────────────────── request panel ───────────────────────── -->
+  <div class="col-lg-4">
+    <div class="panel-sticky">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong><i class="bi bi-pencil-square me-1"></i>New test</strong>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Presets</button>
+            <ul class="dropdown-menu dropdown-menu-end" id="preset-menu"></ul>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <form id="test-form" novalidate>
+
+            <label class="form-label small text-secondary mb-1">Endpoint</label>
+            <div class="btn-group w-100 mb-3" role="group">
+              <input type="radio" class="btn-check" name="endpoint" id="ep-full" value="full" checked>
+              <label class="btn btn-sm btn-outline-primary" for="ep-full">Full analysis</label>
+              <input type="radio" class="btn-check" name="endpoint" id="ep-exec" value="execute">
+              <label class="btn btn-sm btn-outline-primary" for="ep-exec">/execute</label>
+            </div>
+            <p id="endpoint-hint" class="small text-secondary mb-3"></p>
+
+            <div class="mb-2">
+              <label for="f-species" class="form-label small mb-1">
+                Species <span class="text-danger">*</span>
+              </label>
+              <input type="text" class="form-control form-control-sm" id="f-species"
+                     placeholder="Homo sapiens" value="Homo sapiens" required>
+              <div class="form-text">Scientific or common name. Resolved to an NCBI taxonomy id via UniProt.</div>
+            </div>
+
+            <div class="row g-2 mb-2">
+              <div class="col-7">
+                <label for="f-gene" class="form-label small mb-1">Gene symbol</label>
+                <input type="text" class="form-control form-control-sm" id="f-gene" placeholder="TP53" value="TP53">
+              </div>
+              <div class="col-5">
+                <label for="f-accession" class="form-label small mb-1">Accession</label>
+                <input type="text" class="form-control form-control-sm" id="f-accession" placeholder="P04637">
+              </div>
+            </div>
+            <div class="form-text mb-3">One of gene, accession or sequence is required.</div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label for="f-residue" class="form-label small mb-1">Residue position</label>
+                <input type="number" min="1" class="form-control form-control-sm" id="f-residue" placeholder="273">
+                <div class="form-text">Triggers the SIFTS node.</div>
+              </div>
+              <div class="col-6">
+                <label for="f-mutation" class="form-label small mb-1">Mutation</label>
+                <input type="text" class="form-control form-control-sm" id="f-mutation" placeholder="R273H">
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="f-source" class="form-label small mb-1">Preferred structure source</label>
+              <select class="form-select form-select-sm" id="f-source">
+                <option value="AUTO" selected>AUTO — experimental first, AlphaFold as fallback</option>
+                <option value="PDB">PDB — experimental only</option>
+                <option value="ALPHAFOLD">ALPHAFOLD — predicted only</option>
+              </select>
+            </div>
+
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="f-explanation" checked>
+              <label class="form-check-label small" for="f-explanation">
+                Generate explanation <span class="text-secondary">(calls Azure)</span>
+              </label>
+            </div>
+
+            <div class="accordion accordion-flush mb-3" id="adv">
+              <div class="accordion-item bg-transparent">
+                <h2 class="accordion-header">
+                  <button class="accordion-button collapsed px-0 py-2 bg-transparent shadow-none small"
+                          type="button" data-bs-toggle="collapse" data-bs-target="#adv-body">
+                    Advanced
+                  </button>
+                </h2>
+                <div id="adv-body" class="accordion-collapse collapse" data-bs-parent="#adv">
+                  <div class="accordion-body px-0 pt-0">
+                    <label for="f-regions" class="form-label small mb-1">Requested regions</label>
+                    <input type="text" class="form-control form-control-sm mb-2" id="f-regions"
+                           placeholder="DNA-binding domain, tetramerisation">
+                    <div class="form-text mb-2">Comma separated.</div>
+
+                    <label for="f-sequence" class="form-label small mb-1">Protein sequence</label>
+                    <textarea class="form-control form-control-sm mono" id="f-sequence" rows="3"
+                              placeholder="MEEPQSDPSV…"></textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100" id="run-btn">
+              <span class="spinner-border spinner-border-sm d-none me-1" id="run-spinner"></span>
+              <span id="run-label"><i class="bi bi-play-fill"></i> Run analysis</span>
+            </button>
+            <div class="form-text text-center mt-2">
+              Calls the real UniProt, RCSB, AlphaFold, InterPro and SIFTS APIs — expect a few seconds.
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="run-summary" class="card mt-3 d-none">
+        <div class="card-body py-2 d-flex flex-wrap gap-2 align-items-center" id="run-summary-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ───────────────────────── results panel ───────────────────────── -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header p-0">
+        <ul class="nav nav-tabs card-header-tabs m-0 px-2 pt-2" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-workflow" type="button"><i class="bi bi-diagram-2 me-1"></i>Workflow</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-structure" type="button"><i class="bi bi-badge-3d me-1"></i>Structure</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-json" type="button"><i class="bi bi-braces me-1"></i>JSON</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-evidence" type="button"><i class="bi bi-journal-text me-1"></i>Evidence</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-explanation" type="button"><i class="bi bi-chat-left-quote me-1"></i>Explanation</button></li>
+        </ul>
+      </div>
+
+      <div class="card-body">
+        <div class="tab-content">
+
+          <div class="tab-pane fade show active" id="tab-workflow">
+            <div id="workflow-pane" class="placeholder-pane">
+              <div>
+                <i class="bi bi-diagram-2 fs-1 d-block mb-2 opacity-50"></i>
+                Run an analysis to see which nodes the graph took.
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-pane fade" id="tab-structure">
+            <div id="structure-meta" class="mb-2"></div>
+            <div id="molstar-host" class="border rounded"></div>
+            <div id="selection-info" class="mt-2"></div>
+          </div>
+
+          <div class="tab-pane fade" id="tab-json">
+            <div class="row g-3">
+              <div class="col-xl-6">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <strong class="small text-secondary">REQUEST</strong>
+                  <button class="btn btn-sm btn-outline-secondary py-0" data-copy="json-request">Copy</button>
+                </div>
+                <pre class="json" id="json-request">—</pre>
+              </div>
+              <div class="col-xl-6">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <strong class="small text-secondary">RESPONSE</strong>
+                  <button class="btn btn-sm btn-outline-secondary py-0" data-copy="json-response">Copy</button>
+                </div>
+                <pre class="json" id="json-response">—</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-pane fade" id="tab-evidence">
+            <div id="evidence-pane" class="placeholder-pane"><div>No run yet.</div></div>
+          </div>
+
+          <div class="tab-pane fade" id="tab-explanation">
+            <div id="explanation-pane" class="placeholder-pane"><div>No run yet.</div></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/molstar@5.11.0/build/viewer/molstar.js"></script>
+<script>
+"use strict";
+
+// The console is served by the agent itself, so every call is same-origin and
+// no CORS configuration has to know about it.
+const API = "/api/v1";
+
+// ── the graph, as wired in app/orchestrators/protein/graph.py ────────────────
+// Kept here rather than fetched so that a node the backend never reached still
+// shows up as skipped; a response only ever names the nodes that did run.
+const PIPELINE = [
+  { group: "Intake", nodes: [
+    ["validate_input", "Validate input", "Stops with a clarification if the task is incomplete."],
+  ]},
+  { group: "Identity", nodes: [
+    ["resolve_protein_identity", "Resolve identity · UniProt", "The anchor. Without it the run abstains."],
+  ]},
+  { group: "Parallel branches", nodes: [
+    ["search_experimental_structures", "Search experimental · RCSB PDB", "Structure branch, step 1."],
+    ["evaluate_pdb_results", "Evaluate PDB candidates", "Coverage filter. Decides whether AlphaFold is needed."],
+    ["search_alphafold", "AlphaFold fallback", "Reached only when no experimental candidate survives."],
+    ["select_structure", "Select structure", "Scores the survivors and picks one."],
+    ["fetch_annotations", "Fetch annotations · InterPro", "Annotation branch."],
+    ["retrieve_knowledge", "Retrieve knowledge · Qdrant", "Knowledge branch. Optional: failure only limits the explanation."],
+  ]},
+  { group: "Join", nodes: [
+    ["join_results", "Join results", "Barrier. Waits for every parallel branch."],
+  ]},
+  { group: "Assembly", nodes: [
+    ["map_residues_with_sifts", "Map residues · SIFTS", "Runs only when a residue, mutation or region was asked for."],
+    ["build_evidence_pack", "Build evidence pack", "Groups evidence by source."],
+    ["build_molstar_scene", "Build Mol* scene", "JSON only; no viewer is instantiated server-side."],
+    ["generate_grounded_explanation", "Explanation · Azure", "Skipped when include_explanation is false."],
+  ]},
+  { group: "Verdict", nodes: [
+    ["run_scientific_critic", "Scientific critic", "ACCEPT, REVISE or ABSTAIN."],
+  ]},
+  { group: "Terminal", nodes: [
+    ["complete", "complete", "Usable, validated result."],
+    ["return_partial", "return_partial", "Usable but degraded or REVISE."],
+    ["return_needs_clarification", "return_needs_clarification", "Input could not be validated."],
+    ["scientific_abstain", "scientific_abstain", "No identity, or the critic abstained."],
+  ]},
+];
+
+const PRESETS = [
+  { label: "TP53 · human · residue 273", hint: "experimental structure + SIFTS mapping",
+    values: { species: "Homo sapiens", gene: "TP53", accession: "", residue: 273, mutation: "R273H", source: "AUTO", explanation: true } },
+  { label: "Trp53 · \"mouse\"", hint: "exercises common-name taxonomy resolution",
+    values: { species: "mouse", gene: "Trp53", accession: "", residue: "", mutation: "", source: "AUTO", explanation: true } },
+  { label: "BRCA1 · accession only", hint: "no experimental hit → AlphaFold fallback",
+    values: { species: "Homo sapiens", gene: "", accession: "P38398", residue: "", mutation: "", source: "AUTO", explanation: true } },
+  { label: "TP53 · force AlphaFold", hint: "skips the experimental branch",
+    values: { species: "Homo sapiens", gene: "TP53", accession: "", residue: "", mutation: "", source: "ALPHAFOLD", explanation: true } },
+  { label: "No gene → needs_agent", hint: "the hand-off path, on /execute",
+    values: { species: "Homo sapiens", gene: "", accession: "", residue: "", mutation: "", source: "AUTO", explanation: true }, endpoint: "execute" },
+];
+
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ── JSON rendering ──────────────────────────────────────────────────────────
+function renderJson(target, value) {
+  const text = JSON.stringify(value, null, 2);
+  target.innerHTML = esc(text).replace(
+    /("(\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(\.\d+)?([eE][+-]?\d+)?/g,
+    (match, str, _c, colon) => {
+      let cls = "tok-num";
+      if (str) cls = colon ? "tok-key" : "tok-str";
+      else if (match === "true" || match === "false") cls = "tok-bool";
+      else if (match === "null") cls = "tok-null";
+      return `<span class="${cls}">${match}</span>`;
+    });
+  target.dataset.raw = text;
+}
+
+// ── request building ────────────────────────────────────────────────────────
+function readForm() {
+  const regions = $("f-regions").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const residue = parseInt($("f-residue").value, 10);
+  return {
+    endpoint: document.querySelector('input[name="endpoint"]:checked').value,
+    species: $("f-species").value.trim(),
+    gene: $("f-gene").value.trim(),
+    accession: $("f-accession").value.trim(),
+    sequence: $("f-sequence").value.replace(/\s+/g, ""),
+    residue: Number.isFinite(residue) && residue > 0 ? residue : null,
+    mutation: $("f-mutation").value.trim(),
+    regions,
+    source: $("f-source").value,
+    explanation: $("f-explanation").checked,
+  };
+}
+
+function buildRequest(form) {
+  if (form.endpoint === "execute") {
+    // Exactly the body backend/orchestrator/langgraph/nodes/worker_node.py posts:
+    // the user's question, plus everything the agents have produced so far.
+    const context = {};
+    if (form.species) context.species = form.species;
+    if (form.gene) context.gene_name = form.gene;
+    if (form.accession) context.uniprot_accession = form.accession;
+    if (form.sequence) context.protein_sequence = form.sequence;
+    if (form.residue) context.residue_position = form.residue;
+    if (form.mutation) context.mutation = form.mutation;
+    if (form.regions.length) context.requested_regions = form.regions;
+    return {
+      url: "/execute",
+      body: {
+        instruction: describe(form),
+        context,
+      },
+    };
+  }
+
+  return {
+    url: `${API}/protein-structure-analyses`,
+    body: {
+      task_id: crypto.randomUUID(),
+      trace_id: crypto.randomUUID(),
+      source_agent: "protein-test-console",
+      target_capability: "protein-structure.orchestrate",
+      schema_version: "1.0",
+      idempotency_key: `console-${Date.now()}`,
+      input: {
+        resolved_gene_id: form.gene || form.accession || "sequence-supplied",
+        species: { scientific_name: form.species, taxon_id: 0 },
+        uniprot_accession: form.accession || null,
+        protein_sequence: form.sequence || null,
+        requested_regions: form.regions,
+        residue_position: form.residue,
+        mutation: form.mutation || null,
+        preferred_source: form.source,
+        include_explanation: form.explanation,
+      },
+    },
+  };
+}
+
+function describe(form) {
+  const subject = form.gene || form.accession || "this protein";
+  const where = form.species ? ` in ${form.species}` : "";
+  const at = form.residue ? ` at residue ${form.residue}` : "";
+  return `Show me the 3D structure of ${subject}${where}${at}`;
+}
+
+// The full endpoint takes a taxon id, not a name, because that is what every
+// provider downstream is keyed by. /execute resolves the name internally; here
+// the same step runs through GET /api/v1/taxonomy so the request shown in the
+// JSON tab is exactly the one that was sent.
+async function resolveTaxonId(request, form) {
+  if (request.url === "/execute") return request;
+  const response = await fetch(`${API}/taxonomy?name=${encodeURIComponent(form.species)}`);
+  const payload = await response.json();
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.detail || `Could not resolve species "${form.species}"`);
+  }
+  request.body.input.species = {
+    scientific_name: payload.data.scientific_name,
+    taxon_id: payload.data.taxon_id,
+  };
+  return request;
+}
+
+// ── rendering ───────────────────────────────────────────────────────────────
+const STATUS_CLASS = {
+  COMPLETED: "text-bg-success", PARTIAL: "text-bg-warning", RUNNING: "text-bg-info",
+  RECEIVED: "text-bg-secondary", VALIDATING: "text-bg-secondary",
+  NEEDS_CLARIFICATION: "text-bg-warning", NEEDS_AGENT: "text-bg-warning",
+  NO_STRUCTURE_FOUND: "text-bg-danger", FAILED: "text-bg-danger",
+  ACCEPT: "text-bg-success", REVISE: "text-bg-warning", ABSTAIN: "text-bg-danger",
+  completed: "text-bg-success", needs_agent: "text-bg-warning",
+  continue: "text-bg-info", failed: "text-bg-danger",
+};
+const badge = (v) => `<span class="badge ${STATUS_CLASS[v] || "text-bg-secondary"}">${esc(v)}</span>`;
+
+function renderSummary(request, routing, analysis, ms, httpStatus) {
+  const species = request.body?.input?.species;
+  const bits = [
+    `<span class="badge text-bg-dark chip">HTTP ${httpStatus}</span>`,
+    `<span class="badge text-bg-dark chip">${ms} ms</span>`,
+    `<span class="text-secondary small">agent</span>${badge(routing?.status)}`,
+  ];
+  if (species) {
+    bits.push(`<span class="text-secondary small">species</span>
+      <code>${esc(species.scientific_name)}</code>
+      <span class="badge text-bg-secondary chip">taxon ${esc(species.taxon_id)}</span>`);
+  }
+  if (analysis) {
+    bits.push(`<span class="text-secondary small">analysis</span>${badge(analysis.status)}`);
+    bits.push(`<span class="text-secondary small">critic</span>${badge(analysis.validation_status)}`);
+  }
+  $("run-summary-body").innerHTML = bits.join(" ");
+  $("run-summary").classList.remove("d-none");
+}
+
+function renderWorkflow(routing, analysis, summary) {
+  const pane = $("workflow-pane");
+  pane.classList.remove("placeholder-pane");
+
+  if (!analysis) {
+    pane.innerHTML = `
+      <div class="alert alert-info mb-3">
+        <strong>/execute returns the orchestrator's view, not the trace.</strong>
+        It answers with a routing status and a summary, because whatever an agent
+        returns is merged into every later agent's context. Switch to
+        <em>Full analysis</em> for the node-by-node run.
+      </div>
+      ${routingCard(routing)}
+      ${sharedContextCard(summary)}`;
+    return;
+  }
+
+  const ran = new Set(analysis.executed_nodes || []);
+  const retries = analysis.retry_counts || {};
+  const nodeErrors = {};
+  (analysis.errors || []).forEach((line) => {
+    const [node, ...rest] = String(line).split(":");
+    (nodeErrors[node.trim()] ||= []).push(rest.join(":").trim());
+  });
+
+  const groups = PIPELINE.map(({ group, nodes }, index) => {
+    const items = nodes.map(([name, label, note]) => {
+      const failed = nodeErrors[name] || retries[name];
+      const state = !ran.has(name) ? "skipped" : failed ? "degraded" : "ran";
+      const tag = state === "ran" ? "" :
+        state === "degraded"
+          ? `<span class="badge text-bg-warning chip ms-1">degraded${retries[name] ? ` ×${retries[name]}` : ""}</span>`
+          : `<span class="badge text-bg-secondary chip ms-1">skipped</span>`;
+      const err = failed ? `<div class="small text-warning">${esc((nodeErrors[name] || []).join(", "))}</div>` : "";
+      return `<li class="${state}">
+          <div><span class="fw-semibold">${esc(label)}</span>${tag}</div>
+          <div class="node-name text-secondary">${esc(name)}</div>
+          <div class="small text-secondary">${esc(note)}</div>
+          ${err}
+        </li>`;
+    }).join("");
+    return { index, html: `<div class="mb-3">
+        <div class="text-uppercase small fw-bold text-secondary mb-1">${esc(group)}</div>
+        <ul class="rail">${items}</ul>
+      </div>` };
+  });
+
+  const warnings = (analysis.warnings || []).length
+    ? `<div class="alert alert-warning py-2">
+         <strong class="d-block mb-1">Warnings</strong>
+         <ul class="mb-0 ps-3 small mono">${analysis.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>
+       </div>`
+    : `<div class="alert alert-success py-2 mb-3">No warnings — every provider answered.</div>`;
+
+  // Two columns: intake through the parallel branches on the left, everything
+  // after the join on the right, so the fan-out reads as one block.
+  const left = groups.filter((g) => g.index <= 2).map((g) => g.html).join("");
+  const right = groups.filter((g) => g.index > 2).map((g) => g.html).join("");
+
+  pane.innerHTML = `
+    ${routingCard(routing)}
+    ${warnings}
+    <div class="row">
+      <div class="col-md-6">${left}</div>
+      <div class="col-md-6">${right}</div>
+    </div>`;
+}
+
+// Exactly what the orchestrator merges into the shared context, and therefore
+// what every later agent - and the Responder's prompt - will see of this run.
+function sharedContextCard(summary) {
+  if (!summary) return "";
+  const s = summary.structure;
+  const row = (label, value) => value == null || value === ""
+    ? ""
+    : `<tr><td class="text-secondary">${esc(label)}</td><td class="mono">${esc(value)}</td></tr>`;
+  return `<div class="card">
+    <div class="card-header py-2 small">
+      <strong>output.protein_structure</strong>
+      <span class="text-secondary">— merged into the shared context</span>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-sm mb-0">
+        <tbody>
+          ${row("status", summary.status)}
+          ${row("validation_status", summary.validation_status)}
+          ${row("uniprot_accession", summary.uniprot_accession)}
+          ${row("gene_symbol", summary.gene_symbol)}
+          ${row("scientific_name", summary.scientific_name)}
+          ${s ? row("structure", `${s.external_id} · ${s.source} · ${s.structure_type}`) : ""}
+          ${s ? row("file_url", s.file_url) : ""}
+          ${row("annotation_count", summary.annotation_count)}
+          ${(summary.warnings || []).length ? row("warnings", summary.warnings.join(", ")) : ""}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function routingCard(routing) {
+  if (!routing) return "";
+  const handoff = routing.prompt_to_target_agent
+    ? `<div class="mt-2">
+         <div class="small text-secondary">Asked the orchestrator for:</div>
+         <div class="fst-italic">${esc(routing.prompt_to_target_agent)}</div>
+       </div>`
+    : "";
+  return `<div class="card mb-3"><div class="card-body py-2">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="text-secondary small">inter-agent status</span>${badge(routing.status)}
+        ${routing.target_agent ? `<span class="text-secondary small">target</span><code>${esc(routing.target_agent)}</code>` : ""}
+        ${routing.retryable ? '<span class="badge text-bg-info chip">retryable</span>' : ""}
+      </div>
+      ${routing.continuation_reason ? `<div class="small mt-2">${esc(routing.continuation_reason)}</div>` : ""}
+      ${routing.error ? `<div class="small text-danger mt-2">${esc(routing.error)}</div>` : ""}
+      ${handoff}
+    </div></div>`;
+}
+
+// ── Mol* ────────────────────────────────────────────────────────────────────
+let viewerPromise = null;
+function getViewer() {
+  if (!viewerPromise) {
+    viewerPromise = molstar.Viewer.create("molstar-host", {
+      layoutIsExpanded: false, layoutShowControls: false, layoutShowRemoteState: false,
+      layoutShowSequence: true, layoutShowLog: false, layoutShowLeftPanel: false,
+      viewportShowExpand: true, viewportShowSelectionMode: true,
+      pdbProvider: "rcsb", emdbProvider: "rcsb",
+    });
+  }
+  return viewerPromise;
+}
+
+async function renderStructure(analysis) {
+  const meta = $("structure-meta");
+  const info = $("selection-info");
+  const config = analysis?.molstar_config;
+  const structure = config?.structure;
+
+  if (!structure?.url) {
+    meta.innerHTML = `<div class="alert alert-secondary py-2 mb-0">
+      No structure in this response, so there is no scene to render.
+      ${analysis ? "" : "Run with <em>Full analysis</em> — <code>/execute</code> returns a summary without the Mol* scene."}
+    </div>`;
+    info.innerHTML = "";
+    return;
+  }
+
+  const s = analysis.selected_structure || {};
+  meta.innerHTML = `<div class="d-flex flex-wrap gap-2 align-items-center">
+      <span class="badge text-bg-primary">${esc(structure.id)}</span>
+      <span class="badge ${structure.structure_type === "EXPERIMENTAL" ? "text-bg-success" : "text-bg-info"}">${esc(structure.structure_type)}</span>
+      <span class="text-secondary small">${esc(structure.source)}</span>
+      ${s.experimental_method ? `<span class="text-secondary small">· ${esc(s.experimental_method)}</span>` : ""}
+      ${s.resolution_angstrom != null ? `<span class="text-secondary small">· ${esc(s.resolution_angstrom)} Å</span>` : ""}
+      ${s.mean_plddt != null ? `<span class="text-secondary small">· pLDDT ${esc(s.mean_plddt)}</span>` : ""}
+      ${s.sequence_coverage != null ? `<span class="text-secondary small">· coverage ${(s.sequence_coverage * 100).toFixed(0)}%</span>` : ""}
+      <a class="ms-auto small" href="${esc(structure.url)}" target="_blank" rel="noopener">source file</a>
+    </div>`;
+
+  const viewer = await getViewer();
+  // `Viewer` itself has no clear(); the plugin does, and without it every run
+  // stacks another structure into the same scene.
+  await viewer.plugin.clear();
+  const format = String(structure.format).toUpperCase() === "PDB" ? "pdb" : "mmcif";
+  await viewer.loadStructureFromUrl(structure.url, format, false);
+
+  const selections = config.selections || [];
+  if (!selections.length) {
+    info.innerHTML = `<div class="small text-secondary">
+      No residue selection: the scene only highlights positions that SIFTS mapped and observed in this structure.
+    </div>`;
+    return;
+  }
+
+  const highlighted = await highlight(viewer, selections);
+  info.innerHTML = `
+    <div class="small text-secondary mb-1">
+      ${highlighted ? "Selected and focused in the viewer:" : "Mapped residues (highlighting unavailable in this viewer build):"}
+    </div>
+    <table class="table table-sm table-bordered w-auto mb-0">
+      <thead><tr><th>Label</th><th>Chain</th><th>Residue</th></tr></thead>
+      <tbody>${selections.map((sel) => `<tr>
+        <td>${esc(sel.label)}</td><td class="mono">${esc(sel.chain)}</td><td class="mono">${esc(sel.residue_number)}</td>
+      </tr>`).join("")}</tbody>
+    </table>`;
+}
+
+// Best effort: the residue table above is rendered either way, so a viewer build
+// that does not expose the query API degrades to "here are the numbers".
+async function highlight(viewer, selections) {
+  try {
+    const plugin = viewer.plugin;
+    const lib = molstar.lib.structure;
+    const cell = plugin.managers.structure.hierarchy.current.structures[0]?.cell;
+    const data = cell?.obj?.data;
+    if (!data) return false;
+
+    const wanted = selections.map((s) => [String(s.chain), Number(s.residue_number)]);
+    const query = lib.Queries.generators.atoms({
+      chainTest: (ctx) => wanted.some(([chain]) => lib.StructureProperties.chain.auth_asym_id(ctx.element) === chain),
+      residueTest: (ctx) => wanted.some(([chain, residue]) =>
+        lib.StructureProperties.chain.auth_asym_id(ctx.element) === chain &&
+        lib.StructureProperties.residue.auth_seq_id(ctx.element) === residue),
+    });
+    const loci = lib.StructureSelection.toLociWithSourceUnits(lib.StructureQuery.run(query, data));
+    if (lib.StructureElement.Loci.isEmpty(loci)) return false;
+
+    plugin.managers.interactivity.lociSelects.selectOnly({ loci });
+    plugin.managers.camera.focusLoci(loci);
+    return true;
+  } catch (err) {
+    console.warn("Mol* highlight unavailable:", err);
+    return false;
+  }
+}
+
+// ── evidence + explanation ──────────────────────────────────────────────────
+function table(headers, rows, empty) {
+  if (!rows.length) return `<p class="text-secondary small">${esc(empty)}</p>`;
+  return `<div class="table-responsive"><table class="table table-sm table-striped align-middle">
+      <thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div>`;
+}
+
+function renderEvidence(analysis) {
+  const pane = $("evidence-pane");
+  pane.classList.remove("placeholder-pane");
+  if (!analysis) {
+    pane.innerHTML = `<div class="alert alert-secondary py-2 mb-0">Run with <em>Full analysis</em> to see evidence records.</div>`;
+    return;
+  }
+
+  const ev = table(
+    ["Provider", "External id", "Retrieved at", "Source"],
+    (analysis.evidence || []).map((e) => [
+      `<span class="badge text-bg-secondary">${esc(e.provider)}</span>`,
+      `<span class="mono">${esc(e.external_id)}</span>`,
+      `<span class="small text-secondary">${esc(e.retrieved_at)}</span>`,
+      e.source_url ? `<a href="${esc(e.source_url)}" target="_blank" rel="noopener">link</a>` : "—",
+    ]),
+    "No evidence recorded.");
+
+  const ann = table(
+    ["Source", "Accession", "Kind", "Label", "Start", "End"],
+    (analysis.annotations || []).map((a) => [
+      esc(a.source), `<span class="mono">${esc(a.accession)}</span>`, esc(a.kind),
+      esc(a.label), `<span class="mono">${esc(a.start ?? "—")}</span>`, `<span class="mono">${esc(a.end ?? "—")}</span>`,
+    ]),
+    "No annotations returned.");
+
+  const maps = table(
+    ["UniProt", "Position", "PDB", "Chain", "PDB residue", "Observed", "Source"],
+    (analysis.residue_mappings || []).map((m) => [
+      `<span class="mono">${esc(m.uniprot_accession)}</span>`, `<span class="mono">${esc(m.uniprot_position)}</span>`,
+      `<span class="mono">${esc(m.pdb_id)}</span>`, `<span class="mono">${esc(m.chain_id)}</span>`,
+      `<span class="mono">${esc(m.pdb_residue_number ?? "—")}</span>`,
+      m.is_observed ? '<span class="badge text-bg-success chip">yes</span>' : '<span class="badge text-bg-secondary chip">no</span>',
+      esc(m.mapping_source),
+    ]),
+    "No residue mapping — SIFTS runs only when a residue, mutation or region is requested.");
+
+  const alts = table(
+    ["Source", "Id", "Type", "Method", "Resolution", "Coverage", "Score"],
+    (analysis.alternative_structures || []).map((a) => [
+      esc(a.source), `<span class="mono">${esc(a.external_id)}</span>`, esc(a.structure_type),
+      esc(a.experimental_method ?? "—"), esc(a.resolution_angstrom ?? "—"),
+      `${((a.sequence_coverage ?? 0) * 100).toFixed(0)}%`, (a.selection_score ?? 0).toFixed(2),
+    ]),
+    "No alternative candidates.");
+
+  pane.innerHTML = `
+    <h6 class="text-secondary text-uppercase small">Evidence</h6>${ev}
+    <h6 class="text-secondary text-uppercase small mt-4">Annotations <span class="badge text-bg-secondary">${(analysis.annotations || []).length}</span></h6>${ann}
+    <h6 class="text-secondary text-uppercase small mt-4">Residue mappings</h6>${maps}
+    <h6 class="text-secondary text-uppercase small mt-4">Alternative structures</h6>${alts}`;
+}
+
+function renderExplanation(analysis, summary) {
+  const pane = $("explanation-pane");
+  pane.classList.remove("placeholder-pane");
+  const text = analysis?.explanation?.summary ?? summary?.explanation ?? null;
+  if (!text) {
+    pane.innerHTML = `<div class="alert alert-secondary py-2 mb-0">
+      No explanation. Either <code>include_explanation</code> was off, the LLM is not configured
+      (<code>LLM_PROVIDER=disabled</code>), or the node degraded — check the Workflow tab.
+    </div>`;
+    return;
+  }
+  const limits = analysis?.explanation?.limitations || [];
+  pane.innerHTML = `
+    <div class="card"><div class="card-body">
+      <p class="mb-0" style="white-space: pre-wrap">${esc(text)}</p>
+    </div></div>
+    ${limits.length ? `<h6 class="text-secondary text-uppercase small mt-3">Limitations</h6>
+      <ul class="small">${limits.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}`;
+}
+
+// ── run ─────────────────────────────────────────────────────────────────────
+async function run(event) {
+  event.preventDefault();
+  const form = readForm();
+  if (!form.species) { $("f-species").classList.add("is-invalid"); return; }
+  $("f-species").classList.remove("is-invalid");
+
+  setBusy(true);
+  const started = performance.now();
+  let request = buildRequest(form);
+
+  try {
+    request = await resolveTaxonId(request, form);
+    renderJson($("json-request"), request.body);
+
+    const response = await fetch(request.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request.body),
+    });
+    const ms = Math.round(performance.now() - started);
+    const payload = await response.json();
+    renderJson($("json-response"), payload);
+
+    // Two shapes: /execute answers with the agent result itself, the versioned
+    // API wraps it in the {data, meta, error} envelope.
+    const isExecute = request.url === "/execute";
+    const routing = isExecute ? payload : payload.data;
+    const analysis = isExecute ? null : routing?.output ?? null;
+    const summary = isExecute ? payload?.output?.protein_structure ?? null : null;
+
+    if (payload.error) {
+      $("workflow-pane").classList.remove("placeholder-pane");
+      $("workflow-pane").innerHTML = `<div class="alert alert-danger">
+        <strong>${esc(payload.error.title || "Request failed")}</strong>
+        <div class="small mt-1">${esc(payload.error.detail || "")}</div>
+        <div class="small mono mt-1">${esc(payload.error.code || "")}</div></div>`;
+    } else {
+      renderWorkflow(routing, analysis, summary);
+    }
+
+    renderSummary(request, routing, analysis, ms, response.status);
+
+    // Each pane is isolated: a viewer that fails to build a scene must not cost
+    // you the node trace and the JSON, which are the whole point of the console.
+    paint("evidence-pane", () => renderEvidence(analysis));
+    paint("explanation-pane", () => renderExplanation(analysis, summary));
+    await paint("structure-meta", () => renderStructure(analysis));
+  } catch (err) {
+    $("workflow-pane").classList.remove("placeholder-pane");
+    $("workflow-pane").innerHTML = `<div class="alert alert-danger">
+      <strong>The request never completed.</strong>
+      <div class="small mt-1 mono">${esc(err && err.message ? err.message : err)}</div>
+      <div class="small mt-1">Is the agent still running on this port?</div></div>`;
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function paint(paneId, render) {
+  try {
+    await render();
+  } catch (err) {
+    console.error(`${paneId} failed to render`, err);
+    const pane = $(paneId);
+    pane.classList.remove("placeholder-pane");
+    pane.innerHTML = `<div class="alert alert-danger py-2 mb-0">
+      <strong>This view failed to render.</strong>
+      <div class="small mt-1 mono">${esc(err && err.message ? err.message : err)}</div>
+      <div class="small">The other tabs still hold the result of this run.</div></div>`;
+  }
+}
+
+function setBusy(busy) {
+  $("run-btn").disabled = busy;
+  $("run-spinner").classList.toggle("d-none", !busy);
+  $("run-label").innerHTML = busy
+    ? "Running…"
+    : '<i class="bi bi-play-fill"></i> Run analysis';
+}
+
+// ── dependency chips ────────────────────────────────────────────────────────
+async function loadReadiness() {
+  const host = $("dep-chips");
+  try {
+    const payload = await (await fetch(`${API}/ready`)).json();
+    host.innerHTML = (payload.data?.dependencies || []).map((dep) => {
+      const cls = !dep.configured ? "text-bg-secondary"
+        : dep.reachable === false ? "text-bg-danger"
+        : dep.reachable === true ? "text-bg-success" : "text-bg-info";
+      return `<span class="badge ${cls} chip" title="${esc(dep.detail || "")}">${esc(dep.name)}</span>`;
+    }).join("");
+  } catch {
+    host.innerHTML = '<span class="badge text-bg-danger chip">agent unreachable</span>';
+  }
+}
+
+// ── wiring ──────────────────────────────────────────────────────────────────
+function applyPreset(preset) {
+  const v = preset.values;
+  $("f-species").value = v.species;
+  $("f-gene").value = v.gene;
+  $("f-accession").value = v.accession;
+  $("f-residue").value = v.residue;
+  $("f-mutation").value = v.mutation;
+  $("f-source").value = v.source;
+  $("f-explanation").checked = v.explanation;
+  $(preset.endpoint === "execute" ? "ep-exec" : "ep-full").checked = true;
+  updateHint();
+}
+
+function updateHint() {
+  const isExecute = document.querySelector('input[name="endpoint"]:checked').value === "execute";
+  $("endpoint-hint").innerHTML = isExecute
+    ? "<code>POST /execute</code> — exactly what the Grand Orchestrator sends and receives. Returns a routing status and a summary, not the Mol* scene."
+    : "<code>POST /api/v1/protein-structure-analyses</code> — the full analysis: node trace, evidence, annotations and the Mol* scene.";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("preset-menu").innerHTML = PRESETS.map((p, i) =>
+    `<li><button class="dropdown-item" type="button" data-preset="${i}">
+       <div>${esc(p.label)}</div><div class="small text-secondary">${esc(p.hint)}</div>
+     </button></li>`).join("");
+  $("preset-menu").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-preset]");
+    if (btn) applyPreset(PRESETS[Number(btn.dataset.preset)]);
+  });
+
+  document.querySelectorAll('input[name="endpoint"]').forEach((el) =>
+    el.addEventListener("change", updateHint));
+  updateHint();
+
+  $("test-form").addEventListener("submit", run);
+
+  document.querySelectorAll("[data-copy]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await navigator.clipboard.writeText($(btn.dataset.copy).dataset.raw || "");
+      btn.textContent = "Copied";
+      setTimeout(() => (btn.textContent = "Copy"), 1200);
+    }));
+
+  $("theme-toggle").addEventListener("click", () => {
+    const root = document.documentElement;
+    root.dataset.bsTheme = root.dataset.bsTheme === "dark" ? "light" : "dark";
+  });
+
+  loadReadiness();
+});
+</script>
+</body>
+</html>

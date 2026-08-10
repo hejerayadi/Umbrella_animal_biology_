@@ -16,6 +16,8 @@ answers on both:
 |---|---|---|
 | `POST /execute` | Grand Orchestrator | `{instruction, context}` in, `{status, target_agent, prompt_to_target_agent, output}` out — the contract every agent in this repo speaks |
 | `POST /api/v1/protein-structure-analyses` | frontend viewer | the full `AgentTask`, answering with the complete analysis: Mol* scene, every annotation, every evidence record |
+| `GET /api/v1/taxonomy?name=…` | anyone building an `AgentTask` | species name → `{scientific_name, taxon_id}`. The full endpoint takes an id; users type a name |
+| `GET /console/` | you | the test console, below |
 
 `/execute` is a translation layer only (`app/api/execute.py`); the scientific
 decisions stay in the workflow and in `result_policy.to_agent_result`. It reads
@@ -33,6 +35,36 @@ dependency on upstream agents, read from the context it was actually given.
 curl.exe -X POST http://localhost:8008/execute -H "Content-Type: application/json" `
   -d '{\"instruction\":\"3D structure of TP53 in humans\",\"context\":{\"species\":\"Homo sapiens\",\"gene_name\":\"TP53\",\"residue_position\":273}}'
 ```
+
+## Test console
+
+**<http://localhost:8008/console/>** — one self-contained Bootstrap page in
+[`console/`](console/index.html), served by the agent itself so it is same-origin
+with the API and no CORS entry has to know about it. It is a developer tool: it
+runs real analyses against the real providers, so it is not mounted when
+`APP_ENV=production`.
+
+A form drives either endpoint — species, gene or accession, residue, mutation,
+regions, preferred source, explanation on/off — with presets for the cases worth
+re-running (human TP53 with a residue, a common-name species, an accession that
+falls back to AlphaFold, a request with no gene that ends in a hand-off). Then
+five tabs:
+
+- **Workflow** — all 18 graph nodes, each marked *ran*, *degraded* (with its
+  retry count and error) or *skipped*, so you can see that AlphaFold was never
+  reached because an experimental structure survived, or that SIFTS ran because
+  you asked for a residue. Fed by `executed_nodes` / `errors` / `retry_counts`
+  on the response. On `/execute` it instead shows the routing status and the
+  exact summary the orchestrator merges into the shared context.
+- **Structure** — the Mol* viewer loading the scene the workflow built, with the
+  SIFTS-mapped residues selected and focused.
+- **JSON** — the request as sent and the response as received, side by side.
+- **Evidence** — evidence records, annotations, residue mappings and the
+  structure candidates that lost.
+- **Explanation** — the grounded summary and its stated limitations.
+
+The page is exercised end to end in headless Chromium; `tests/integration/test_console.py`
+covers the API contract it depends on.
 
 ## Infrastructure in this sprint
 

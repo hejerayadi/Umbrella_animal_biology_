@@ -18,6 +18,7 @@ from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus
 from backend.agents.Protein_visualization.app.domain.models import StructureCandidate
 from backend.agents.Protein_visualization.app.observability.context import log_context
 from backend.agents.Protein_visualization.app.observability.logging import log_event
+from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import WORKFLOW_SEQUENCE
 from backend.agents.Protein_visualization.app.orchestrators.protein.result_policy import to_agent_result
 from backend.agents.Protein_visualization.app.orchestrators.protein.state import (
     ProteinWorkflowState,
@@ -152,4 +153,7 @@ class ProteinOrchestrator:
             ),
             warnings=list(state.get("warnings", [])),
             evidence=evidence,
+            executed_nodes=[node for node in WORKFLOW_SEQUENCE if node in state.get("executed_nodes", set())],
+            errors=list(state.get("errors", [])),
+            retry_counts=dict(state.get("retry_counts", {})),
         )
