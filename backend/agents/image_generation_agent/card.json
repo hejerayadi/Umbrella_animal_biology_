@@ -1,27 +1,23 @@
 {
-  "name": "Animal Image Generation Agent",
+  "name": "Protein Structure Generation Agent",
   "type": "worker",
-  "description": "Generates a scientifically grounded image of an animal species when no photograph exists, using Stable Diffusion XL and DALL-E 3. Covers explicit requests to generate, draw, illustrate or create a picture of an animal; showing what a species looks like; and visualizing extinct or reconstructed species. Produces new imagery - it does not identify or analyze images the user supplies.",
-  "reports_to": [
-    "Global Scientific Orchestrator"
-  ],
-  "may_need": [
-    "Trait Discovery Agent",
-    "Biodiversity Agent"
-  ],
-  "managed_services": [
-    "Stable Diffusion XL",
-    "DALL-E 3"
-  ],
+  "description": "Generates 2D scientific visualizations of proteins and species traits using FLUX.2-pro. Routes to Trait Discovery when morphological, physiological, behavioral, functional, or structural traits are not yet available in context.",
+  "reports_to": ["Global Scientific Orchestrator"],
+  "may_need": ["Trait Discovery Agent"],
+  "managed_services": ["Azure AI Foundry", "FLUX.2-pro"],
   "capabilities": [
-    "Animal image generation",
-    "Species visualization"
+    "Protein structure visualization",
+    "2D scientific illustration generation",
+    "Trait-based biological visualization",
+    "Orchestrator routing for missing trait interpretation"
   ],
   "input": {
     "instruction": "string",
-    "context": "dict"
+    "context": "dict with species, protein/gene identifiers, and traits from Trait Discovery Agent"
   },
   "output": {
-    "generated_image": "string"
+    "image": "string (URL or base64 data URI)",
+    "traits_used": "list of trait strings used for the visualization",
+    "confidence_score": "float between 0 and 1"
   }
 }
