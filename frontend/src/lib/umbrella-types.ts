@@ -48,6 +48,60 @@ export interface Conversation {
   updatedAt: string;
 }
 
+/**
+ * The 3D structure the Protein Visualization Agent selected.
+ *
+ * Mirrors `molstar_config.structure` from the agent's viewer capability
+ * (`app/capabilities/visualization/service.py`). `url` points straight at RCSB
+ * or AlphaFold - the backend never proxies the coordinates, so the browser
+ * fetches them from the source that published them.
+ */
+export interface ProteinStructureRef {
+  id: string;
+  url: string;
+  format: "MMCIF" | "PDB";
+  /** "RCSB_PDB" for a solved structure, "ALPHAFOLD_DB" for a predicted model. */
+  source: string;
+  structure_type: "EXPERIMENTAL" | "PREDICTED";
+  chain_id?: string | null;
+}
+
+/** One residue the agent could map onto the structure and wants marked. */
+export interface ProteinSelection {
+  label: string;
+  chain?: string | null;
+  residue_number?: string | null;
+  color?: string | null;
+}
+
+/**
+ * A functional region from InterPro or UniProt.
+ *
+ * `applicable` is the part that matters scientifically: domain spans are in
+ * UniProt numbering, which only lines up with the structure's own numbering
+ * for predicted models. On a solved structure the agent reports the span
+ * untouched and marks it inapplicable rather than translating it without a
+ * residue-level mapping.
+ */
+export interface ProteinDomain {
+  label: string;
+  accession: string;
+  kind: string;
+  start: number;
+  end: number;
+  coordinate_space: "structure" | "uniprot";
+  applicable: boolean;
+}
+
+/** The whole Mol* scene, as the agent returns it under `context.protein_viewer`. */
+export interface ProteinViewerSpec {
+  viewer: "molstar";
+  structure: ProteinStructureRef;
+  representation?: { type?: string; color_theme?: string };
+  selections: ProteinSelection[];
+  domains: ProteinDomain[];
+}
+
 export type MessageSender = "user" | "assistant";
 
 export interface Message {
@@ -65,6 +119,13 @@ export interface Message {
   imageUrl?: string;
   /** The original filename, for the image's alt text. */
   imageName?: string;
+  /**
+   * The Mol* scene, when the Protein Visualization Agent contributed one to
+   * this answer. Small enough for localStorage - it is identifiers, spans and
+   * a URL, and the coordinates themselves are fetched from RCSB or AlphaFold
+   * when the viewer mounts.
+   */
+  proteinViewer?: ProteinViewerSpec;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

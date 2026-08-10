@@ -149,8 +149,34 @@ def _render_value(value: Any) -> str:
     )
 
 
+# Context keys that exist for the browser, not for the model, mapped to what
+# the model should know is on screen because of them. A viewer scene is
+# coordinates, colours and URLs - the frontend renders it, and there is nothing
+# in it the answer could quote. Left in, the Mol* scene alone spends most of
+# `_MAX_FINDING_CHARS` and then gets cut mid-structure, so the model pays for
+# it and reads a broken fragment. The agent's own summary key carries what the
+# answer needs to say.
+#
+# The note matters as much as the exclusion: told nothing, the model closes
+# with "to view this structure, go to rcsb.org and search for 1KZY" while the
+# rotatable structure sits directly underneath its own answer.
+_RENDER_ONLY_KEYS: dict[str, str] = {
+    "protein_viewer": (
+        "An interactive 3D viewer showing this structure is displayed directly below your "
+        "answer. Refer to it as already visible; never tell the user to open RCSB, AlphaFold "
+        "or another viewer to see it."
+    ),
+}
+
+
 def _format_findings(context: dict[str, Any]) -> str:
     """Plain-text rendering of everything the agents produced."""
-    if not context:
+    findings = {key: value for key, value in context.items() if key not in _RENDER_ONLY_KEYS}
+    rendered = [note for key, note in _RENDER_ONLY_KEYS.items() if context.get(key)]
+
+    if not findings and not rendered:
         return "(the agents did not produce any findings)"
-    return "\n".join(f"- {key}: {_render_value(value)}" for key, value in context.items())
+
+    lines = [f"- {key}: {_render_value(value)}" for key, value in findings.items()]
+    lines.extend(f"- (shown in the interface) {note}" for note in rendered)
+    return "\n".join(lines)
