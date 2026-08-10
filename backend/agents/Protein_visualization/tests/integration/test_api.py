@@ -1,12 +1,23 @@
 from fastapi.testclient import TestClient
 
-from backend.agents.Protein_visualization.app.api.v1.dependencies import get_knowledge_base, get_orchestrator
+from backend.agents.Protein_visualization.app.api.v1.dependencies import (
+    get_knowledge_base,
+    get_orchestrator,
+    get_taxonomy_capability,
+)
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
+from backend.agents.Protein_visualization.app.contracts.envelope import ErrorCode
+from backend.agents.Protein_visualization.app.domain.exceptions import ProteinNotFoundError
 from backend.agents.Protein_visualization.app.knowledge_base.embeddings import HashEmbedding
 from backend.agents.Protein_visualization.app.knowledge_base.retrieval import KnowledgeBase
 from backend.agents.Protein_visualization.app.main import create_app
 from backend.agents.Protein_visualization.tests.factories import agent_task
-from backend.agents.Protein_visualization.tests.fakes import FakeAlphaFold, FakeRCSB, build_orchestrator
+from backend.agents.Protein_visualization.tests.fakes import (
+    FakeAlphaFold,
+    FakeRCSB,
+    FakeTaxonomy,
+    build_orchestrator,
+)
 
 PREFIX = get_settings().api_prefix
 
@@ -126,3 +137,30 @@ def test_ingestion_without_api_key_is_rejected(monkeypatch) -> None:  # type: ig
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_taxonomy_resolves_a_species_name_to_a_taxon_id() -> None:
+    """`AgentTask` is keyed by taxon id, but a caller starts from a name."""
+    app = create_app()
+    app.dependency_overrides[get_taxonomy_capability] = lambda: FakeTaxonomy()
+
+    with TestClient(app) as client:
+        response = client.get(f"{PREFIX}/taxonomy", params={"name": "human"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["data"] == {"scientific_name": "Homo sapiens", "taxon_id": 9606}
+
+
+def test_taxonomy_reports_an_unresolvable_name() -> None:
+    app = create_app()
+    app.dependency_overrides[get_taxonomy_capability] = lambda: FakeTaxonomy(
+        error=ProteinNotFoundError("UniProt taxonomy has no species matching 'nope'")
+    )
+
+    with TestClient(app) as client:
+        response = client.get(f"{PREFIX}/taxonomy", params={"name": "nope"})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == ErrorCode.protein_not_found

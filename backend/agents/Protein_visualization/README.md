@@ -17,7 +17,6 @@ answers on both:
 | `POST /execute` | Grand Orchestrator | `{instruction, context}` in, `{status, target_agent, prompt_to_target_agent, output}` out — the contract every agent in this repo speaks |
 | `POST /api/v1/protein-structure-analyses` | frontend viewer | the full `AgentTask`, answering with the complete analysis: Mol* scene, every annotation, every evidence record |
 | `GET /api/v1/taxonomy?name=…` | anyone building an `AgentTask` | species name → `{scientific_name, taxon_id}`. The full endpoint takes an id; users type a name |
-| `GET /console/` | you | the test console, below |
 
 `/execute` is a translation layer only (`app/api/execute.py`); the scientific
 decisions stay in the workflow and in `result_policy.to_agent_result`. It reads
@@ -36,43 +35,25 @@ curl.exe -X POST http://localhost:8008/execute -H "Content-Type: application/jso
   -d '{\"instruction\":\"3D structure of TP53 in humans\",\"context\":{\"species\":\"Homo sapiens\",\"gene_name\":\"TP53\",\"residue_position\":273}}'
 ```
 
-## Test console
+## What a response says about its own run
 
-**<http://localhost:8008/console/>** — one self-contained Bootstrap page in
-[`console/`](console/index.html), served by the agent itself so it is same-origin
-with the API and no CORS entry has to know about it. It is a developer tool: it
-runs real analyses against the real providers, so it is not mounted when
-`APP_ENV=production`.
+Alongside the analysis, every response carries the trace of how it was
+produced. A result says what was found; these say how, and the two differ in
+ways an operator has to be able to tell apart — an AlphaFold model because
+every experimental candidate was rejected reads exactly like one because RCSB
+timed out, unless the trace says which.
 
-A form drives either endpoint — species, gene or accession, residue, mutation,
-regions, preferred source, explanation on/off — with presets for the cases worth
-re-running (human TP53 with a residue, a common-name species, an accession that
-falls back to AlphaFold, a request with no gene that ends in a hand-off). Then
-six tabs:
+| Field | Meaning |
+|---|---|
+| `executed_nodes` | Which of the 18 graph nodes ran, in `WORKFLOW_SEQUENCE` order. A node absent here was skipped, not failed |
+| `errors` | `"<node>: <ExceptionType>"` per provider failure that was degraded into a warning rather than raised |
+| `retry_counts` | How many times each node retried |
+| `llm_usage` | One entry per Azure OpenAI call (explanation, critic audit): node, model, latency and token counts, taken from Azure's own response rather than estimated locally |
 
-- **Workflow** — all 18 graph nodes, each marked *ran*, *degraded* (with its
-  retry count and error) or *skipped*, so you can see that AlphaFold was never
-  reached because an experimental structure survived, or that SIFTS ran because
-  you asked for a residue. Fed by `executed_nodes` / `errors` / `retry_counts`
-  on the response. On `/execute` it instead shows the routing status and the
-  exact summary the orchestrator merges into the shared context.
-- **Structure** — the Mol* viewer loading the scene the workflow built, with the
-  SIFTS-mapped residues selected and focused.
-- **JSON** — the request as sent and the response as received, side by side.
-- **Evidence** — evidence records, annotations, residue mappings and the
-  structure candidates that lost.
-- **Explanation & usage** — the grounded summary and its stated limitations,
-  plus a table of every Azure OpenAI call this run made: node, model, latency,
-  input/output/total tokens, and an estimated cost if `AZURE_INPUT_PRICE_PER_1K_USD`
-  / `AZURE_OUTPUT_PRICE_PER_1K_USD` are set (see `.env.example`) — tokens and
-  latency always come from Azure's own response either way.
-- **Knowledge search** — queries the RAG store directly (`POST
-  /api/v1/knowledge/search`), independent of any analysis run. Protein and
-  taxon id prefill from the last run, or set them by hand to explore what is
-  indexed for a protein you haven't analyzed yet.
-
-The page is exercised end to end in headless Chromium; `tests/integration/test_console.py`
-covers the API contract it depends on.
+`llm_usage[].estimated_cost_usd` is filled in only when
+`AZURE_INPUT_PRICE_PER_1K_USD` and `AZURE_OUTPUT_PRICE_PER_1K_USD` are both set
+(see `.env.example`). Azure pricing depends on region, contract and model
+version, none of which the API exposes, so it is left unset rather than guessed.
 
 ## Infrastructure in this sprint
 

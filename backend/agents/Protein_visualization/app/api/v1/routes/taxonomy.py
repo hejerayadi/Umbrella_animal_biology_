@@ -2,8 +2,8 @@
 
 `AgentTask` requires a `taxon_id`, but a caller usually starts from the name a
 user typed. `/execute` resolves that internally; this exposes the same step on
-its own, so anything building an `AgentTask` by hand - the test console, a
-script, another service - can fill the field in without guessing or running a
+its own, so anything building an `AgentTask` by hand - a script, another
+service, the frontend - can fill the field in without guessing or running a
 whole analysis to find out.
 """
 
