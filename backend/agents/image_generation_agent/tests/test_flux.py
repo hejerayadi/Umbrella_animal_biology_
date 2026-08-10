@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import requests
 
-from backend.agents.Protein_visualization.flux_client import FluxClient, FluxGenerationError
+from backend.agents.image_generation_agent.flux_client import FluxClient, FluxGenerationError
 
 
 class FakeResponse:

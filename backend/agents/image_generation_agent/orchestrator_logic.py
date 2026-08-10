@@ -8,12 +8,22 @@ from .flux_client import FluxClient, FluxGenerationError
 from .prompt_builder import build_visualization_prompt
 from .schema import AgentRequest, AgentResult, AgentStatus
 
-TRAIT_DISCOVERY_AGENT = "Trait Discovery Agent"
-TRAIT_DISCOVERY_PROMPT = (
-    "Analyze the requested protein/species and identify the relevant "
-    "morphological, physiological, behavioral, functional, or structural "
-    "traits that can be used as input for downstream 2D visualization."
-)
+# Traits enrich a drawing, they do not gate it.
+#
+# This agent used to answer `needs_agent` for the Trait Discovery Agent whenever
+# `traits` was missing, which made every illustration wait on a genomics
+# pipeline: Trait needs a gene list, so Genome runs, so the Gene Mapper runs -
+# and that mapper is still the five-gene stub in that agent's
+# `subagents/gene_mapper.py`. Real NCBI symbols never intersect those five, so
+# the step fails and the picture is never drawn. "Draw an Arctic fox" does not
+# need a gene list to begin with.
+#
+# So traits are now used when they are already in context and skipped when they
+# are not. To make trait discovery a prerequisite again once those subagents
+# query Gene Ontology for real, return a NEEDS_AGENT result from
+# `_check_routing` targeting "Trait" (the registry key from backend/registry.py,
+# not the card.json display name - the capability resolver validates against
+# those keys).
 
 # Primary output key from trait_discovery_agent/card.json ("traits").
 TRAIT_CONTEXT_KEYS = ("traits", "trait_summary", "trait_interpretation")
@@ -21,6 +31,12 @@ PROTEIN_CONTEXT_KEYS = (
     "protein",
     "protein_name",
     "gene",
+    # What the orchestrator's extractor writes when the user names a gene in
+    # their message (see backend/orchestrator/extractor.py). It is deliberately
+    # not called "gene" there - "traits"/"genome" are agent OUTPUT keys, and the
+    # extractor stays clear of that namespace. Without this entry a question
+    # naming only a gene reaches this agent with no subject at all.
+    "gene_name",
     "resolved_gene_id",
     "protein_sequence",
 )
@@ -65,50 +81,22 @@ def _check_routing(request: AgentRequest) -> AgentResult | None:
     protein = _get_protein_identifier(request.context, request.instruction)
     species = _get_species(request.context)
 
+    # A subject is the only hard requirement - there has to be something to
+    # draw. A species alone is enough, and so is a protein alone: this agent
+    # illustrates whatever biology it is handed, it does not analyse proteins,
+    # so demanding both would reject perfectly drawable requests.
     if protein is None and species is None:
         return AgentResult(
             status=AgentStatus.FAILED,
             output=(
-                "Missing protein and species information. Provide at least a species "
-                "or protein identifier (e.g. context['species'], context['gene'], "
-                "context['protein_sequence'])."
+                "Missing subject to illustrate. Provide a species or a protein "
+                "identifier (e.g. context['species'], context['organism'], "
+                "context['gene'], context['protein_sequence'])."
             ),
         )
 
-    if protein is None:
-        return AgentResult(
-            status=AgentStatus.FAILED,
-            output=(
-                "Missing protein information. Provide a protein identifier such as "
-                "gene, protein name, or protein sequence in context."
-            ),
-        )
-
-    if species is None:
-        return AgentResult(
-            status=AgentStatus.FAILED,
-            output=(
-                "Missing species information. Provide context['species'] or "
-                "context['organism']."
-            ),
-        )
-
-    if not has_trait_data(request.context):
-        return AgentResult(
-            status=AgentStatus.NEEDS_AGENT,
-            target_agent=TRAIT_DISCOVERY_AGENT,
-            prompt_to_target_agent=TRAIT_DISCOVERY_PROMPT,
-        )
-
+    # No trait check here on purpose - see the note at the top of this module.
     return None
-
-
-def has_trait_data(context: dict[str, Any]) -> bool:
-    for key in TRAIT_CONTEXT_KEYS:
-        value = context.get(key)
-        if _is_meaningful(value):
-            return True
-    return False
 
 
 def _is_meaningful(value: Any) -> bool:

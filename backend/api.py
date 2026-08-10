@@ -66,11 +66,62 @@ class ChatResponse(BaseModel):
     frontend turns this into the "Agent Thinking" timeline. `context` is the
     raw structured data the agents produced, kept for debugging and for
     future richer rendering in the UI.
+
+    `image_url` is set when an agent generated an illustration. It is a URL
+    into this same API, never the image itself - see `_publish_generated_image`.
     """
 
     answer: str
     execution_history: list[str]
     context: dict[str, Any]
+    image_url: str | None = None
+
+
+# The context key the Image Generation Agent publishes its result under, matching
+# the `output` block of its card.json.
+_GENERATED_IMAGE_KEY = "image"
+
+
+def _publish_generated_image(context: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Move a generated image out of the context and behind a URL.
+
+    FLUX.2-pro replies with a base64 data URI - ~440 KB of characters for one
+    1024x1024 image. That is the same problem uploads have (see
+    `image_store.py`), arriving from the other direction: this context is
+    serialised into the chat response, and the frontend persists messages to
+    localStorage, whose quota one image would exhaust.
+
+    So the bytes are parked in the same store the upload path uses and the
+    context carries the URL instead. An agent that already returned a plain http
+    URL is passed through untouched - there is nothing to store.
+
+    Returns the context to send back, plus the URL for `ChatResponse.image_url`.
+    """
+    image = context.get(_GENERATED_IMAGE_KEY)
+    if not isinstance(image, str) or not image.strip():
+        return context, None
+
+    if image.startswith("http://") or image.startswith("https://"):
+        return context, image
+
+    if not image.startswith("data:"):
+        # Neither a URL nor a data URI - nothing displayable. Leave it alone so
+        # it still shows up in the debugging context rather than vanishing.
+        return context, None
+
+    try:
+        stored = IMAGE_STORE.add_data_url(image, filename="generated.jpg")
+    except ImageRejected as exc:
+        # A generated image we cannot store is not worth failing the whole
+        # answer for: the text is still correct without the picture.
+        _logger.warning("Generated image could not be stored: %s", exc)
+        return {**context, _GENERATED_IMAGE_KEY: f"<unstorable image: {exc}>"}, None
+
+    url = f"/api/upload/{stored.image_id}"
+    _logger.info(
+        "=== Generated image stored: %d KB, id=%s ===", len(stored.data) // 1024, stored.image_id
+    )
+    return {**context, _GENERATED_IMAGE_KEY: url}, url
 
 
 class UploadResponse(BaseModel):
@@ -176,11 +227,13 @@ def chat(request: ChatRequest) -> ChatResponse:
         len(state.execution_history),
         list(state.context),
     )
+    context, image_url = _publish_generated_image(state.context)
     return ChatResponse(
         # `final_answer` is set by whichever answer-writing node the workflow
         # ended at. The fallback only triggers if the graph somehow finished
         # without reaching one of them.
         answer=state.final_answer or "The orchestrator did not produce an answer for this request.",
         execution_history=state.execution_history,
-        context=state.context,
+        context=context,
+        image_url=image_url,
     )

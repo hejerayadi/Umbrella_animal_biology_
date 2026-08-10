@@ -96,11 +96,21 @@ def to_state(request: AgentRequest) -> TraitDiscoveryState:
 def _describe_failure(final_state: dict) -> str:
     """Say which step failed, rather than just that something did."""
     if final_state.get("gene_mapper_status") == WorkflowStatus.FAILED:
-        genes = final_state.get("gene_list") or []
+        genes = list(final_state.get("gene_list") or [])
+        # Name a few rather than all of them: a live NCBI query returns ~50
+        # symbols, and this string is merged into context and then rendered
+        # into the Responder's prompt.
+        shown = ", ".join(str(gene) for gene in genes[:8])
+        if len(genes) > 8:
+            shown += f", ... (+{len(genes) - 8} more)"
         return (
-            "Gene mapping failed: none of the supplied genes "
-            f"{list(genes)} could be annotated. The Gene Mapper rejects the whole "
-            "set if any single gene is unmatched."
+            f"Gene mapping failed: none of the {len(genes)} supplied genes "
+            f"({shown}) could be annotated, so there was nothing to build traits "
+            "from. The Gene Mapper only fails when NOTHING matches - a partly "
+            "matched set is reported in unmatched_genes and the workflow carries "
+            "on. Its GO lookup is still the stub in subagents/gene_mapper.py, "
+            "which holds five hand-written genes, so real NCBI symbols for any "
+            "species will miss every time."
         )
     if final_state.get("functional_evidence_status") == WorkflowStatus.FAILED:
         return "Functional evidence lookup failed: no pathway or protein data was found."

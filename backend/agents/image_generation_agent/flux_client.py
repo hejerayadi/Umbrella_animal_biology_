@@ -33,8 +33,16 @@ class FluxClient:
         timeout: int | None = None,
         session: requests.Session | None = None,
     ) -> None:
-        self.endpoint = self._normalize_endpoint(endpoint or os.getenv("AZURE_FLUX_ENDPOINT") or "")
-        self.api_key = api_key or os.getenv("AZURE_FLUX_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+        # `is None` rather than `or`: an explicitly passed "" means "no endpoint",
+        # and must not silently fall back to whatever .env happens to hold - that
+        # is how a unit test ends up firing a real request at Azure.
+        if endpoint is None:
+            endpoint = os.getenv("AZURE_FLUX_ENDPOINT") or ""
+        if api_key is None:
+            api_key = os.getenv("AZURE_FLUX_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+
+        self.endpoint = self._normalize_endpoint(endpoint)
+        self.api_key = api_key
         self.api_version = api_version or os.getenv("AZURE_FLUX_API_VERSION", "preview")
         self.model = model or os.getenv("AZURE_FLUX_DEPLOYMENT", "FLUX.2-pro")
         self.width = width or int(os.getenv("AZURE_FLUX_WIDTH", "1024"))
