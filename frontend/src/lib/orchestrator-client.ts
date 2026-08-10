@@ -1,4 +1,10 @@
-import type { AgentActivity, AgentStatus } from "./umbrella-types";
+import type {
+  AgentActivity,
+  AgentStatus,
+  ProteinDomain,
+  ProteinSelection,
+  ProteinViewerSpec,
+} from "./umbrella-types";
 
 /**
  * Base URL of the Python orchestrator API (backend/api.py).
@@ -92,6 +98,69 @@ export async function askOrchestrator(
   }
 
   return (await response.json()) as ChatResponse;
+}
+
+/** The context key the Protein Visualization Agent publishes its Mol* scene under. */
+const PROTEIN_VIEWER_KEY = "protein_viewer";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Reads the Mol* scene out of a chat response's shared context.
+ *
+ * Returns undefined whenever the agent did not run, could not find a
+ * structure, or answered with a shape this build does not recognise. The
+ * checks are not ceremony: `context` is a free-form bag that every agent
+ * writes into, so the key can be absent, null, or - the day an agent changes
+ * its output - something else entirely. A missing viewer costs the user the
+ * 3D panel; a malformed one handed to Mol* would take down the whole message.
+ */
+export function proteinViewerFrom(
+  context: Record<string, unknown>,
+): ProteinViewerSpec | undefined {
+  const raw = context[PROTEIN_VIEWER_KEY];
+  if (!isRecord(raw) || raw.viewer !== "molstar") return undefined;
+
+  const structure = raw.structure;
+  if (!isRecord(structure)) return undefined;
+  if (typeof structure.url !== "string" || typeof structure.id !== "string") return undefined;
+
+  // Anything other than the two formats Mol* is told to expect is dropped
+  // rather than guessed at - loading mmCIF as PDB fails deep inside the parser.
+  const format = structure.format === "PDB" ? "PDB" : structure.format === "MMCIF" ? "MMCIF" : null;
+  if (!format) return undefined;
+
+  return {
+    viewer: "molstar",
+    structure: {
+      id: structure.id,
+      url: structure.url,
+      format,
+      source: typeof structure.source === "string" ? structure.source : "unknown",
+      structure_type: structure.structure_type === "PREDICTED" ? "PREDICTED" : "EXPERIMENTAL",
+      chain_id: typeof structure.chain_id === "string" ? structure.chain_id : null,
+    },
+    representation: isRecord(raw.representation)
+      ? {
+          type: typeof raw.representation.type === "string" ? raw.representation.type : undefined,
+          color_theme:
+            typeof raw.representation.color_theme === "string"
+              ? raw.representation.color_theme
+              : undefined,
+        }
+      : undefined,
+    selections: Array.isArray(raw.selections)
+      ? (raw.selections.filter(isRecord) as unknown as ProteinSelection[])
+      : [],
+    domains: Array.isArray(raw.domains)
+      ? (raw.domains.filter(
+          (domain): domain is Record<string, unknown> =>
+            isRecord(domain) && typeof domain.label === "string",
+        ) as unknown as ProteinDomain[])
+      : [],
+  };
 }
 
 /**

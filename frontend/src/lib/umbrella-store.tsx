@@ -13,6 +13,7 @@ import {
   askOrchestrator,
   imageUrlFor,
   parseExecutionHistory,
+  proteinViewerFrom,
   type UploadedImage,
 } from "./orchestrator-client";
 import type { AgentActivity, Conversation, Message, User } from "./umbrella-types";
@@ -196,6 +197,13 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 sender: "assistant",
                 content: response.answer,
                 timestamp: new Date().toISOString(),
+                // Kept on the message rather than in a side channel so the
+                // structure is still there after a reload, exactly like the
+                // text it belongs to.
+                ...(() => {
+                  const viewer = proteinViewerFrom(response.context);
+                  return viewer ? { proteinViewer: viewer } : {};
+                })(),
               },
             ],
           }));

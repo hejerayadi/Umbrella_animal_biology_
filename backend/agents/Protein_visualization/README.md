@@ -15,20 +15,34 @@ answers on both:
 | Route | Caller | Body |
 |---|---|---|
 | `POST /execute` | Grand Orchestrator | `{instruction, context}` in, `{status, target_agent, prompt_to_target_agent, output}` out — the contract every agent in this repo speaks |
-| `POST /api/v1/protein-structure-analyses` | frontend viewer | the full `AgentTask`, answering with the complete analysis: Mol* scene, every annotation, every evidence record |
-| `GET /api/v1/taxonomy?name=…` | anyone building an `AgentTask` | species name → `{scientific_name, taxon_id}`. The full endpoint takes an id; users type a name |
+| `GET /health` | platform liveness check | which implementation is serving |
+| `POST /api/v1/protein-structure-analyses` | frontend viewer, scripts | the full `AgentTask`, answering with the complete analysis: Mol* scene, every annotation, every evidence record |
+| `GET /api/v1/taxonomy?name=…` | anyone building an `AgentTask` | species name → `{scientific_name, taxon_id}` |
+| `GET /api/v1/ready` | operators | whether Qdrant, the LLM and persistence are reachable |
 
-`/execute` is a translation layer only (`app/api/execute.py`); the scientific
-decisions stay in the workflow and in `result_policy.to_agent_result`. It reads
-`species` plus a gene symbol or accession out of the shared context, resolves
-the species name to an NCBI taxonomy id against UniProt, and returns a
-**summary** rather than the full payload — whatever an agent returns under
-`completed` is merged into every later agent's context and rendered into the
-Responder's prompt, so the Mol* scene would cost thousands of tokens a turn.
+`/execute` holds no business logic: it hands the request to
+[orchestrator_adapter.py](orchestrator_adapter.py), which resolves identity
+against UniProt before running the workflow. See that module's docstring for
+why the gene and species are resolved *together* rather than the species alone.
 
-Without a species, or without any of gene / accession / sequence, it answers
-`needs_agent` with a prompt describing what it is missing. That is a real
-dependency on upstream agents, read from the context it was actually given.
+### What `/execute` puts in the shared context
+
+Deliberately a summary, not the whole `ProteinAnalysisResponse`: everything a
+completed agent returns is merged into the context every later agent sees and
+rendered into the Responder's prompt, so the residue mappings, alternative
+structures and evidence list would be paid for in tokens on every subsequent
+turn while answering nothing the user asked.
+
+| Key | Type | Consumer |
+|---|---|---|
+| `protein_structure` | prose sentence | the Responder writes the answer from it; other agents test for it before escalating |
+| `uniprot_accession` | string | later agents |
+| `protein_explanation` | string | the Responder |
+| `protein_warnings` | list | the Responder, via `_quality_constraints` |
+| `protein_viewer` | Mol* scene | **the frontend** — `orchestrator-client.ts` reads it to render the 3D viewer. Skipped by the Responder's prompt builder (`_RENDER_ONLY_KEYS`) because it is coordinates, not prose |
+
+Changing these key names or types breaks the frontend viewer and the other
+agents, not just this one.
 
 ```powershell
 curl.exe -X POST http://localhost:8008/execute -H "Content-Type: application/json" `
@@ -100,13 +114,26 @@ uv add --project backend\agents\Protein_visualization "some-package>=1,<2"
 uv add --project backend\agents\Protein_visualization --dev "some-dev-tool>=1,<2"
 ```
 
-The backend host and port are read from `.env`:
+`python -m backend.run_agents` starts the service for you, along with every
+other agent.
+
+The standalone service's host and port are read from `.env`. Port 8000 belongs
+to the Global Orchestrator's API and 8008 to the agent above, so it uses a
+third:
 
 ```env
 APP_HOST=127.0.0.1
-APP_PORT=8000
+APP_PORT=8010
 APP_RELOAD=true
 ```
+
+> The first analysis on a fresh machine downloads the BGE-M3 embedding model
+> (~2.3 GB) before it can answer, which takes far longer than any client
+> timeout. Warm the cache once, in advance:
+>
+> ```powershell
+> .venv\Scripts\python.exe -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-m3')"
+> ```
 
 Open `http://127.0.0.1:${APP_PORT}/docs`, then drive the agent:
 

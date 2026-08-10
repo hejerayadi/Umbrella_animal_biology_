@@ -1,27 +1,41 @@
 {
   "name": "Genome Agent",
   "type": "worker",
-  "description": "Retrieves, analyzes and interprets genomic information.",
+  "description": "Retrieves and interprets genomic information from the live NCBI databases. Resolves a species name to its genome assembly, then returns genome size, chromosome count and assembly level, the annotated gene table and gene-symbol list for that assembly, and genome-size comparisons against reference species. Covers questions about a species' genome, DNA, assembly or chromosomes, and about which genes a species carries.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
   "may_need": [
-    "Literature Agent"
+    "Literature Agent",
+    "Protein Structure Visualization Agent",
+    "Reconstruction Agent"
   ],
   "managed_services": [
-    "NCBI",
-    "Ensembl"
+    "NCBI Assembly",
+    "NCBI Gene",
+    "NCBI Taxonomy"
   ],
   "capabilities": [
+    "Species name resolution",
+    "Genome assembly lookup",
     "Genome retrieval",
+    "Genome metadata retrieval",
     "Gene retrieval",
-    "Genome analysis"
+    "Gene annotation retrieval",
+    "Genome size comparison"
   ],
   "input": {
     "instruction": "string",
     "context": "dict"
   },
   "output": {
-    "genome": "string"
+    "genome": "string",
+    "assembly_id": "string",
+    "gene_list": "list",
+    "gene_table": "list",
+    "genome_metadata": "dict",
+    "species_record": "dict",
+    "visualization": "dict",
+    "explanation": "string"
   }
 }

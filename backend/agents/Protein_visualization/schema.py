@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 
-class AgentStatus(str, Enum):
+class AgentStatus(Enum):
     COMPLETED = "completed"
     NEEDS_AGENT = "needs_agent"
     CONTINUE = "continue"
@@ -21,6 +19,9 @@ class AgentRequest:
 @dataclass
 class AgentResult:
     status: AgentStatus
-    output: Any = None
+
     target_agent: str | None = None
+
     prompt_to_target_agent: str | None = None
+
+    output: Any | None = None

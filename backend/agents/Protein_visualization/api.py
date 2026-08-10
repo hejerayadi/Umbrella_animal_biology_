@@ -1,19 +1,30 @@
 """HTTP boundary for the Protein Visualization Agent.
 
-This is the service `backend/run_agents.py` starts on port 8008, and it serves
-the real agent - there is no mock implementation behind it:
+This is the service `backend/run_agents.py` starts on port 8008. One process
+serves two contracts, because splitting them would mean two different answers
+to the same question depending on who asked:
 
-* `POST /execute` is the inter-agent contract the Grand Orchestrator calls. It
-  runs the actual LangGraph workflow over UniProt, RCSB PDB, AlphaFold, InterPro
-  and SIFTS, with Azure for the explanation and critic passes and Qdrant for
-  retrieval. The adapter lives in `app/api/execute.py`.
-* `/api/v1/...` is the scientific API the frontend viewer calls, mounted from
-  `app/main.py` - the full analysis with the Mol* scene, every annotation and
-  every evidence record.
-* `/docs` documents the endpoints.
+* `POST /execute` is the platform contract - `{instruction, context}` in, an
+  `AgentResult` out. It holds no business logic: it validates the request and
+  hands it to `orchestrator_adapter.py`, which resolves the gene and species
+  named in the chat message against UniProt before running the workflow. The
+  Global Orchestrator is the only caller.
+* `/api/v1/...` is the scientific API, mounted from `app/main.py` - the full
+  analysis with the Mol* scene, every annotation and every evidence record,
+  for the frontend viewer and for scripts.
+* `/health` answers the platform's liveness check, `/api/v1/ready` reports
+  whether Qdrant, the LLM and persistence are actually reachable.
+* `/docs` documents the versioned API.
 
-One process, one set of clients, one workflow. Splitting them would mean two
-different answers to the same question depending on who asked.
+There is one implementation and it does real work. The `mock.py` stub that used
+to sit here has been retired - it answered every request by demanding a genome
+and then a trait, and finished by returning the fixed string "Predicted 3D
+Protein Structure". On a platform whose premise is never inventing scientific
+results, that is the wrong thing to serve, and it made the agent look broken
+for a different reason than it actually was.
+
+That means UniProt, RCSB, AlphaFold or InterPro being down shows up as a FAILED
+result the Responder explains honestly. That is intended.
 
 Run it (from the repository root):
 
@@ -23,10 +34,40 @@ Run it (from the repository root):
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 
-from .app.api.execute import router as execute_router
 from .app.main import create_app
+from .orchestrator_adapter import OrchestratorProteinAgent
+from .schema import AgentRequest, AgentResult, AgentStatus
+
+_logger = logging.getLogger(__name__)
 
 app: FastAPI = create_app()
-app.include_router(execute_router)
+
+# Built once at startup rather than per request: constructing it compiles the
+# LangGraph state machine and opens the pooled UniProt connection, and neither
+# cost belongs in the request path.
+_agent = OrchestratorProteinAgent()
+
+
+@app.get("/health")
+def health() -> dict:
+    """Confirms the service is up and which implementation it serves."""
+    return {"agent": "Protein", "implementation": type(_agent).__name__}
+
+
+@app.post("/execute", response_model=AgentResult)
+async def execute(request: AgentRequest) -> AgentResult:
+    """The agent's single endpoint. Always answers with an `AgentResult`."""
+
+    try:
+        return await _agent.run(request)
+    except Exception as exc:  # noqa: BLE001 - the boundary must not leak exceptions
+        # Deliberately not an HTTPException: the orchestrator's router expects
+        # one schema back every time, and it already knows how to handle a
+        # FAILED status. A 500 with FastAPI's {"detail": ...} body would break
+        # that contract.
+        _logger.warning("protein agent request failed", exc_info=True)
+        return AgentResult(status=AgentStatus.FAILED, output=f"Protein Visualization Agent error: {exc}")
