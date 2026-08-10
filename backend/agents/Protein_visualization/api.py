@@ -1,45 +1,55 @@
 """HTTP boundary for the Protein Visualization Agent.
 
-Communication only - this layer holds no business logic. It receives a request
-from the Global Orchestrator, validates it into `AgentRequest`, hands it to
-`orchestrator_adapter.py`, and returns whatever `AgentResult` comes back. The
-orchestrator is the only caller; the frontend never reaches an agent directly.
+This is the service `backend/run_agents.py` starts on port 8008. One process
+serves two contracts, because splitting them would mean two different answers
+to the same question depending on who asked:
 
-There is one implementation, and it does real work: every request resolves the
-gene and species against UniProt, then runs the LangGraph workflow that picks
-an experimental or predicted structure and builds the Mol* scene from it. The
-`mock.py` stub that used to sit here has been retired - it answered every
-request by demanding a genome and then a trait, and finished by returning the
-fixed string "Predicted 3D Protein Structure". On a platform whose premise is
-never inventing scientific results, that is the wrong thing to serve, and it
-made the agent look broken for a different reason than it actually was.
+* `POST /execute` is the platform contract - `{instruction, context}` in, an
+  `AgentResult` out. It holds no business logic: it validates the request and
+  hands it to `orchestrator_adapter.py`, which resolves the gene and species
+  named in the chat message against UniProt before running the workflow. The
+  Global Orchestrator is the only caller.
+* `/api/v1/...` is the scientific API, mounted from `app/main.py` - the full
+  analysis with the Mol* scene, every annotation and every evidence record,
+  for the frontend viewer and for scripts.
+* `/health` answers the platform's liveness check, `/api/v1/ready` reports
+  whether Qdrant, the LLM and persistence are actually reachable.
+* `/docs` documents the versioned API.
 
-That means UniProt, RCSB, AlphaFold or InterPro being down shows up as a
-FAILED result the Responder explains honestly. That is intended.
+There is one implementation and it does real work. The `mock.py` stub that used
+to sit here has been retired - it answered every request by demanding a genome
+and then a trait, and finished by returning the fixed string "Predicted 3D
+Protein Structure". On a platform whose premise is never inventing scientific
+results, that is the wrong thing to serve, and it made the agent look broken
+for a different reason than it actually was.
 
-Run it (from the repository root, with this agent's venv active):
+That means UniProt, RCSB, AlphaFold or InterPro being down shows up as a FAILED
+result the Responder explains honestly. That is intended.
 
-    python -m uvicorn backend.agents.Protein_visualization.api:app --port 8008
+Run it (from the repository root):
+
+    uv run --project backend/agents/Protein_visualization \
+        python -m uvicorn backend.agents.Protein_visualization.api:app --port 8008
 """
+
 from __future__ import annotations
 
 import logging
 
 from fastapi import FastAPI
 
+from .app.main import create_app
 from .orchestrator_adapter import OrchestratorProteinAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
 
 _logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Protein Visualization Agent")
+app: FastAPI = create_app()
 
 # Built once at startup rather than per request: constructing it compiles the
 # LangGraph state machine and opens the pooled UniProt connection, and neither
 # cost belongs in the request path.
 _agent = OrchestratorProteinAgent()
-
-print("[Protein] serving the LangGraph workflow (live UniProt/RCSB/AlphaFold)", flush=True)
 
 
 @app.get("/health")
@@ -60,6 +70,4 @@ async def execute(request: AgentRequest) -> AgentResult:
         # FAILED status. A 500 with FastAPI's {"detail": ...} body would break
         # that contract.
         _logger.warning("protein agent request failed", exc_info=True)
-        return AgentResult(
-            status=AgentStatus.FAILED, output=f"Protein Visualization Agent error: {exc}"
-        )
+        return AgentResult(status=AgentStatus.FAILED, output=f"Protein Visualization Agent error: {exc}")

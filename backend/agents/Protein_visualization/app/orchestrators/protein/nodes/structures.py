@@ -8,7 +8,12 @@ from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus
 from backend.agents.Protein_visualization.app.domain.exceptions import ProteinAgentError
 from backend.agents.Protein_visualization.app.domain.models import EvidenceRef, StructureCandidate
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
-from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import degraded, executed, failure_code, logger
+from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import (
+    degraded,
+    executed,
+    failure_code,
+    logger,
+)
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import (
     EVALUATE_PDB,
     SEARCH_ALPHAFOLD,
@@ -120,9 +125,15 @@ class StructureNodes:
 
         warnings = []
         if selected.structure_type == "PREDICTED":
-            warnings.append(
-                "ALPHAFOLD_FALLBACK: no experimental structure qualified; the selected model is predicted."
-            )
+            if state["task"].preferred_source is PreferredSource.alphafold:
+                warnings.append(
+                    "ALPHAFOLD_REQUESTED: the caller explicitly requested a predicted AlphaFold model."
+                )
+            else:
+                warnings.append(
+                    "ALPHAFOLD_FALLBACK: no experimental structure qualified; "
+                    "the selected model is predicted."
+                )
         return executed(
             SELECT_STRUCTURE,
             selected_structure=selected,

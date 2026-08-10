@@ -1,5 +1,0 @@
-target-version = "py312"
-line-length = 110
-
-[lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC"]

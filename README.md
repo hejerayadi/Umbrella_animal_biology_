@@ -142,6 +142,8 @@ backend/
     card.json              Capabilities - THIS is what the planner routes on
     description.md         Human-readable objective and example questions
     requirements.txt       This agent's dependencies only
+                           (Protein_visualization instead uses pyproject.toml
+                            + uv.lock, managed with uv)
     .env.example           This agent's environment template
 frontend/                  React / TanStack Start web UI
 ```
@@ -206,6 +208,14 @@ backend\agents\<agent>\.venv\Scripts\Activate.ps1
 pip install -r backend\agents\<agent>\requirements.txt
 ```
 
+`Protein_visualization` declares its dependencies in `pyproject.toml` with a
+committed `uv.lock` instead of a `requirements.txt`, so it is set up with
+[uv](https://docs.astral.sh/uv/) in one command — uv creates the `.venv` itself:
+
+```powershell
+uv sync --project backend\agents\Protein_visualization
+```
+
 Serve it — still **from the repository root**, so Python can resolve the `backend.agents...` package path:
 
 ```powershell
@@ -247,11 +257,13 @@ Every agent answers with the same shape:
 
 The orchestrator calls agents over HTTP, so **they must be running** before a query can get past the first worker.
 
-**One-time setup** — creates a `.venv` for every agent and installs each one's `requirements.txt`:
+**One-time setup** — creates a `.venv` for every agent and installs its dependencies:
 
 ```powershell
 python -m backend.run_agents --setup
 ```
+
+It picks the right tool per agent: `uv sync` for an agent that has a `pyproject.toml` (currently `Protein_visualization`, which needs `uv` on your PATH), `pip install -r requirements.txt` for the rest.
 
 This is slow (some agents pin large packages like `torch`), but you only do it once. Re-running it reuses any venv that already exists.
 

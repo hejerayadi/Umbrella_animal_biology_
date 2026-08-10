@@ -1,7 +1,6 @@
 """Initial protein agent schema."""
 
 from alembic import op
-
 from backend.agents.Protein_visualization.app.persistence.db import Base
 
 revision = "0001"

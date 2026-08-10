@@ -1,3 +1,4 @@
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import HashEmbedding
 from backend.agents.Protein_visualization.app.knowledge_base.retrieval import KnowledgeBase
 from backend.agents.Protein_visualization.app.knowledge_base.schemas import KnowledgeDocument
 
@@ -20,7 +21,7 @@ def _document(
 
 
 async def test_local_knowledge_search_ranks_the_relevant_document() -> None:
-    knowledge = KnowledgeBase()
+    knowledge = KnowledgeBase(HashEmbedding())
     await knowledge.ingest(
         [
             _document("p53", "TP53 tumor suppressor DNA binding domain"),
@@ -34,7 +35,7 @@ async def test_local_knowledge_search_ranks_the_relevant_document() -> None:
 
 
 async def test_search_never_widens_the_protein_or_species_filter() -> None:
-    knowledge = KnowledgeBase()
+    knowledge = KnowledgeBase(HashEmbedding())
     await knowledge.ingest([_document("p53", "TP53 tumor suppressor DNA binding domain")])
 
     assert await knowledge.search("TP53", 5, protein_id="P04637", taxonomy_id=10090) == []
@@ -43,7 +44,7 @@ async def test_search_never_widens_the_protein_or_species_filter() -> None:
 
 
 async def test_document_type_filter_is_applied() -> None:
-    knowledge = KnowledgeBase()
+    knowledge = KnowledgeBase(HashEmbedding())
     await knowledge.ingest([_document("p53", "TP53 tumor suppressor DNA binding domain")])
 
     hits = await knowledge.search(

@@ -1,4 +1,9 @@
-from backend.agents.Protein_visualization.app.domain.models import ProteinStructureRequest, ResidueMapping, ResolvedProtein, StructureCandidate
+from backend.agents.Protein_visualization.app.domain.models import (
+    ProteinStructureRequest,
+    ResidueMapping,
+    ResolvedProtein,
+    StructureCandidate,
+)
 from backend.agents.Protein_visualization.app.tools.sifts_client import SiftsClient
 
 

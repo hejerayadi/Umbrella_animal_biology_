@@ -9,20 +9,30 @@ from backend.agents.Protein_visualization.app.capabilities.identity import Ident
 from backend.agents.Protein_visualization.app.capabilities.residue_mapping import ResidueMappingCapability
 from backend.agents.Protein_visualization.app.capabilities.retrieval import RetrievalCapability
 from backend.agents.Protein_visualization.app.capabilities.structures import StructureCapability
+from backend.agents.Protein_visualization.app.capabilities.taxonomy import TaxonomyCapability
 from backend.agents.Protein_visualization.app.capabilities.visualization import VisualizationCapability
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
-from backend.agents.Protein_visualization.app.knowledge_base.embeddings import BgeM3Embedding, EmbeddingProvider
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import (
+    BgeM3Embedding,
+    EmbeddingProvider,
+)
 from backend.agents.Protein_visualization.app.knowledge_base.ingestion import KnowledgeIngestionService
-from backend.agents.Protein_visualization.app.knowledge_base.qdrant import QdrantStore
+from backend.agents.Protein_visualization.app.knowledge_base.qdrant import QdrantDependencyError, QdrantStore
 from backend.agents.Protein_visualization.app.knowledge_base.retrieval import KnowledgeBase
 from backend.agents.Protein_visualization.app.llm.azure_foundry import AzureFoundryClient
 from backend.agents.Protein_visualization.app.orchestrators.protein.graph import build_graph
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes import ProteinNodes
 from backend.agents.Protein_visualization.app.orchestrators.protein.orchestrator import ProteinOrchestrator
-from backend.agents.Protein_visualization.app.tools import AlphaFoldClient, InterProClient, RCSBClient, SiftsClient, UniProtClient
+from backend.agents.Protein_visualization.app.tools import (
+    AlphaFoldClient,
+    InterProClient,
+    RCSBClient,
+    SiftsClient,
+    UniProtClient,
+)
 
 if TYPE_CHECKING:  # SQLAlchemy is only imported when persistence is enabled
-    from backend.agents.Protein_visualization.app.persistence.repositories import AnalysisRepository
+    from app.persistence.repositories import AnalysisRepository
 
 
 @lru_cache
@@ -39,16 +49,20 @@ def get_embedding_provider() -> EmbeddingProvider:
 def get_knowledge_base() -> KnowledgeBase:
     """Knowledge base backed by the managed Qdrant cluster when ``QDRANT_URL`` is set."""
     settings = get_settings()
-    store = (
-        QdrantStore(
+    if not settings.qdrant_url:
+        return KnowledgeBase(embedding=get_embedding_provider())
+    try:
+        store = QdrantStore(
             settings.qdrant_url,
             settings.qdrant_collection,
             settings.qdrant_api_key,
             settings.http_timeout_seconds,
         )
-        if settings.qdrant_url
-        else None
-    )
+    except (QdrantDependencyError, ValueError) as exc:
+        return KnowledgeBase(
+            embedding=get_embedding_provider(),
+            unavailable_reason=f"{type(exc).__name__}: {exc}",
+        )
     return KnowledgeBase(embedding=get_embedding_provider(), store=store)
 
 
@@ -60,6 +74,12 @@ def get_ingestion_service() -> KnowledgeIngestionService:
 @lru_cache
 def get_llm_client() -> AzureFoundryClient:
     return AzureFoundryClient(get_settings())
+
+
+@lru_cache
+def get_taxonomy_capability() -> TaxonomyCapability:
+    """Species name -> taxonomy id, for callers that only have the user's wording."""
+    return TaxonomyCapability(UniProtClient(get_settings()))
 
 
 @lru_cache
@@ -90,7 +110,7 @@ def get_analysis_repository() -> "AnalysisRepository | None":
     settings = get_settings()
     if not settings.persistence_enabled:
         return None
-    from backend.agents.Protein_visualization.app.persistence.db import Database
-    from backend.agents.Protein_visualization.app.persistence.repositories import AnalysisRepository
+    from app.persistence.db import Database
+    from app.persistence.repositories import AnalysisRepository
 
     return AnalysisRepository(Database(settings.database_url))

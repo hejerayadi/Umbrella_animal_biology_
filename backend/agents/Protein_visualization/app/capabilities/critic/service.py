@@ -6,11 +6,15 @@ model may then confirm it or make it stricter — never more permissive.
 
 import logging
 
-from backend.agents.Protein_visualization.app.capabilities.explanation.service import LanguageModel, evidence_context
+from backend.agents.Protein_visualization.app.capabilities.explanation.service import (
+    LanguageModel,
+    evidence_context,
+)
 from backend.agents.Protein_visualization.app.domain.enums import ValidationStatus
 from backend.agents.Protein_visualization.app.domain.models import (
     CriticReport,
     EvidencePack,
+    LlmUsage,
     ProteinStructureRequest,
     ResidueMapping,
     ResolvedProtein,
@@ -37,6 +41,7 @@ class CriticCapability:
         protein: ResolvedProtein | None,
         structure: StructureCandidate | None,
         mappings: list[ResidueMapping],
+        warnings: list[str] | None = None,
     ) -> CriticReport:
         if protein is None:
             return CriticReport(
@@ -52,6 +57,13 @@ class CriticCapability:
         verdict = ValidationStatus.accept
         reasons: list[str] = []
 
+        if structure.sequence_coverage < 1.0:
+            verdict = _strictest(verdict, ValidationStatus.revise)
+            reasons.append(
+                f"The selected structure covers {structure.sequence_coverage:.0%} of the UniProt "
+                "sequence, so it is usable but not a complete-protein result."
+            )
+
         if (request.residue_position is not None or request.mutation) and not any(
             mapping.is_observed for mapping in mappings
         ):
@@ -65,6 +77,11 @@ class CriticCapability:
             reasons.append(
                 "The selected model is an AlphaFold prediction and must be presented as predicted."
             )
+        if warnings:
+            verdict = _strictest(verdict, ValidationStatus.revise)
+            reasons.append(
+                "The workflow completed with degraded evidence: " + "; ".join(dict.fromkeys(warnings))
+            )
         if not reasons:
             reasons.append("Identity, selected structure and evidence are mutually consistent.")
         return CriticReport(verdict=verdict.value, reasons=tuple(reasons))
@@ -74,22 +91,31 @@ class CriticCapability:
         deterministic: CriticReport,
         evidence: EvidencePack,
         llm: LanguageModel | None = None,
-    ) -> CriticReport:
+        node: str = "run_scientific_critic",
+    ) -> tuple[CriticReport, LlmUsage | None]:
         """Let the model tighten the verdict; a proposed upgrade is discarded."""
         if llm is None or not llm.enabled:
-            return deterministic
+            return deterministic, None
 
         try:
-            output = await llm.critique(evidence_context(evidence))
+            context = evidence_context(evidence)
+            context.update(
+                deterministic_verdict=deterministic.verdict,
+                deterministic_reasons=list(deterministic.reasons),
+            )
+            output, usage = await llm.critique(context, node)
         except Exception as exc:
             logger.warning("critic_llm_failed", exc_info=exc)
-            return deterministic
+            return deterministic, None
 
         proposed = ValidationStatus(output.verdict)
         current = ValidationStatus(deterministic.verdict)
         if SEVERITY[proposed] <= SEVERITY[current]:
-            return deterministic
-        return CriticReport(
-            verdict=proposed.value,
-            reasons=tuple(dict.fromkeys((*deterministic.reasons, *output.reasons))),
+            return deterministic, usage
+        return (
+            CriticReport(
+                verdict=proposed.value,
+                reasons=tuple(dict.fromkeys((*deterministic.reasons, *output.reasons))),
+            ),
+            usage,
         )

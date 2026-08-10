@@ -1,4 +1,9 @@
-from backend.agents.Protein_visualization.app.contracts.envelope import ApiResponse, ErrorCode, failure, success
+from backend.agents.Protein_visualization.app.contracts.envelope import (
+    ApiResponse,
+    ErrorCode,
+    failure,
+    success,
+)
 from backend.agents.Protein_visualization.app.observability.context import log_context
 
 

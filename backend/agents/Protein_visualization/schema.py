@@ -18,7 +18,6 @@ class AgentRequest:
 
 @dataclass
 class AgentResult:
-
     status: AgentStatus
 
     target_agent: str | None = None

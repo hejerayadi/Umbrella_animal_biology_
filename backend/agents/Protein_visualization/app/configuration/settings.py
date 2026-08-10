@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # Left unset for deployments that reject an explicit temperature.
     azure_temperature: float | None = 0.0
 
+    # Optional: USD per 1,000 tokens for the deployed model, so a response can
+    # report an estimated cost alongside the token counts Azure itself returns.
+    # Azure OpenAI pricing depends on region, contract and model version and is
+    # not discoverable from the API, so this is never guessed - unset means the
+    # response reports tokens and latency only, no cost.
+    azure_input_price_per_1k_usd: float | None = Field(default=None, ge=0)
+    azure_output_price_per_1k_usd: float | None = Field(default=None, ge=0)
+
     @property
     def local_base_url(self) -> str:
         return f"http://{self.app_host}:{self.app_port}"

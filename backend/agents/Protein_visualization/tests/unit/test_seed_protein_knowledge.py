@@ -1,4 +1,7 @@
-from backend.agents.Protein_visualization.scripts.seed_protein_knowledge import _interpro_documents, _uniprot_documents
+from backend.agents.Protein_visualization.scripts.seed_protein_knowledge import (
+    _interpro_documents,
+    _uniprot_documents,
+)
 
 
 def _entry() -> dict:  # type: ignore[type-arg]

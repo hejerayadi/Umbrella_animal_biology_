@@ -1,13 +1,23 @@
 from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit
-from backend.agents.Protein_visualization.app.knowledge_base.embeddings import EmbeddingProvider, HashEmbedding
+from backend.agents.Protein_visualization.app.knowledge_base.embeddings import EmbeddingProvider
 from backend.agents.Protein_visualization.app.knowledge_base.qdrant import QdrantStore
 from backend.agents.Protein_visualization.app.knowledge_base.schemas import KnowledgeDocument
 
 
 class KnowledgeBase:
-    def __init__(self, embedding: EmbeddingProvider | None = None, store: QdrantStore | None = None) -> None:
-        self.embedding = embedding or HashEmbedding()
+    def __init__(
+        self,
+        embedding: EmbeddingProvider,
+        store: QdrantStore | None = None,
+        unavailable_reason: str | None = None,
+    ) -> None:
+        # Required, with no default: the only other provider in this package is
+        # HashEmbedding, whose vectors carry no semantics. Defaulting to it would
+        # let a misconfiguration return confident-looking nonsense from a
+        # production search instead of failing.
+        self.embedding = embedding
         self.store = store
+        self.unavailable_reason = unavailable_reason
         self._documents: dict[str, tuple[KnowledgeDocument, list[float]]] = {}
 
     async def ingest(self, documents: list[KnowledgeDocument]) -> int:
@@ -31,6 +41,8 @@ class KnowledgeBase:
         taxonomy_id: int | None = None,
         document_types: list[str] | None = None,
     ) -> list[KnowledgeHit]:
+        if self.unavailable_reason:
+            return []
         if not protein_id or taxonomy_id is None:
             return []
         vector = await self.embedding.embed(query)

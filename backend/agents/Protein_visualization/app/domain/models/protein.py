@@ -118,3 +118,20 @@ class Explanation:
 class CriticReport:
     verdict: Literal["ACCEPT", "REVISE", "ABSTAIN"]
     reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class LlmUsage:
+    """One Azure OpenAI call's cost and latency, for the node that made it.
+
+    Token counts come from the provider's own response (`AIMessage.usage_metadata`
+    via `include_raw=True`), never estimated locally - a local tokenizer would
+    silently drift from whatever model the deployment actually routes to.
+    """
+
+    node: str
+    model: str
+    duration_ms: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None

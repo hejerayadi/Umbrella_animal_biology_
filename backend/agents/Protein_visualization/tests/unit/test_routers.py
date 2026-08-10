@@ -16,7 +16,12 @@ from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names 
     SELECT_STRUCTURE,
 )
 from backend.agents.Protein_visualization.app.orchestrators.protein.state import initial_state
-from backend.agents.Protein_visualization.tests.factories import P53, alphafold_candidate, pdb_candidate, structure_request
+from backend.agents.Protein_visualization.tests.factories import (
+    P53,
+    alphafold_candidate,
+    pdb_candidate,
+    structure_request,
+)
 
 
 def state(**overrides):  # type: ignore[no-untyped-def]

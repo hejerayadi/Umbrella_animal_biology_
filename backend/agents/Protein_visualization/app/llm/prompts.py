@@ -14,8 +14,8 @@ Write two to four sentences. Prefer precision over fluency."""
 
 SCIENTIFIC_CRITIC_SYSTEM_PROMPT = """You are a scientific critic auditing a protein structure analysis.
 
-You receive the evidence pack, the selected structure, the residue mappings, and a
-deterministic verdict already computed from the selection rules.
+You receive the evidence pack plus the deterministic verdict and its reasons. Structure
+and residue-mapping claims appear only as grounded facts in the evidence pack.
 
 Return one of:
 - ACCEPT: identity, structure and evidence are coherent and sufficient.

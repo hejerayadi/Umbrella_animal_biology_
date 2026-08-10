@@ -151,9 +151,7 @@ def _select(entries: list[dict[str, Any]], gene: str) -> ProteinIdentity | None:
     the organism; if they do not, the request named something this layer
     cannot narrow down and must not choose between.
     """
-    identities = [
-        identity for identity in (_entry_identity(entry, gene) for entry in entries) if identity
-    ]
+    identities = [identity for identity in (_entry_identity(entry, gene) for entry in entries) if identity]
     if not identities:
         return None
 
@@ -184,9 +182,7 @@ class ProteinIdentityResolver:
             # UniProt's organism filter already understands common names:
             # "dog" resolves to Canis lupus familiaris.
             for candidate in candidates:
-                identity = await self._search(
-                    f'(gene_exact:{gene}) AND (organism_name:"{candidate}")'
-                )
+                identity = await self._search(f'(gene_exact:{gene}) AND (organism_name:"{candidate}")')
                 if identity:
                     return identity
 
@@ -196,9 +192,7 @@ class ProteinIdentityResolver:
                     # `taxonomy_id` matches descendants too, so the genus that a
                     # plural resolves to ("humans" -> Homo) still reaches the
                     # species underneath it.
-                    identity = await self._search(
-                        f"(gene_exact:{gene}) AND (taxonomy_id:{taxon_id})"
-                    )
+                    identity = await self._search(f"(gene_exact:{gene}) AND (taxonomy_id:{taxon_id})")
                     if identity:
                         return identity
 
@@ -453,9 +447,7 @@ class OrchestratorProteinAgent:
             identity = _entry_identity(entry, gene or accession)
             if identity:
                 return identity
-            raise IdentityUnresolved(
-                f"UniProt returned no usable organism for accession '{accession}'."
-            )
+            raise IdentityUnresolved(f"UniProt returned no usable organism for accession '{accession}'.")
 
         assert gene is not None  # guaranteed by the caller's gene-or-accession check
         return await self._resolver.resolve(gene, species)

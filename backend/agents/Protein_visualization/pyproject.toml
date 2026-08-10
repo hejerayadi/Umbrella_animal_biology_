@@ -1,0 +1,80 @@
+[project]
+name = "protein-visualization-agent"
+version = "0.1.0"
+description = "Protein identity, structure, annotation and visualization agent for the Umbrella backend."
+requires-python = ">=3.12"
+
+# Runtime floor for every deployment. Upper bounds stop a major release from
+# landing silently; the exact resolved versions live in uv.lock.
+dependencies = [
+    "alembic>=1.14,<2",
+    "fastapi>=0.115,<1",
+    "httpx>=0.27,<1",
+    "langchain-openai>=0.3,<1",
+    "langgraph>=0.2,<2",
+    "pydantic>=2.10,<3",
+    "pydantic-settings>=2.7,<3",
+    "qdrant-client>=1.13,<2",
+    "rich>=14,<16",
+    "sqlalchemy>=2.0,<3",
+    "tenacity>=9,<10",
+    "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+# BAAI/bge-m3 through sentence-transformers, imported lazily by BgeM3Embedding.
+# It drags in torch (~2 GB), and app.knowledge_base.embeddings falls back to
+# HashEmbedding without it, so installing it is a deliberate choice:
+#   uv sync --extra embeddings
+embeddings = [
+    "sentence-transformers>=3.3,<6",
+]
+# Only needed to point DATABASE_URL / alembic.ini at PostgreSQL. The default
+# in app.configuration.settings is sqlite, which needs no driver.
+#   uv sync --extra postgres
+postgres = [
+    "psycopg[binary]>=3.2,<4",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14,<2",
+    "pytest>=8.3,<10",
+    "pytest-asyncio>=0.25,<2",
+    "ruff>=0.9,<1",
+]
+
+[tool.uv]
+# The importable package is backend.agents.Protein_visualization.*, rooted at
+# the repository root - not at this directory. So this project is never built
+# or installed into its own environment; uv manages dependencies only.
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+exclude = "(tests|scripts)/"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+# The agent imports itself as backend.agents.Protein_visualization.*, so the
+# repository root has to be importable. Relative to this file's directory.
+pythonpath = ["../../.."]
+markers = [
+    "live: calls public biological databases",
+    "bge: requires the BGE-M3 embedding model",
+    "qdrant: requires a Qdrant server",
+]

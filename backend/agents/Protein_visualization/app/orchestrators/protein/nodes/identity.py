@@ -6,7 +6,11 @@ from backend.agents.Protein_visualization.app.capabilities.identity import Ident
 from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus
 from backend.agents.Protein_visualization.app.domain.exceptions import ProteinAgentError, ProteinNotFoundError
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
-from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import executed, failure_code, logger
+from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import (
+    executed,
+    failure_code,
+    logger,
+)
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import RESOLVE_IDENTITY
 from backend.agents.Protein_visualization.app.orchestrators.protein.state import ProteinWorkflowState
 

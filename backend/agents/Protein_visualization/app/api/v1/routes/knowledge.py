@@ -3,13 +3,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from backend.agents.Protein_visualization.app.api.v1.dependencies import get_ingestion_service, get_knowledge_base
+from backend.agents.Protein_visualization.app.api.v1.dependencies import (
+    get_ingestion_service,
+    get_knowledge_base,
+)
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
 from backend.agents.Protein_visualization.app.contracts.envelope import ApiResponse, success
 from backend.agents.Protein_visualization.app.domain.models import KnowledgeHit
 from backend.agents.Protein_visualization.app.knowledge_base.ingestion import KnowledgeIngestionService
 from backend.agents.Protein_visualization.app.knowledge_base.retrieval import KnowledgeBase
-from backend.agents.Protein_visualization.app.knowledge_base.schemas import IngestionResult, KnowledgeDocument, KnowledgeSearchRequest
+from backend.agents.Protein_visualization.app.knowledge_base.schemas import (
+    IngestionResult,
+    KnowledgeDocument,
+    KnowledgeSearchRequest,
+)
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])

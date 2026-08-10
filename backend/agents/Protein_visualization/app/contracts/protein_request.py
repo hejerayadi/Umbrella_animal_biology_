@@ -1,4 +1,8 @@
-from backend.agents.Protein_visualization.app.contracts.agent_task import AgentTask, ProteinTaskInput, SpeciesContract
+from backend.agents.Protein_visualization.app.contracts.agent_task import (
+    AgentTask,
+    ProteinTaskInput,
+    SpeciesContract,
+)
 
 ProteinAnalysisRequest = AgentTask
 
