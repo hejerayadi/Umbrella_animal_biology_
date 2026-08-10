@@ -84,11 +84,16 @@ def _context_for(agent_name: str, context: dict[str, Any]) -> dict[str, Any]:
 def _call_agent(agent_name: str, base_url: str, state: WorkflowState) -> AgentResult:
     """POST to one agent and parse its reply. All transport concerns live here."""
 
+    # An agent brought in to satisfy another agent's `needs_agent` is sent that
+    # request; the agent the planner started with has no entry and is sent the
+    # user's question. See `WorkflowState.agent_instructions`.
+    instruction = state.agent_instructions.get(agent_name) or state.user_query
+
     try:
         response = _client.post(
             f"{base_url}/execute",
             json={
-                "instruction": state.user_query,
+                "instruction": instruction,
                 "context": _context_for(agent_name, state.context),
             },
         )
@@ -135,6 +140,36 @@ def make_worker_node(agent_name: str, base_url: str):
         result = _call_agent(agent_name, base_url, state)
         status = result.status.value
 
+        # The context keys present right now. Compared against the snapshot
+        # taken the last time this agent escalated, this answers "did the
+        # helper we fetched actually bring anything back?".
+        signature = sorted(state.context)
+        looping = (
+            status == "needs_agent"
+            and state.escalation_signatures.get(agent_name) == signature
+        )
+
+        if looping:
+            # Same agent, same request, and nothing new in context since last
+            # time: the helper cannot produce what this agent is waiting for.
+            # Retrying is what turned one unmet dependency into 36 steps of
+            # NCBI and NIM calls, so stop and let the responder explain.
+            _logger.info(
+                "[%s] escalated again with no new context (%s) - breaking the loop",
+                agent_name,
+                signature,
+            )
+            result = AgentResult(
+                status=AgentStatus.FAILED,
+                output=(
+                    f"{agent_name} asked for help again without receiving anything "
+                    f"new. Its request ({result.prompt_to_target_agent!r}) cannot be "
+                    f"satisfied by the agents available, so the workflow was stopped "
+                    f"rather than retrying indefinitely."
+                ),
+            )
+            status = "failed"
+
         if status == "needs_agent":
             _logger.info("[%s] needs_agent -> %r", agent_name, result.prompt_to_target_agent)
         elif status == "failed":
@@ -155,6 +190,12 @@ def make_worker_node(agent_name: str, base_url: str):
             # paused and waiting, so we can come back to it later.
             updates["waiting_stack"] = [*state.waiting_stack, agent_name]
             updates["waiting_agent"] = agent_name
+            # Remember what context looked like when it asked, so the next
+            # escalation can tell whether the helper actually delivered.
+            updates["escalation_signatures"] = {
+                **state.escalation_signatures,
+                agent_name: signature,
+            }
 
         elif status == "completed":
             # Merge whatever this agent produced into the shared context, so

@@ -44,6 +44,10 @@ export function ChatMessage({
   // the message text is still perfectly readable without it.
   const [imageFailed, setImageFailed] = useState(false);
   const showImage = Boolean(message.imageUrl) && !imageFailed;
+  // Same eviction story as the attachment above, for the generated
+  // illustration on an assistant message.
+  const [generatedFailed, setGeneratedFailed] = useState(false);
+  const showGenerated = Boolean(message.generatedImageUrl) && !generatedFailed;
 
   return (
     <div className={cn("flex w-full gap-3 animate-fade-up", isUser && "justify-end")}>
@@ -80,6 +84,25 @@ export function ChatMessage({
         ) : (
           <div className={cn(!done && "typing-caret")}>
             <Markdown content={shown} />
+            {/* Shown as soon as it is known rather than waiting for `done`:
+                it is a plain <img>, so unlike Mol* below there is no WebGL
+                context to initialise, and the picture is the point of the
+                answer - making the user read to the end first is worse. */}
+            {showGenerated && (
+              <a
+                href={message.generatedImageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 block w-fit overflow-hidden rounded-2xl border border-border"
+              >
+                <img
+                  src={message.generatedImageUrl}
+                  alt="Generated scientific illustration"
+                  onError={() => setGeneratedFailed(true)}
+                  className="max-h-[28rem] w-auto max-w-full object-contain"
+                />
+              </a>
+            )}
             {/* Held back until the text finishes typing: mounting Mol* mid-
                 animation makes it initialise its WebGL context while the
                 message above it is still reflowing on every tick. */}

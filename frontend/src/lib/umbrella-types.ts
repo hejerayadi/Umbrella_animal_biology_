@@ -126,6 +126,14 @@ export interface Message {
    * when the viewer mounts.
    */
   proteinViewer?: ProteinViewerSpec;
+  /**
+   * URL of an illustration the Image Generation Agent produced for this answer.
+   * A URL for the same reason as `imageUrl` above: the agent hands back a
+   * ~440 KB base64 data URI, and these messages are persisted to localStorage.
+   * May 404 once the backend's bounded store evicts it, in which case the
+   * answer renders without the picture.
+   */
+  generatedImageUrl?: string;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

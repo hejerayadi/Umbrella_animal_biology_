@@ -1,19 +1,19 @@
 {
-  "name": "Protein Structure Generation Agent",
+  "name": "Image Generation Agent",
   "type": "worker",
-  "description": "Generates 2D scientific visualizations of proteins and species traits using FLUX.2-pro. Routes to Trait Discovery when morphological, physiological, behavioral, functional, or structural traits are not yet available in context.",
+  "description": "Generates 2D scientific illustrations with FLUX.2-pro from the biological context gathered by other agents. Covers rendered images, illustrations, diagrams and visual depictions of a species or protein based on its described traits. Routes to Trait Discovery when morphological, physiological, behavioral, functional, or structural traits are not yet available in context. It does not predict 3D protein structures.",
   "reports_to": ["Global Scientific Orchestrator"],
   "may_need": ["Trait Discovery Agent"],
   "managed_services": ["Azure AI Foundry", "FLUX.2-pro"],
   "capabilities": [
-    "Protein structure visualization",
     "2D scientific illustration generation",
-    "Trait-based biological visualization",
+    "Trait-based biological image generation",
+    "Text-to-image rendering of biological subjects",
     "Orchestrator routing for missing trait interpretation"
   ],
   "input": {
     "instruction": "string",
-    "context": "dict with species, protein/gene identifiers, and traits from Trait Discovery Agent"
+    "context": "dict needing a species OR a protein/gene identifier, plus traits from Trait Discovery Agent"
   },
   "output": {
     "image": "string (URL or base64 data URI)",

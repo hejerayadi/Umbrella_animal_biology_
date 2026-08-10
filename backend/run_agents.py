@@ -40,6 +40,33 @@ _REPO_ROOT = Path(__file__).parent.parent
 # Where a venv keeps its interpreter differs by platform.
 _VENV_PYTHON = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/python")
 
+# Extra environment variables for specific agents, applied when launching them.
+#
+# The Trait Discovery Agent picks its implementation from TRAIT_AGENT_IMPL and
+# defaults to the canned stub in its `mock.py`. That default is deliberate (see
+# its api.py) so the port always opens even without a NIM key - but it means the
+# orchestrator silently gets fake traits, which downstream agents like
+# ImageGeneration then render as if they were real findings. Running the real
+# LangGraph workflow is the point of the system, so ask for it here.
+#
+# It has to be a real environment variable: that agent's api.py reads it with
+# os.getenv at import time, and nothing calls load_dotenv before then, so
+# putting it in its .env would silently do nothing.
+#
+# Anything already exported in the shell wins, so `set TRAIT_AGENT_IMPL=mock`
+# still gets you the stub for an offline demo.
+_AGENT_ENV: dict[str, dict[str, str]] = {
+    "Trait": {"TRAIT_AGENT_IMPL": "workflow"},
+}
+
+
+def _agent_environment(agent_name: str) -> dict[str, str]:
+    """The environment for one agent: this process's, plus its own defaults."""
+    environment = dict(os.environ)
+    for key, value in _AGENT_ENV.get(agent_name, {}).items():
+        environment.setdefault(key, value)
+    return environment
+
 
 def _venv_dir(folder: str) -> Path:
     return _AGENTS_DIR / folder / ".venv"
@@ -177,6 +204,7 @@ def serve() -> None:
         process = subprocess.Popen(
             [str(python), "-m", "uvicorn", module, "--port", str(port)],
             cwd=str(_REPO_ROOT),
+            env=_agent_environment(agent_name),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

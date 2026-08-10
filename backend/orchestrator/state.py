@@ -60,6 +60,27 @@ class WorkflowState:
     # to jump to next.
     resolved_agent: str | None = None
 
+    # The instruction each agent should be sent, keyed by agent name.
+    #
+    # An agent pulled in to satisfy someone else's `needs_agent` must be told
+    # what was actually asked for, not the user's original sentence. Without
+    # this, the Trait agent asks for a gene list and the Genome agent receives
+    # "Draw an Arctic fox" - it fetches an assembly, never runs gene
+    # annotation, and Trait asks again forever.
+    #
+    # Kept per agent rather than as a single "next request" so that an agent
+    # resumed after its dependency finishes replays the same instruction it
+    # was originally given, instead of silently reverting to the user's query.
+    # An agent with no entry here (the one the planner started with) is sent
+    # `user_query`, which is the right thing for it.
+    agent_instructions: dict[str, str] = field(default_factory=dict)
+
+    # For each agent, the context keys that existed the last time it said
+    # `needs_agent`. Used to stop an unsatisfiable dependency from looping:
+    # if an agent escalates again and nothing new has arrived in context, the
+    # helper cannot give it what it needs and retrying would spin forever.
+    escalation_signatures: dict[str, list[str]] = field(default_factory=dict)
+
     # All the facts gathered so far, shared by every agent. For example,
     # after the Genome agent runs, this might contain {"genome": "..."}.
     # Every agent reads from this and adds to it.
