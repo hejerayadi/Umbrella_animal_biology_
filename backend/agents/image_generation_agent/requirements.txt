@@ -1,7 +1,9 @@
-# Standalone local dependencies for the Image Generation agent
-pillow==11.0.0
-requests==2.32.3
+# --- Required for the agent API layer — do not remove ---
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
 
-# --- Agent API layer (api.py) - required, do not remove ---
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
+# --- Add this agent's own dependencies below ---
+python-dotenv==1.0.1
+requests==2.32.3
+pytest==8.3.4

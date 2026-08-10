@@ -1,3 +1,1 @@
-from .mock import ImageGenerationMock
-
-__all__ = ["ImageGenerationMock"]
+"""Protein Structure Generation / Visualization Agent."""
