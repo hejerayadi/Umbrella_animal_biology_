@@ -1,3 +1,1 @@
-from .mock import ReconstructionMock
-
-__all__ = ["ReconstructionMock"]
+"""Agent 5 — Reconstruction Agent package."""

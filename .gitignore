@@ -1,0 +1,62 @@
+# Virtual environments
+# Covers the shared root venv and every per-agent venv
+# (backend/agents/<agent>/.venv).
+venv/
+.venv/
+env/
+ENV/
+
+# Secrets - only .env.example is ever committed
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+dist/
+.output/
+.nitro/
+.vite/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Kiro session specs (internal planning, not for public repo)
+.kiro/
+
+# Internal agent notes (group specs, datasets, scenarios)
+backend/agents/*/description.md
+
+# Sprint 1 diagnostic / scratch scripts (repo root)
+scratch_*.py
+verify_dim.py
+inspect_qc.py
+_verify_router.py
+run_inference_test.py
+test_dnabert_*.py
+test_kmer_regression.py
+
+# Reconstruction agent debug artefacts
+backend/agents/reconstruction_agent/state_store/*.json
+dog_mt.fasta
+tmp_test.fasta
+/*.fasta
+reconstruction_raw/
+
+# ML model checkpoints and HuggingFace cache
+**/seq2seq_checkpoint.pt
+.cache/huggingface/

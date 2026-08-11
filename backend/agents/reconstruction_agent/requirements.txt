@@ -4,3 +4,15 @@ numpy==2.1.3
 # --- Agent API layer (api.py) - required, do not remove ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
+
+# HuggingFace — dna-model-integration Sprint 1
+# transformers==4.46.3: last version before CVE-2025-32434 torch>=2.6 restriction.
+# Compatible with torch==2.4.1. tokenizers==0.20.3 required by transformers 4.46.x.
+# safetensors==0.8.0: validated version used to load model.safetensors from
+#   zhihan1996/DNA_bert_6 revision 75d5592a86a1dbdd27ab11ea0ea5574ab1a8920f
+#   (avoids pytorch_model.bin and the CVE-2025-32434 restriction).
+# numpy==2.1.3 retained; transformers 4.46 requires numpy>=1.17 — no conflict.
+transformers==4.46.3
+huggingface-hub>=0.22.0,<1.0.0
+tokenizers==0.20.3
+safetensors==0.8.0

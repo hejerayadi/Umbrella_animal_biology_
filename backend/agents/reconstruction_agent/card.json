@@ -1,25 +1,46 @@
 {
-  "name": "Reconstruction Agent",
-  "type": "worker",
-  "description": "Reconstructs incomplete genomes or missing biological information. Covers filling in fragmented, partial or missing sequence data; reconstructing the genome of an extinct or poorly sequenced species; and inferring biological information that no database holds directly. Used when retrieval has already failed or the data is known to be incomplete - not as a first stop for data that can simply be looked up.",
-  "reports_to": [
-    "Global Scientific Orchestrator"
+  "name": "Reconstruction Orchestrator",
+  "type": "orchestrator",
+  "description": "LangGraph StateGraph pilotant la reconstruction de séquences ADN manquantes. Le nœud reasoning_core est le seul nœud décisionnel : il inspecte l'état et route vers le prochain outil via des arêtes conditionnelles. L'ordre d'exécution émerge du raisonnement, pas d'une séquence câblée.",
+  "reports_to": ["Umbrella Central Orchestrator"],
+  "may_need": ["Evolution"],
+  "managed_agents": [
+    "Input Manager",
+    "Gap Locator",
+    "Model Selector & Predictor",
+    "Validation Engine",
+    "Prediction Assembler",
+    "Output Formatter"
   ],
-  "may_need": [
-    "Evolution Agent"
-  ],
-  "managed_services": [
-    "Genome Reconstruction Model"
+  "graph_nodes": [
+    "input_manager",
+    "reasoning_core",
+    "gap_locator",
+    "model_selector_predictor",
+    "validation_engine",
+    "evolution_agent_delegate",
+    "prediction_assembler",
+    "output_formatter"
   ],
   "capabilities": [
-    "Genome reconstruction",
-    "Sequence completion"
+    "Per-gap model selection",
+    "Conditional validation routing",
+    "Partial or full sequence reassembly",
+    "Retry cycles with previous_attempts tracking",
+    "Cross-species delegation via evolution_agent_delegate node"
   ],
   "input": {
-    "instruction": "string",
-    "context": "dict"
+    "genome_sequence": "string",
+    "species_metadata": "object"
   },
   "output": {
-    "reconstructed_genome": "string"
+    "species_id": "string",
+    "reconstructed_sequence": "string",
+    "gaps_found": "int",
+    "gaps_reconstructed": "int",
+    "predictions": "List<GapPrediction>",
+    "excluded_gaps": "List<GapRegion>",
+    "overall_confidence": "float",
+    "notes": "string"
   }
 }
