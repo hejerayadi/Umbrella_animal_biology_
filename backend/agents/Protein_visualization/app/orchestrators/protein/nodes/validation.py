@@ -18,7 +18,12 @@ async def validate_input(state: ProteinWorkflowState) -> dict[str, Any]:
     task = state["task"]
     problems: list[str] = []
 
-    with log_stage(logger, VALIDATE_INPUT, node=VALIDATE_INPUT) as outcome:
+    with log_stage(
+        logger,
+        f"protein.node.{VALIDATE_INPUT}",
+        node=VALIDATE_INPUT,
+        capability="input_validation",
+    ) as outcome:
         if task.uniprot_accession and not ACCESSION_PATTERN.match(task.uniprot_accession.upper()):
             problems.append(f"'{task.uniprot_accession}' is not a valid UniProt accession.")
         if task.protein_sequence and not SEQUENCE_PATTERN.match(task.protein_sequence.strip()):

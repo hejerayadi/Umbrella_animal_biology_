@@ -50,7 +50,10 @@ def get_knowledge_base() -> KnowledgeBase:
     """Knowledge base backed by the managed Qdrant cluster when ``QDRANT_URL`` is set."""
     settings = get_settings()
     if not settings.qdrant_url:
-        return KnowledgeBase(embedding=get_embedding_provider())
+        return KnowledgeBase(
+            embedding=get_embedding_provider(),
+            unavailable_reason="QDRANT_URL is not configured; knowledge retrieval is disabled",
+        )
     try:
         store = QdrantStore(
             settings.qdrant_url,

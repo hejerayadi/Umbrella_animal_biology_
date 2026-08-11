@@ -41,7 +41,12 @@ async def create_analysis(
             analysis_id, _ = await asyncio.to_thread(repository.create, task)
 
         with log_context(analysis_id=str(analysis_id) if analysis_id else None):
-            with log_stage(logger, "protein_analysis", capability="orchestrator") as outcome:
+            with log_stage(
+                logger,
+                "protein.api.analysis",
+                node="api_analysis",
+                capability="orchestrator",
+            ) as outcome:
                 result = await orchestrator.execute(task)
                 analysis_status = AnalysisStatus(result.output["status"])
                 outcome["agent_status"] = result.status.value

@@ -3,15 +3,19 @@
 Only ever reached right after a worker returned `needs_agent`, so this node
 can assume `state.last_result` describes exactly what is missing.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ...capability_resolver import CapabilityResolver
 from ...state import WorkflowState
 
 
-def make_resolver_node(resolver: CapabilityResolver):
+def make_resolver_node(
+    resolver: CapabilityResolver,
+) -> Callable[[WorkflowState], dict[str, Any]]:
     """Build the graph node that runs the Capability Resolver.
 
     This node only ever runs right after a worker said `needs_agent`, so we

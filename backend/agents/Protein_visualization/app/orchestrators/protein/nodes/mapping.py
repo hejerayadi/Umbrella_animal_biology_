@@ -65,7 +65,12 @@ class ResidueMappingNode:
             )
 
         try:
-            with log_stage(logger, MAP_RESIDUES, node=MAP_RESIDUES) as outcome:
+            with log_stage(
+                logger,
+                f"protein.node.{MAP_RESIDUES}",
+                node=MAP_RESIDUES,
+                capability="residue_mapping",
+            ) as outcome:
                 mappings = await self.capability.map(
                     replace(task, residue_position=position), protein, structure
                 )

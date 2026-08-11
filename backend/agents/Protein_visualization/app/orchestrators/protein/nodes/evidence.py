@@ -14,7 +14,12 @@ class EvidenceNode:
         self.capability = capability
 
     async def __call__(self, state: ProteinWorkflowState) -> dict[str, Any]:
-        with log_stage(logger, BUILD_EVIDENCE, node=BUILD_EVIDENCE) as outcome:
+        with log_stage(
+            logger,
+            f"protein.node.{BUILD_EVIDENCE}",
+            node=BUILD_EVIDENCE,
+            capability="evidence_fusion",
+        ) as outcome:
             pack = self.capability.build(
                 request=state["task"],
                 protein=state["resolved_protein"],
