@@ -39,6 +39,18 @@ class _FakeClient:
         return _FakeResponse(self._payload)
 
 
+class _SequenceClient:
+    """Returns one payload per call so retries can be driven deterministically."""
+
+    def __init__(self, payloads: list[dict]) -> None:
+        self._payloads = list(payloads)
+        self.sent: list[dict] = []
+
+    def post(self, url, json=None, **kwargs):
+        self.sent.append(json)
+        return _FakeResponse(self._payloads.pop(0))
+
+
 @pytest.fixture
 def fake_client(monkeypatch):
     def _install(payload: dict) -> _FakeClient:
@@ -66,7 +78,9 @@ def test_agent_started_by_the_planner_gets_the_user_question(fake_client):
     assert client.sent[0]["instruction"] == "Draw an Arctic fox"
 
 
-def test_agent_fetched_as_a_dependency_gets_the_request_not_the_user_question(fake_client):
+def test_agent_fetched_as_a_dependency_gets_the_request_not_the_user_question(
+    fake_client,
+):
     """The bug behind the loop: Genome used to be told "Draw an Arctic fox"."""
     client = fake_client({"status": "completed", "output": {"gene_list": ["FGF5"]}})
 
@@ -75,22 +89,48 @@ def test_agent_fetched_as_a_dependency_gets_the_request_not_the_user_question(fa
         WorkflowState(
             user_query="Draw an Arctic fox",
             context={"species": "Arctic fox"},
-            agent_instructions={"Genome": "Resolve a validated list of candidate genes"},
+            agent_instructions={
+                "Genome": "Resolve a validated list of candidate genes"
+            },
         )
     )
 
-    assert client.sent[0]["instruction"] == "Resolve a validated list of candidate genes"
+    assert (
+        client.sent[0]["instruction"] == "Resolve a validated list of candidate genes"
+    )
 
 
 def test_first_escalation_is_allowed_and_records_a_signature(fake_client):
     fake_client(_NEEDS_GENES)
 
     node = worker_node.make_worker_node("Trait", "http://x")
-    updates = node(WorkflowState(user_query="Draw an Arctic fox", context={"species": "Arctic fox"}))
+    updates = node(
+        WorkflowState(
+            user_query="Draw an Arctic fox", context={"species": "Arctic fox"}
+        )
+    )
 
     assert updates["last_result"].status.value == "needs_agent"
     assert updates["waiting_stack"] == ["Trait"]
     assert updates["escalation_signatures"]["Trait"] == ["species"]
+
+
+def test_partial_findings_are_merged_before_the_helper_runs(fake_client):
+    fake_client({**_NEEDS_GENES, "output": {"protein_warnings": ["partial evidence"]}})
+
+    node = worker_node.make_worker_node("Protein", "http://x")
+    updates = node(
+        WorkflowState(user_query="Show the protein", context={"species": "dog"})
+    )
+
+    assert updates["context"] == {
+        "species": "dog",
+        "protein_warnings": ["partial evidence"],
+    }
+    assert updates["escalation_signatures"]["Protein"] == [
+        "protein_warnings",
+        "species",
+    ]
 
 
 def test_escalating_again_with_new_context_is_still_allowed(fake_client):
@@ -174,3 +214,51 @@ def test_the_guard_is_per_agent(fake_client):
     )
 
     assert updates["last_result"].status.value == "needs_agent"
+
+
+def test_retryable_continue_calls_exactly_four_times_with_exponential_delays():
+    continuing = {
+        "status": "continue",
+        "output": {},
+        "continuation_reason": "temporary provider failure",
+        "retryable": True,
+    }
+    client = _SequenceClient([continuing, continuing, continuing, continuing])
+    delays: list[float] = []
+    node = worker_node.make_worker_node(
+        "Protein",
+        "http://protein",
+        client=client,
+        sleep=delays.append,
+    )
+    state = WorkflowState(user_query="Show TP53", context={"gene_name": "TP53"})
+
+    for _ in range(4):
+        updates = node(state)
+        state = WorkflowState(**{**vars(state), **updates})
+
+    assert len(client.sent) == 4
+    assert delays == [1.0, 2.0, 4.0]
+    assert state.last_result.status.value == "failed"
+    assert "after 3 retries" in state.last_result.output
+    assert state.continue_retry_counts == {}
+
+
+def test_non_retryable_continue_fails_without_another_call():
+    client = _SequenceClient(
+        [
+            {
+                "status": "continue",
+                "output": {},
+                "continuation_reason": "caller input must be corrected",
+                "retryable": False,
+            }
+        ]
+    )
+    node = worker_node.make_worker_node("Protein", "http://protein", client=client)
+
+    updates = node(WorkflowState(user_query="Show TP53"))
+
+    assert len(client.sent) == 1
+    assert updates["last_result"].status.value == "failed"
+    assert "cannot continue automatically" in updates["last_result"].output

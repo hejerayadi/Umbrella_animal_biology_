@@ -25,6 +25,12 @@ answers on both:
 against UniProt before running the workflow. See that module's docstring for
 why the gene and species are resolved *together* rather than the species alone.
 
+The shared context also carries optional protein-analysis intent extracted from
+the chat message: `mutation`, `residue_position`, `requested_regions`,
+`preferred_source` (`auto`, `pdb`, or `alphafold`) and `include_explanation`.
+The adapter validates these fields before contacting a provider and forwards
+them to the same `ProteinTaskInput` used by the versioned scientific endpoint.
+
 ### What `/execute` puts in the shared context
 
 Deliberately a summary, not the whole `ProteinAnalysisResponse`: everything a
@@ -71,7 +77,7 @@ version, none of which the API exposes, so it is left unset rather than guessed.
 
 ## Infrastructure in this sprint
 
-- **Qdrant** — a managed cluster; set `QDRANT_URL` and `QDRANT_API_KEY` in `.env`. There is no `docker-compose.yml`: nothing is provisioned locally.
+- **Qdrant** — a managed cluster; set `QDRANT_URL` and `QDRANT_API_KEY` in `.env`. There is no `docker-compose.yml`: nothing is provisioned locally. When `QDRANT_URL` is absent, retrieval reports `RETRIEVAL_UNAVAILABLE` before loading BGE-M3; it never presents an empty in-memory store as a successful production search.
 - **PostgreSQL** — out of scope for this sprint. `PERSISTENCE_ENABLED=false` keeps the repository layer dormant; the API answers without a database.
 - **Azure** — the LLM provider for explanation and critic generation (`LLM_PROVIDER=azure`).
 - **BGE-M3** — the embedding model for ingestion and retrieval, and the only one `get_embedding_provider` will build. It ships in the `embeddings` extra (`uv sync --extra embeddings`), because it pulls torch; without that extra, the retrieval node reports `RETRIEVAL_UNAVAILABLE` in the response warnings rather than falling back to anything. `HashEmbedding` carries no semantics and is reachable only from `tests/`.
@@ -217,6 +223,11 @@ uv run --project $agent ruff format --check $agent
 uv run --project $agent mypy --config-file $agent\pyproject.toml $agent\app
 uv run --project $agent pytest $agent\tests -q -m "not live and not bge and not qdrant"
 ```
+
+That command is the deterministic offline gate. The `live`, `bge`, and
+`qdrant` markers are opt-in because they contact external services, may incur
+Azure cost, download the embedding model, or write to a managed collection;
+passing the offline gate does not claim those operational checks were run.
 
 `mypy` has to be started from the repository root: that is what makes it resolve
 these files as `backend.agents.Protein_visualization.*` rather than as a second,

@@ -30,9 +30,11 @@ uses its presence as a "Multimodal already ran" flag, they all read it as
 plain input, and a species named in text means the same thing as a species
 recognised from a photo.
 """
+
 from __future__ import annotations
 
 import logging
+from typing import Any, Literal, cast
 
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
@@ -58,7 +60,21 @@ _SYSTEM_PROMPT = (
     "user wants to know, not a trait, so leave the field empty for those. Leave it "
     "empty whenever the message names no specific characteristic.\n\n"
     "gene_name: the gene symbol named in the message (for example 'FGF5', 'UCP1'). "
-    "Leave empty if no gene is named."
+    "Leave empty if no gene is named.\n\n"
+    "mutation: a point mutation explicitly written in the message, using amino-acid "
+    "notation such as 'R273H'. Leave empty if none is written.\n\n"
+    "residue_position: a single positive residue number explicitly requested. Do not "
+    "copy the number out of mutation; leave this empty unless the position is requested "
+    "separately.\n\n"
+    "requested_regions: protein regions explicitly requested, preserving the wording "
+    "used by the caller. Return an empty list when none are named.\n\n"
+    "preferred_source: set to 'pdb' only for an explicit experimental/PDB preference, "
+    "to 'alphafold' only for an explicit predicted/AlphaFold preference, and to 'auto' "
+    "only when the caller explicitly asks for the best available source. Otherwise leave "
+    "it empty.\n\n"
+    "include_explanation: set to true when the caller explicitly asks for an explanation "
+    "and false when they explicitly ask for structure/visualization only. Otherwise leave "
+    "it empty."
 )
 
 _PROMPT = ChatPromptTemplate.from_messages(
@@ -91,6 +107,27 @@ class _ExtractorOutput(BaseModel):
         default=None,
         description="The gene symbol named in the message. Empty when no gene is named.",
     )
+    mutation: str | None = Field(
+        default=None,
+        description="Explicit point mutation such as R273H. Empty when none is named.",
+    )
+    residue_position: int | None = Field(
+        default=None,
+        gt=0,
+        description="Explicit positive residue position, excluding a position only present in mutation.",
+    )
+    requested_regions: list[str] = Field(
+        default_factory=list,
+        description="Explicit protein domains or regions requested by the caller.",
+    )
+    preferred_source: Literal["auto", "pdb", "alphafold"] | None = Field(
+        default=None,
+        description="Explicit structure-source preference. Empty when the caller has no preference.",
+    )
+    include_explanation: bool | None = Field(
+        default=None,
+        description="Explicit explanation preference. Empty when the caller did not specify one.",
+    )
 
 
 class Extractor:
@@ -99,7 +136,7 @@ class Extractor:
     def __init__(self) -> None:
         self._chain = _PROMPT | get_llm().with_structured_output(_ExtractorOutput)
 
-    def extract(self, user_query: str) -> dict[str, str]:
+    def extract(self, user_query: str) -> dict[str, Any]:
         """Return the entities named in `user_query`, ready to merge into context.
 
         Only fields the model actually filled in come back. A key that is
@@ -109,19 +146,40 @@ class Extractor:
         second. Returning nothing at all keeps both honest.
         """
 
-        response = self._chain.invoke({"user_query": user_query})
+        response = cast(
+            _ExtractorOutput,
+            self._chain.invoke({"user_query": user_query}),
+        )
 
-        facts = {
+        facts: dict[str, Any] = {
             key: value.strip()
             for key, value in (
                 ("species", response.species),
                 ("trait_name", response.trait_name),
                 ("gene_name", response.gene_name),
+                ("mutation", response.mutation),
             )
             # `value.strip()` below would blow up on None, and some models
             # answer with "" or "none" instead of leaving the field out.
-            if value and value.strip() and value.strip().lower() not in {"none", "n/a", "unknown"}
+            if value
+            and value.strip()
+            and value.strip().lower() not in {"none", "n/a", "unknown"}
         }
+
+        if "mutation" in facts:
+            facts["mutation"] = facts["mutation"].upper()
+        if response.residue_position is not None:
+            facts["residue_position"] = response.residue_position
+
+        regions = [
+            region.strip() for region in response.requested_regions if region.strip()
+        ]
+        if regions:
+            facts["requested_regions"] = regions
+        if response.preferred_source is not None:
+            facts["preferred_source"] = response.preferred_source
+        if response.include_explanation is not None:
+            facts["include_explanation"] = response.include_explanation
 
         if facts:
             _logger.info("[Extractor] query=%r -> %s", user_query, facts)

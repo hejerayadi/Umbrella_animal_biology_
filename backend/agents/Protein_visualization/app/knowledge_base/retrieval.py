@@ -4,6 +4,10 @@ from backend.agents.Protein_visualization.app.knowledge_base.qdrant import Qdran
 from backend.agents.Protein_visualization.app.knowledge_base.schemas import KnowledgeDocument
 
 
+class KnowledgeBaseUnavailableError(RuntimeError):
+    """Raised when production retrieval has no usable vector-store configuration."""
+
+
 class KnowledgeBase:
     def __init__(
         self,
@@ -20,7 +24,12 @@ class KnowledgeBase:
         self.unavailable_reason = unavailable_reason
         self._documents: dict[str, tuple[KnowledgeDocument, list[float]]] = {}
 
+    def _require_available(self) -> None:
+        if self.unavailable_reason:
+            raise KnowledgeBaseUnavailableError(self.unavailable_reason)
+
     async def ingest(self, documents: list[KnowledgeDocument]) -> int:
+        self._require_available()
         vectors = [await self.embedding.embed(document.text) for document in documents]
         if self.store:
             await self.store.ensure_collection(self.embedding.dimensions)
@@ -41,8 +50,9 @@ class KnowledgeBase:
         taxonomy_id: int | None = None,
         document_types: list[str] | None = None,
     ) -> list[KnowledgeHit]:
-        if self.unavailable_reason:
-            return []
+        # Fail before embedding so a missing Qdrant configuration neither
+        # downloads BGE-M3 nor looks like a valid search with zero matches.
+        self._require_available()
         if not protein_id or taxonomy_id is None:
             return []
         vector = await self.embedding.embed(query)

@@ -24,7 +24,11 @@ and finishes at `responder`, which writes the findings up as prose.
 
 This module only does the wiring; the nodes themselves live in `nodes/`.
 """
+
 from __future__ import annotations
+
+from collections.abc import Callable, Hashable
+from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -44,9 +48,21 @@ from .nodes import (
     make_responder_node,
     make_worker_node,
 )
+from .nodes.worker_node import CONTINUE_RETRY_DELAYS
 
 
-def build_orchestrator_graph() -> CompiledStateGraph:
+def build_orchestrator_graph(
+    *,
+    planner: Any | None = None,
+    extractor: Any | None = None,
+    resolver: Any | None = None,
+    responder: Any | None = None,
+    agent_cards: dict[str, Any] | None = None,
+    agent_endpoints: dict[str, str] | None = None,
+    worker_client: Any | None = None,
+    sleep: Callable[[float], None] | None = None,
+    retry_delays: tuple[float, ...] = CONTINUE_RETRY_DELAYS,
+) -> CompiledStateGraph:
     """Assemble and compile the LangGraph execution graph.
 
     This function does the actual wiring: create one node per agent, plus
@@ -54,11 +70,15 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     "what happens next" (the conditional edges).
     """
 
-    # These do the real work behind the planner/resolver/responder nodes below.
-    planner = Planner(AGENT_CARDS)
-    extractor = Extractor()
-    resolver = CapabilityResolver(AGENT_CARDS)
-    responder = Responder(AGENT_CARDS)
+    # Optional dependencies make the complete graph deterministic in tests.
+    # Production callers pass nothing and get the same real components and
+    # registered HTTP endpoints as before.
+    cards = AGENT_CARDS if agent_cards is None else agent_cards
+    endpoints = AGENT_ENDPOINTS if agent_endpoints is None else agent_endpoints
+    planner = Planner(cards) if planner is None else planner
+    extractor = Extractor() if extractor is None else extractor
+    resolver = CapabilityResolver(cards) if resolver is None else resolver
+    responder = Responder(cards) if responder is None else responder
 
     # StateGraph(WorkflowState) means: every node in this graph reads and
     # writes a WorkflowState object (the "clipboard" described in state.py).
@@ -72,17 +92,23 @@ def build_orchestrator_graph() -> CompiledStateGraph:
     # One node per worker agent (Genome, Evolution, Protein, ...), all built
     # the same way via the factory function above. Each node holds the URL of
     # that agent's service, not an instance of it.
-    for name, base_url in AGENT_ENDPOINTS.items():
-        graph.add_node(name, make_worker_node(name, base_url))
+    for name, base_url in endpoints.items():
+        worker_options: dict[str, Any] = {
+            "client": worker_client,
+            "retry_delays": retry_delays,
+        }
+        if sleep is not None:
+            worker_options["sleep"] = sleep
+        graph.add_node(name, make_worker_node(name, base_url, **worker_options))
 
     # The workflow always starts by running the planner first.
     graph.add_edge(START, "planner")
 
-    worker_names = list(AGENT_ENDPOINTS)
+    worker_names = list(endpoints)
     # A lookup table LangGraph uses to know "if the chosen next-step is named
     # X, go to the node named X" - it's just an identity mapping since our
     # node names already match the agent names.
-    dispatch_map = {name: name for name in worker_names}
+    dispatch_map: dict[Hashable, str] = {name: name for name in worker_names}
 
     # After the planner runs, either head into the extractor (which seeds the
     # shared context before any agent sees it) or - when no agent is needed -
@@ -98,12 +124,14 @@ def build_orchestrator_graph() -> CompiledStateGraph:
 
     # After the resolver runs, jump straight to whichever agent it picked
     # (read from `state.resolved_agent`).
-    graph.add_conditional_edges("capability_resolver", lambda s: s.resolved_agent, dispatch_map)
+    graph.add_conditional_edges(
+        "capability_resolver", lambda s: s.resolved_agent, dispatch_map
+    )
 
     # After ANY worker agent runs, use the pure "traffic cop" function from
     # router.py to decide what happens next: another worker, the resolver,
     # or the responder that writes the final answer.
-    post_worker_map = {
+    post_worker_map: dict[Hashable, str] = {
         **dispatch_map,
         "capability_resolver": "capability_resolver",
         "responder": "responder",

@@ -28,6 +28,7 @@ scripts and standalone service keep working unchanged.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -37,6 +38,7 @@ from .app.configuration.settings import get_settings
 from .app.contracts.agent_result import AgentResult as ScientificResult
 from .app.contracts.agent_result import AgentStatus as ScientificStatus
 from .app.contracts.protein_request import ProteinAnalysisRequest, ProteinTaskInput, SpeciesContract
+from .app.domain.enums import PreferredSource
 from .app.domain.exceptions import ProteinAgentError
 from .app.tools.uniprot_client import UniProtClient
 from .schema import AgentRequest, AgentResult, AgentStatus
@@ -56,6 +58,7 @@ _SEARCH_FIELDS = "accession,gene_names,organism_name,organism_id,protein_name,re
 _GENE_KEYS = ("gene_name", "resolved_gene_id", "gene_symbol", "gene")
 _SPECIES_KEYS = ("species", "species_name", "scientific_name")
 _ACCESSION_KEYS = ("uniprot_accession", "accession")
+_MUTATION_PATTERN = re.compile(r"^[A-Z]([1-9]\d*)[A-Z]$", re.IGNORECASE)
 
 
 class IdentityUnresolved(Exception):
@@ -115,6 +118,91 @@ def _first(context: dict[str, Any], keys: tuple[str, ...]) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _positive_int(context: dict[str, Any], key: str) -> int | None:
+    """Read an optional positive integer without accepting booleans as integers."""
+    value = context.get(key)
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{key} must be a positive integer")
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{key} must be a positive integer")
+    return value
+
+
+def _regions(context: dict[str, Any]) -> list[str]:
+    """Normalize explicitly requested regions while rejecting ambiguous shapes."""
+    value = context.get("requested_regions")
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)) or any(not isinstance(item, str) for item in value):
+        raise ValueError("requested_regions must be a string or a list of strings")
+    return [item.strip() for item in value if item.strip()]
+
+
+def _preferred_source(context: dict[str, Any]) -> PreferredSource:
+    value = context.get("preferred_source")
+    if value is None or value == "":
+        return PreferredSource.auto
+    if isinstance(value, PreferredSource):
+        return value
+    if not isinstance(value, str):
+        raise ValueError("preferred_source must be one of auto, pdb, or alphafold")
+    try:
+        return PreferredSource(value.strip().upper())
+    except ValueError as exc:
+        raise ValueError("preferred_source must be one of auto, pdb, or alphafold") from exc
+
+
+def _include_explanation(context: dict[str, Any]) -> bool:
+    value = context.get("include_explanation")
+    if value is None or value == "":
+        return True
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    raise ValueError("include_explanation must be a boolean")
+
+
+def _analysis_options(context: dict[str, Any]) -> dict[str, Any]:
+    """Validate optional chat-context fields before any provider is called."""
+    mutation = context.get("mutation")
+    mutation_match: re.Match[str] | None = None
+    if mutation is not None and mutation != "":
+        if isinstance(mutation, str):
+            mutation_match = _MUTATION_PATTERN.fullmatch(mutation.strip())
+        if mutation_match is None:
+            raise ValueError("mutation must use point-mutation notation such as R273H")
+        mutation = mutation.strip().upper()
+    else:
+        mutation = None
+
+    residue_position = _positive_int(context, "residue_position")
+    if (
+        mutation_match is not None
+        and residue_position is not None
+        and int(mutation_match.group(1)) != residue_position
+    ):
+        raise ValueError("mutation and residue_position must refer to the same residue")
+
+    return {
+        "requested_regions": _regions(context),
+        "residue_position": residue_position,
+        "mutation": mutation,
+        "preferred_source": _preferred_source(context),
+        "include_explanation": _include_explanation(context),
+    }
 
 
 def _entry_identity(entry: dict[str, Any], fallback_gene: str) -> ProteinIdentity | None:
@@ -324,13 +412,9 @@ def _shared_context(output: dict[str, Any]) -> dict[str, Any]:
 def to_result(scientific: ScientificResult) -> AgentResult:
     """Map the workflow's routing decision onto the platform's `AgentResult`.
 
-    The two enums carry the same four status strings, but `CONTINUE` does not
-    survive the trip. In the scientific contract it means "this was a
-    transient upstream failure, run the task again"; in the platform graph it
-    sends the request straight back to this same node with an unchanged
-    context, which would retry the identical call until LangGraph's recursion
-    limit aborts the user's whole message. A failure the Responder can explain
-    is the honest version of that.
+    The platform orchestrator owns the bounded retry policy. Preserve
+    ``CONTINUE`` and its retryability metadata here instead of turning a
+    transient provider failure into a terminal error at the service boundary.
     """
     status = scientific.status
     output = scientific.output or {}
@@ -352,12 +436,18 @@ def to_result(scientific: ScientificResult) -> AgentResult:
 
     if status is ScientificStatus.CONTINUE:
         reason = scientific.continuation_reason or "The protein workflow did not reach a result."
-        _logger.info("[Protein] not retryable through the graph -> %s", reason)
-        return AgentResult(status=AgentStatus.FAILED, output=reason)
+        _logger.info("[Protein] continue (retryable=%s) -> %s", scientific.retryable, reason)
+        return AgentResult(
+            status=AgentStatus.CONTINUE,
+            output=_shared_context(output),
+            continuation_reason=reason,
+            retryable=scientific.retryable,
+        )
 
     return AgentResult(
         status=AgentStatus.FAILED,
         output=scientific.error or "The protein workflow ended without a usable result.",
+        error=scientific.error,
     )
 
 
@@ -380,6 +470,13 @@ class OrchestratorProteinAgent:
         species = _first(context, _SPECIES_KEYS)
         accession = _first(context, _ACCESSION_KEYS)
 
+        try:
+            analysis_options = _analysis_options(context)
+        except ValueError as exc:
+            reason = f"Invalid protein analysis options: {exc}."
+            _logger.info("[Protein] invalid context -> %s", reason)
+            return AgentResult(status=AgentStatus.FAILED, output=reason, error=reason)
+
         if not gene and not accession:
             # A real dependency, unlike the mock's unconditional demand for a
             # genome: the user named a trait or a species but no gene, and
@@ -399,12 +496,23 @@ class OrchestratorProteinAgent:
             identity = await self._resolve_identity(gene, species, accession)
         except IdentityUnresolved as exc:
             _logger.info("[Protein] identity unresolved -> %s", exc)
-            return AgentResult(status=AgentStatus.FAILED, output=str(exc))
+            return AgentResult(
+                status=AgentStatus.NEEDS_AGENT,
+                target_agent="Genome",
+                prompt_to_target_agent=(
+                    f"Resolve the canonical protein identity for {gene or accession!r} in "
+                    f"{species or 'the requested species'}. Return a canonical UniProt "
+                    "accession or protein sequence with taxonomy evidence."
+                ),
+                output=str(exc),
+            )
         except ProteinAgentError as exc:
             _logger.warning("[Protein] UniProt unavailable during identity resolution", exc_info=True)
             return AgentResult(
-                status=AgentStatus.FAILED,
+                status=AgentStatus.CONTINUE,
                 output=f"UniProt could not be reached to identify the protein: {exc}",
+                continuation_reason="UniProt is temporarily unavailable during identity resolution.",
+                retryable=True,
             )
 
         _logger.info(
@@ -429,6 +537,7 @@ class OrchestratorProteinAgent:
                     taxon_id=identity.taxon_id,
                 ),
                 uniprot_accession=identity.accession,
+                **analysis_options,
             ),
         )
         return to_result(await self._orchestrator.execute(task))

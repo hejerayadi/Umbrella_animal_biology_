@@ -24,6 +24,7 @@ from backend.agents.Protein_visualization.app.contracts.agent_result import (
 from backend.agents.Protein_visualization.orchestrator_adapter import (
     IdentityUnresolved,
     OrchestratorProteinAgent,
+    ProteinIdentity,
     ProteinIdentityResolver,
     _select,
     _shared_context,
@@ -183,20 +184,118 @@ async def test_no_gene_and_no_accession_asks_another_agent_for_one() -> None:
     assert "gene" in (result.prompt_to_target_agent or "").lower()
 
 
-def test_continue_becomes_failed_rather_than_looping_the_graph() -> None:
-    """`route_after_worker` sends `continue` straight back to this same node
-    with an unchanged context, which would retry the identical call until
-    LangGraph's recursion limit aborts the user's whole message."""
+def test_retryable_continue_survives_the_platform_boundary() -> None:
     result = to_result(
         ScientificResult(
             status=ScientificStatus.CONTINUE,
             output={},
             continuation_reason="UniProt timed out; retry the task.",
+            retryable=True,
+        )
+    )
+
+    assert result.status is AgentStatus.CONTINUE
+    assert result.retryable is True
+    assert result.continuation_reason == "UniProt timed out; retry the task."
+
+
+async def test_unresolved_identity_routes_to_genome() -> None:
+    class Resolver:
+        async def resolve(self, gene: str, species: str | None) -> ProteinIdentity:
+            raise IdentityUnresolved(f"No identity for {gene} in {species}")
+
+    agent = OrchestratorProteinAgent.__new__(OrchestratorProteinAgent)
+    agent._resolver = Resolver()  # type: ignore[assignment]
+
+    result = await agent.run(
+        AgentRequest(
+            instruction="structure of TP53 in dog",
+            context={"gene_name": "TP53", "species": "dog"},
+        )
+    )
+
+    assert result.status is AgentStatus.NEEDS_AGENT
+    assert result.target_agent == "Genome"
+    assert "UniProt" in (result.prompt_to_target_agent or "")
+
+
+async def test_chat_context_options_reach_the_scientific_task() -> None:
+    class Resolver:
+        async def resolve(self, gene: str, species: str | None) -> ProteinIdentity:
+            return ProteinIdentity("P04637", gene, "Homo sapiens", 9606, True)
+
+    class Orchestrator:
+        task: Any = None
+
+        async def execute(self, task: Any) -> ScientificResult:
+            self.task = task
+            return ScientificResult(
+                status=ScientificStatus.COMPLETED,
+                output={
+                    "protein": {"uniprot_accession": "P04637", "gene_symbol": "TP53"},
+                    "selected_structure": {"source": "RCSB_PDB", "external_id": "1TUP"},
+                },
+            )
+
+    workflow = Orchestrator()
+    agent = OrchestratorProteinAgent.__new__(OrchestratorProteinAgent)
+    agent._resolver = Resolver()  # type: ignore[assignment]
+    agent._orchestrator = workflow  # type: ignore[assignment]
+
+    result = await agent.run(
+        AgentRequest(
+            instruction="Show and explain TP53 R273H using PDB",
+            context={
+                "gene_name": "TP53",
+                "species": "human",
+                "mutation": "r273h",
+                "residue_position": 273,
+                "requested_regions": ["DNA-binding domain"],
+                "preferred_source": "pdb",
+                "include_explanation": False,
+            },
+        )
+    )
+
+    assert result.status is AgentStatus.COMPLETED
+    assert workflow.task.input.mutation == "R273H"
+    assert workflow.task.input.residue_position == 273
+    assert workflow.task.input.requested_regions == ["DNA-binding domain"]
+    assert workflow.task.input.preferred_source.value == "PDB"
+    assert workflow.task.input.include_explanation is False
+
+
+async def test_invalid_chat_context_fails_before_identity_resolution() -> None:
+    agent = OrchestratorProteinAgent.__new__(OrchestratorProteinAgent)
+
+    result = await agent.run(
+        AgentRequest(
+            instruction="Show TP53",
+            context={"gene_name": "TP53", "species": "human", "residue_position": -1},
         )
     )
 
     assert result.status is AgentStatus.FAILED
-    assert "UniProt timed out" in str(result.output)
+    assert "residue_position" in str(result.output)
+
+
+async def test_incompatible_mutation_and_position_fail_before_identity_resolution() -> None:
+    agent = OrchestratorProteinAgent.__new__(OrchestratorProteinAgent)
+
+    result = await agent.run(
+        AgentRequest(
+            instruction="Show TP53 R273H at residue 274",
+            context={
+                "gene_name": "TP53",
+                "species": "human",
+                "mutation": "R273H",
+                "residue_position": 274,
+            },
+        )
+    )
+
+    assert result.status is AgentStatus.FAILED
+    assert "same residue" in str(result.output)
 
 
 def test_a_completed_run_publishes_the_shared_context_keys() -> None:

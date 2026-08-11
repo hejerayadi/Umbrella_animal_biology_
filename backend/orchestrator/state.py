@@ -81,6 +81,11 @@ class WorkflowState:
     # helper cannot give it what it needs and retrying would spin forever.
     escalation_signatures: dict[str, list[str]] = field(default_factory=dict)
 
+    # Number of retryable CONTINUE results already returned by each agent.
+    # The worker node uses this to apply the bounded 1/2/4-second retry policy
+    # and removes an entry as soon as that agent returns any other status.
+    continue_retry_counts: dict[str, int] = field(default_factory=dict)
+
     # All the facts gathered so far, shared by every agent. For example,
     # after the Genome agent runs, this might contain {"genome": "..."}.
     # Every agent reads from this and adds to it.
