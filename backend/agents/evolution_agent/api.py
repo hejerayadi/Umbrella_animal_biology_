@@ -6,28 +6,31 @@ Follows the exact same pattern as multimodal_recognition_agent:
   - output is a rich dict with all domain fields
   - Never raises — exceptions become FAILED AgentResult
 
-The output dict shape mirrors what the recognition agent returns:
+Everything this agent produces is published under ONE key, the way every
+other Umbrella worker publishes its findings: the Global Orchestrator merges
+`output` straight into the context shared by all nine agents, so a flat
+payload would put names like `status` and `model` into that shared namespace.
+`evolution_analysis` is also the key the Reconstruction agent waits for.
+
   {
-    "evolution": {
-      "decision": "analysis_complete",
-      "text_alignment": "neutral",
-      "score_is_mock": true,
-      "explanation": "Analysed 3 species...",
-      "clarification_question": null
-    },
-    "species_list":       [...],
-    "closest_species":    [...],
-    "species_groups":     [[...]],
-    "similarity_network": {...},
-    "similarity_scores":  [...],
-    "evolutionary_tree":  "(...);",
-    "model":              "LG+G4",
-    "bootstrap_support":  {...},
-    "confidence_values":  {...},
-    "overall_confidence": 0.93,
-    "alignment_url":      "https://...",
-    "tree_url":           "https://...",
-    "source_agents":      [...]
+    "evolution_analysis": {
+      "status":             "completed",
+      "decision":           "analysis_complete",
+      "explanation":        "Analysed 3 species...",
+      "score_is_mock":      true,
+      "species_list":       [...],
+      "overall_confidence": 0.93,
+      "similarity_scores":  [...],
+      "species_groups":     [...],
+      "similarity_network": {...},
+      "newick_tree":        "(...);",
+      "model":              "LG+G4",
+      "bootstrap_support":  {...},
+      "confidence_values":  {...},
+      "alignment_url":      "https://...",
+      "tree_url":           "https://...",
+      "source_agents":      [...]
+    }
   }
 
 Which implementation answers is chosen by EVOLUTION_AGENT_IMPL:

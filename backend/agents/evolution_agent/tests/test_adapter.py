@@ -15,6 +15,7 @@ from backend.agents.evolution_agent.intent import (
     classify_intent,
 )
 from backend.agents.evolution_agent.orchestrator_adapter import (
+    EVOLUTION_OUTPUT_KEY,
     OrchestratorEvolutionAgent,
     resolve_species,
     to_orchestrator_request,
@@ -214,6 +215,32 @@ def test_context_species_string_accepted() -> None:
     assert species == ["Homo sapiens"]
 
 
+def test_single_context_species_does_not_override_classifier() -> None:
+    """The Global Orchestrator's extractor seeds ONE species; the question
+    still names two, and the classifier is the one that read both."""
+    species = resolve_species(
+        {"species": "Homo sapiens"},
+        RecognizedIntent(
+            feature="full_analysis",
+            species_list=["Homo sapiens", "Pan troglodytes"],
+        ),
+    )
+    assert species == ["Homo sapiens", "Pan troglodytes"]
+
+
+def test_single_context_species_missed_by_classifier_is_kept() -> None:
+    """A species only the context knows about (e.g. recognised from a photo)
+    survives the merge instead of being dropped."""
+    species = resolve_species(
+        {"species": "Mus musculus"},
+        RecognizedIntent(
+            feature="full_analysis",
+            species_list=["Homo sapiens", "Pan troglodytes"],
+        ),
+    )
+    assert species == ["Mus musculus", "Homo sapiens", "Pan troglodytes"]
+
+
 def test_to_orchestrator_request_sets_feature_and_species() -> None:
     req = to_orchestrator_request(
         AgentRequest(
@@ -236,7 +263,7 @@ def test_to_orchestrator_request_sets_feature_and_species() -> None:
 # adapter: result reshaping
 # ---------------------------------------------------------------------------
 
-def test_completed_result_publishes_flat_evolution_output() -> None:
+def test_completed_result_publishes_findings_under_one_key() -> None:
     analysis = _make_mock_analysis()
     mapped = to_platform_result(
         AgentResult(
@@ -249,16 +276,27 @@ def test_completed_result_publishes_flat_evolution_output() -> None:
         )
     )
     assert mapped.status is AgentStatus.COMPLETED
-    # Flat structure — all keys at top level, no nested "evolution" wrapper
-    assert mapped.output["status"]        == "completed"
-    assert mapped.output["decision"]      == "analysis_complete"
-    assert mapped.output["explanation"]
-    assert mapped.output["score_is_mock"] is True
-    assert mapped.output["species_list"]
-    assert mapped.output["newick_tree"]
-    assert mapped.output["model"]
-    assert mapped.output["alignment_url"]
-    assert mapped.output["tree_url"]
+
+    # One namespaced key: the Global Orchestrator merges this dict straight
+    # into the context every other agent reads.
+    assert list(mapped.output) == [EVOLUTION_OUTPUT_KEY]
+
+    findings = mapped.output[EVOLUTION_OUTPUT_KEY]
+    assert findings["status"]        == "completed"
+    assert findings["decision"]      == "analysis_complete"
+    assert findings["explanation"]
+    assert findings["score_is_mock"] is True
+    assert findings["species_list"]
+    assert findings["newick_tree"]
+    assert findings["model"]
+    assert findings["alignment_url"]
+    assert findings["tree_url"]
+
+
+def test_output_key_is_the_one_reconstruction_waits_for() -> None:
+    """Reconstruction's mock blocks on `evolution_analysis` in the context.
+    Renaming this key silently breaks that chain, so pin it."""
+    assert EVOLUTION_OUTPUT_KEY == "evolution_analysis"
 
 
 def test_evolution_output_is_json_serialisable() -> None:
