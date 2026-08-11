@@ -45,7 +45,12 @@ class StructureNodes:
         if state["task"].preferred_source is PreferredSource.alphafold:
             return executed(SEARCH_EXPERIMENTAL, pdb_candidates=[])
         try:
-            with log_stage(logger, SEARCH_EXPERIMENTAL, node=SEARCH_EXPERIMENTAL) as outcome:
+            with log_stage(
+                logger,
+                f"protein.node.{SEARCH_EXPERIMENTAL}",
+                node=SEARCH_EXPERIMENTAL,
+                capability="structure_search",
+            ) as outcome:
                 candidates = await self.capability.experimental(protein)
                 outcome["candidates"] = len(candidates)
         except ProteinAgentError as exc:
@@ -65,7 +70,12 @@ class StructureNodes:
         """Keep only candidates whose identity, chain, coverage and metadata hold up."""
         valid: list[StructureCandidate] = []
         rejected: list[str] = []
-        with log_stage(logger, EVALUATE_PDB, node=EVALUATE_PDB) as outcome:
+        with log_stage(
+            logger,
+            f"protein.node.{EVALUATE_PDB}",
+            node=EVALUATE_PDB,
+            capability="structure_selection",
+        ) as outcome:
             for candidate in state["pdb_candidates"]:
                 reason = self._rejection_reason(candidate)
                 if reason:
@@ -91,7 +101,12 @@ class StructureNodes:
         protein = state["resolved_protein"]
         assert protein is not None
         try:
-            with log_stage(logger, SEARCH_ALPHAFOLD, node=SEARCH_ALPHAFOLD) as outcome:
+            with log_stage(
+                logger,
+                f"protein.node.{SEARCH_ALPHAFOLD}",
+                node=SEARCH_ALPHAFOLD,
+                capability="structure_search",
+            ) as outcome:
                 candidates = await self.capability.predicted(protein)
                 outcome["candidates"] = len(candidates)
         except ProteinAgentError as exc:
@@ -108,11 +123,18 @@ class StructureNodes:
         )
 
     def select_structure(self, state: ProteinWorkflowState) -> dict[str, Any]:
-        with log_stage(logger, SELECT_STRUCTURE, node=SELECT_STRUCTURE) as outcome:
+        with log_stage(
+            logger,
+            f"protein.node.{SELECT_STRUCTURE}",
+            node=SELECT_STRUCTURE,
+            capability="structure_selection",
+        ) as outcome:
             selected, alternatives = self.capability.select(
                 state["task"], state["valid_pdb_candidates"], state["alphafold_candidates"]
             )
             outcome["selected"] = selected.external_id if selected else None
+            outcome["selected_source"] = selected.source.value if selected else None
+            outcome["alternatives"] = len(alternatives)
 
         if selected is None:
             return executed(

@@ -21,7 +21,7 @@ def _final_status(state: ProteinWorkflowState, default: AnalysisStatus) -> Analy
 
 
 async def complete(state: ProteinWorkflowState) -> dict[str, Any]:
-    log_event(logger, "workflow.completed", node=COMPLETE, status="completed")
+    log_event(logger, "protein.result.completed", node=COMPLETE, status="completed")
     return executed(
         COMPLETE,
         current_status=AnalysisStatus.completed,
@@ -32,7 +32,7 @@ async def complete(state: ProteinWorkflowState) -> dict[str, Any]:
 async def return_partial(state: ProteinWorkflowState) -> dict[str, Any]:
     log_event(
         logger,
-        "workflow.partial",
+        "protein.result.partial",
         node=RETURN_PARTIAL,
         status="partial",
         warnings=len(state.get("warnings", [])),
@@ -48,7 +48,12 @@ async def return_partial(state: ProteinWorkflowState) -> dict[str, Any]:
 
 
 async def return_needs_clarification(state: ProteinWorkflowState) -> dict[str, Any]:
-    log_event(logger, "workflow.needs_clarification", node=NEEDS_CLARIFICATION, status="rejected")
+    log_event(
+        logger,
+        "protein.result.needs_clarification",
+        node=NEEDS_CLARIFICATION,
+        status="rejected",
+    )
     return executed(
         NEEDS_CLARIFICATION,
         current_status=AnalysisStatus.needs_clarification,
@@ -59,7 +64,7 @@ async def return_needs_clarification(state: ProteinWorkflowState) -> dict[str, A
 
 async def scientific_abstain(state: ProteinWorkflowState) -> dict[str, Any]:
     """Stop rather than produce an unsupported structural claim."""
-    log_event(logger, "workflow.abstained", node=SCIENTIFIC_ABSTAIN, status="abstained")
+    log_event(logger, "protein.result.abstained", node=SCIENTIFIC_ABSTAIN, status="abstained")
     identity_missing = state.get("resolved_protein") is None
     default = AnalysisStatus.failed if identity_missing else AnalysisStatus.partial
     return executed(

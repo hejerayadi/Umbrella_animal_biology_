@@ -21,6 +21,7 @@ from backend.agents.Protein_visualization.app.contracts.agent_result import (
 from backend.agents.Protein_visualization.app.contracts.agent_result import (
     AgentStatus as ScientificStatus,
 )
+from backend.agents.Protein_visualization.app.observability.context import log_context
 from backend.agents.Protein_visualization.orchestrator_adapter import (
     IdentityUnresolved,
     OrchestratorProteinAgent,
@@ -242,20 +243,22 @@ async def test_chat_context_options_reach_the_scientific_task() -> None:
     agent._resolver = Resolver()  # type: ignore[assignment]
     agent._orchestrator = workflow  # type: ignore[assignment]
 
-    result = await agent.run(
-        AgentRequest(
-            instruction="Show and explain TP53 R273H using PDB",
-            context={
-                "gene_name": "TP53",
-                "species": "human",
-                "mutation": "r273h",
-                "residue_position": 273,
-                "requested_regions": ["DNA-binding domain"],
-                "preferred_source": "pdb",
-                "include_explanation": False,
-            },
+    trace_id = "7cce77eb-ec91-4353-9f29-2af0c55519b7"
+    with log_context(trace_id=trace_id):
+        result = await agent.run(
+            AgentRequest(
+                instruction="Show and explain TP53 R273H using PDB",
+                context={
+                    "gene_name": "TP53",
+                    "species": "human",
+                    "mutation": "r273h",
+                    "residue_position": 273,
+                    "requested_regions": ["DNA-binding domain"],
+                    "preferred_source": "pdb",
+                    "include_explanation": False,
+                },
+            )
         )
-    )
 
     assert result.status is AgentStatus.COMPLETED
     assert workflow.task.input.mutation == "R273H"
@@ -263,6 +266,7 @@ async def test_chat_context_options_reach_the_scientific_task() -> None:
     assert workflow.task.input.requested_regions == ["DNA-binding domain"]
     assert workflow.task.input.preferred_source.value == "PDB"
     assert workflow.task.input.include_explanation is False
+    assert str(workflow.task.trace_id) == trace_id
 
 
 async def test_invalid_chat_context_fails_before_identity_resolution() -> None:

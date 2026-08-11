@@ -19,7 +19,7 @@ from backend.agents.Protein_visualization.app.contracts.protein_response import 
 from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus, ValidationStatus
 from backend.agents.Protein_visualization.app.domain.models import LlmUsage, StructureCandidate
 from backend.agents.Protein_visualization.app.observability.context import log_context
-from backend.agents.Protein_visualization.app.observability.logging import log_event
+from backend.agents.Protein_visualization.app.observability.logging import log_event, log_stage
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import WORKFLOW_SEQUENCE
 from backend.agents.Protein_visualization.app.orchestrators.protein.result_policy import to_agent_result
 from backend.agents.Protein_visualization.app.orchestrators.protein.state import (
@@ -80,33 +80,65 @@ class ProteinOrchestrator:
         analysis_id = uuid4()
         request = task.to_domain()
         with log_context(analysis_id=str(analysis_id), task_id=str(task.task_id)):
-            log_event(
+            with log_stage(
                 logger,
-                "workflow.started",
+                "protein.workflow",
+                start_level=logging.INFO,
+                node="protein_workflow",
+                capability="orchestrator",
                 gene=request.resolved_gene_id,
                 accession=request.uniprot_accession,
                 taxon_id=request.species.taxon_id,
                 preferred_source=request.preferred_source.value,
-            )
-            result = await self.graph.ainvoke(
-                initial_state(request, analysis_id),
-                config={"configurable": {"thread_id": str(analysis_id)}},
-            )
-            final = cast(ProteinWorkflowState, result)
-            log_event(
-                logger,
-                "workflow.finished",
-                status=final["current_status"].value,
-                validation_status=final["validation_status"].value,
-                nodes=len(final.get("executed_nodes", set())),
-                warnings=len(final.get("warnings", [])),
-            )
+                mutation=request.mutation,
+                residue_position=request.residue_position,
+                requested_regions=list(request.requested_regions) or None,
+                include_explanation=request.include_explanation,
+                sequence_length=len(request.protein_sequence) if request.protein_sequence else None,
+            ) as outcome:
+                result = await self.graph.ainvoke(
+                    initial_state(request, analysis_id),
+                    config={"configurable": {"thread_id": str(analysis_id)}},
+                )
+                final = cast(ProteinWorkflowState, result)
+                selected = final.get("selected_structure")
+                usages = final.get("llm_usage", [])
+                outcome.update(
+                    scientific_status=final["current_status"].value,
+                    validation_status=final["validation_status"].value,
+                    executed_nodes=len(final.get("executed_nodes", set())),
+                    warnings_count=len(final.get("warnings", [])),
+                    errors_count=len(final.get("errors", [])),
+                    evidence_count=len(final.get("evidence", [])),
+                    selected_structure=selected.external_id if selected else None,
+                    selected_source=selected.source.value if selected else None,
+                    llm_calls=len(usages),
+                    total_tokens=sum(usage.total_tokens or 0 for usage in usages),
+                    retry_count=sum(final.get("retry_counts", {}).values()),
+                )
         return self.to_response(task.task_id, analysis_id, final)
 
     async def execute(self, task: ProteinAnalysisRequest) -> AgentResult:
         """Run the scientific workflow and return its inter-agent routing result."""
         response = await self.analyze(task)
-        return to_agent_result(response, task)
+        result = to_agent_result(response, task)
+        if result.target_agent:
+            event = "protein.handoff.requested"
+        elif result.status.value == "continue":
+            event = "protein.workflow.continue"
+        else:
+            event = "protein.result.returned"
+        log_event(
+            logger,
+            event,
+            logging.ERROR if result.status.value == "failed" else logging.INFO,
+            status=result.status.value,
+            target_agent=result.target_agent,
+            retryable=result.retryable,
+            scientific_status=response.status.value,
+            validation_status=response.validation_status.value,
+        )
+        return result
 
     @staticmethod
     def to_response(task_id: UUID, analysis_id: UUID, state: ProteinWorkflowState) -> ProteinAnalysisResponse:

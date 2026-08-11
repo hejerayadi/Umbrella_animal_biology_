@@ -20,6 +20,7 @@ from backend.agents.Protein_visualization.app.llm.prompts import (
     SCIENTIFIC_CRITIC_SYSTEM_PROMPT,
 )
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
+from backend.agents.Protein_visualization.app.observability.logging import log_stage
 
 logger = logging.getLogger("app.llm")
 
@@ -75,23 +76,40 @@ class AzureFoundryClient:
         # actually routes to.
         structured = self._model.with_structured_output(schema, include_raw=True)
         started = time.monotonic()
-        response = await structured.ainvoke(
-            [
-                ("system", system_prompt),
-                ("human", json.dumps(context, default=str)),
-            ]
-        )
-        duration_ms = round((time.monotonic() - started) * 1000)
+        with log_stage(
+            logger,
+            "protein.llm.request",
+            node=node,
+            capability="llm",
+            provider="azure_openai",
+            deployment=self.settings.azure_openai_deployment,
+            output_schema=schema.__name__,
+        ) as outcome:
+            response = await structured.ainvoke(
+                [
+                    ("system", system_prompt),
+                    ("human", json.dumps(context, default=str)),
+                ]
+            )
+            duration_ms = round((time.monotonic() - started) * 1000)
 
-        parsed = response["parsed"]
-        if parsed is None:
-            raise ValueError(f"Azure OpenAI returned no parseable {schema.__name__}: {response['raw']!r}")
-        result = parsed if isinstance(parsed, schema) else schema.model_validate(parsed)
+            parsed = response["parsed"]
+            if parsed is None:
+                raise ValueError(f"Azure OpenAI returned no parseable {schema.__name__}")
+            result = parsed if isinstance(parsed, schema) else schema.model_validate(parsed)
 
-        raw = response["raw"]
-        usage = getattr(raw, "usage_metadata", None) or {}
-        response_metadata = getattr(raw, "response_metadata", None) or {}
-        model_name = str(response_metadata.get("model_name") or self.settings.azure_openai_deployment or "")
+            raw = response["raw"]
+            usage = getattr(raw, "usage_metadata", None) or {}
+            response_metadata = getattr(raw, "response_metadata", None) or {}
+            model_name = str(
+                response_metadata.get("model_name") or self.settings.azure_openai_deployment or ""
+            )
+            outcome.update(
+                model=model_name,
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                total_tokens=usage.get("total_tokens"),
+            )
         return result, LlmUsage(
             node=node,
             model=model_name,

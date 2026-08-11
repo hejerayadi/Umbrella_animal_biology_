@@ -29,7 +29,12 @@ async def resolve_species(
     name: Annotated[str, Query(min_length=2, description="Scientific or common species name")],
 ) -> ApiResponse[SpeciesContract]:
     """404s through `ProteinNotFoundError` when the name is unknown or ambiguous."""
-    with log_stage(logger, "taxonomy_resolve", capability="taxonomy") as outcome:
+    with log_stage(
+        logger,
+        "protein.taxonomy.resolve",
+        node="taxonomy_resolve",
+        capability="taxonomy",
+    ) as outcome:
         species = await taxonomy.resolve(name)
         outcome["taxon_id"] = species.taxon_id
     return success(SpeciesContract(scientific_name=species.scientific_name, taxon_id=species.taxon_id))

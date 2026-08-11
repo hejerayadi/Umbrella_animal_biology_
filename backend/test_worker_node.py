@@ -33,9 +33,11 @@ class _FakeClient:
     def __init__(self, payload: dict):
         self._payload = payload
         self.sent: list[dict] = []
+        self.headers: list[dict] = []
 
     def post(self, url, json=None, **kwargs):
         self.sent.append(json)
+        self.headers.append(kwargs.get("headers", {}))
         return _FakeResponse(self._payload)
 
 
@@ -45,9 +47,11 @@ class _SequenceClient:
     def __init__(self, payloads: list[dict]) -> None:
         self._payloads = list(payloads)
         self.sent: list[dict] = []
+        self.headers: list[dict] = []
 
     def post(self, url, json=None, **kwargs):
         self.sent.append(json)
+        self.headers.append(kwargs.get("headers", {}))
         return _FakeResponse(self._payloads.pop(0))
 
 
@@ -76,6 +80,16 @@ def test_agent_started_by_the_planner_gets_the_user_question(fake_client):
     node(WorkflowState(user_query="Draw an Arctic fox", context={}))
 
     assert client.sent[0]["instruction"] == "Draw an Arctic fox"
+
+
+def test_worker_propagates_trace_and_creates_a_request_id(fake_client):
+    client = fake_client({"status": "completed", "output": {}})
+    state = WorkflowState(user_query="Show TP53", trace_id="trace-protein-123")
+
+    worker_node.make_worker_node("Protein", "http://protein")(state)
+
+    assert client.headers[0]["X-Trace-Id"] == "trace-protein-123"
+    assert client.headers[0]["X-Request-Id"]
 
 
 def test_agent_fetched_as_a_dependency_gets_the_request_not_the_user_question(
@@ -238,6 +252,8 @@ def test_retryable_continue_calls_exactly_four_times_with_exponential_delays():
         state = WorkflowState(**{**vars(state), **updates})
 
     assert len(client.sent) == 4
+    assert {headers["X-Trace-Id"] for headers in client.headers} == {state.trace_id}
+    assert len({headers["X-Request-Id"] for headers in client.headers}) == 4
     assert delays == [1.0, 2.0, 4.0]
     assert state.last_result.status.value == "failed"
     assert "after 3 retries" in state.last_result.output

@@ -20,6 +20,7 @@ from backend.agents.Protein_visualization.app.domain.models import (
     ResolvedProtein,
     StructureCandidate,
 )
+from backend.agents.Protein_visualization.app.observability.logging import log_event
 
 logger = logging.getLogger("app.critic")
 
@@ -105,7 +106,14 @@ class CriticCapability:
             )
             output, usage = await llm.critique(context, node)
         except Exception as exc:
-            logger.warning("critic_llm_failed", exc_info=exc)
+            log_event(
+                logger,
+                "protein.llm.critic.degraded",
+                logging.WARNING,
+                exc_info=True,
+                status="degraded",
+                error_code=type(exc).__name__,
+            )
             return deterministic, None
 
         proposed = ValidationStatus(output.verdict)

@@ -42,21 +42,21 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
         log_event(
             logger,
-            "http_request.started",
+            "protein.http.request.started",
             logging.DEBUG,
             method=request.method,
-            path=request.url.path,
+            route=request.url.path,
         )
         try:
             response = await call_next(request)
         except Exception as exc:
             log_event(
                 logger,
-                "http_request.failed",
+                "protein.http.request.failed",
                 logging.ERROR,
                 exc_info=True,
                 method=request.method,
-                path=request.url.path,
+                route=request.url.path,
                 status="failed",
                 status_code=500,
                 duration_ms=request_duration_ms(),
@@ -66,11 +66,17 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         else:
             log_event(
                 logger,
-                "http_request.completed",
+                "protein.http.request.completed",
                 logging.INFO if response.status_code < 500 else logging.ERROR,
                 method=request.method,
-                path=request.url.path,
-                status="completed" if response.status_code < 400 else "rejected",
+                route=request.url.path,
+                status=(
+                    "completed"
+                    if response.status_code < 400
+                    else "rejected"
+                    if response.status_code < 500
+                    else "failed"
+                ),
                 status_code=response.status_code,
                 duration_ms=request_duration_ms(),
             )

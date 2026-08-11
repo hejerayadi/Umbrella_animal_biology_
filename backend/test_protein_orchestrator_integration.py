@@ -67,11 +67,13 @@ class _HandoffClient:
     def __init__(self, helper: str) -> None:
         self.helper = helper
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.headers: list[dict[str, str]] = []
         self.protein_calls = 0
 
     def post(self, url: str, json: dict[str, Any], **kwargs: Any) -> _Response:
         agent = url.split("//", 1)[-1].split("/", 1)[0].capitalize()
         self.calls.append((agent, json))
+        self.headers.append(kwargs.get("headers", {}))
 
         if agent == "Protein":
             self.protein_calls += 1
@@ -122,10 +124,15 @@ def test_main_orchestrator_routes_merges_and_resumes_protein(helper: str) -> Non
         sleep=lambda _: None,
     )
 
-    raw = graph.invoke(WorkflowState(user_query="Explain the TP53 R273H structure"))
+    trace_id = "protein-handoff-trace"
+    raw = graph.invoke(
+        WorkflowState(user_query="Explain the TP53 R273H structure", trace_id=trace_id)
+    )
     state = raw if isinstance(raw, WorkflowState) else WorkflowState(**raw)
 
     assert [agent for agent, _ in client.calls] == ["Protein", helper, "Protein"]
+    assert [headers["X-Trace-Id"] for headers in client.headers] == [trace_id] * 3
+    assert len({headers["X-Request-Id"] for headers in client.headers}) == 3
     assert client.calls[1][1]["instruction"] == "Supply missing evidence for TP53"
     assert client.calls[2][1]["instruction"] == "Explain the TP53 R273H structure"
     assert state.context["mutation"] == "R273H"

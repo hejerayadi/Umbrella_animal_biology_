@@ -25,7 +25,12 @@ class AnnotationNode:
         protein = state["resolved_protein"]
         assert protein is not None
         try:
-            with log_stage(logger, FETCH_ANNOTATIONS, node=FETCH_ANNOTATIONS) as outcome:
+            with log_stage(
+                logger,
+                f"protein.node.{FETCH_ANNOTATIONS}",
+                node=FETCH_ANNOTATIONS,
+                capability="annotation",
+            ) as outcome:
                 annotations = await self.capability.annotate(protein)
                 outcome["annotations"] = len(annotations)
         except ProteinAgentError as exc:

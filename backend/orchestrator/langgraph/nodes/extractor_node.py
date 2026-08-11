@@ -5,15 +5,19 @@ that starts by reading `context["species"]` finds it already there. Only on
 the research path - a greeting goes planner -> direct_answer and never pays
 for this extra LLM call.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ...extractor import Extractor
 from ...state import WorkflowState
 
 
-def make_extractor_node(extractor: Extractor):
+def make_extractor_node(
+    extractor: Extractor,
+) -> Callable[[WorkflowState], dict[str, Any]]:
     """Build the graph node that runs the Extractor.
 
     Same "node factory" shape as the planner node: takes the extractor object
@@ -27,7 +31,10 @@ def make_extractor_node(extractor: Extractor):
             # Nothing named in the message. Leave context untouched rather
             # than writing empty keys - agents check for a key's presence.
             return {
-                "execution_history": [*state.execution_history, "Extractor -> nothing named"],
+                "execution_history": [
+                    *state.execution_history,
+                    "Extractor -> nothing named",
+                ],
             }
 
         step = ", ".join(f"{key}={value!r}" for key, value in facts.items())

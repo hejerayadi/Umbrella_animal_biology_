@@ -37,7 +37,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             log_event(
                 logger,
-                "qdrant.initialization_failed",
+                "protein.rag.initialization.failed",
                 logging.ERROR,
                 error_code=type(exc).__name__,
                 detail=str(exc),
@@ -45,13 +45,13 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         else:
             log_event(
                 logger,
-                "qdrant.collection_ready",
+                "protein.rag.collection.ready",
                 collection=settings.qdrant_collection,
                 dimensions=knowledge_base.embedding.dimensions,
             )
     log_event(
         logger,
-        "service.started",
+        "protein.service.started",
         app_env=settings.app_env,
         biological_sources="real",
         llm_provider=settings.llm_provider,
@@ -59,7 +59,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         routes=len(application.routes),
     )
     yield
-    log_event(logger, "service.stopped", app_env=settings.app_env)
+    log_event(logger, "protein.service.stopped", app_env=settings.app_env)
 
 
 def _correlation(request: Request) -> dict[str, Any]:
@@ -193,7 +193,7 @@ def create_app() -> FastAPI:
     async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:
         log_event(
             logger,
-            "unhandled_error",
+            "protein.http.unhandled_error",
             logging.ERROR,
             exc_info=True,
             path=request.url.path,

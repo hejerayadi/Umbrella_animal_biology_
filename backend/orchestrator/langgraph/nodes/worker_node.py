@@ -21,6 +21,7 @@ import logging
 import time
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -102,10 +103,15 @@ def _call_agent(
     # request; the agent the planner started with has no entry and is sent the
     # user's question. See `WorkflowState.agent_instructions`.
     instruction = state.agent_instructions.get(agent_name) or state.user_query
+    request_id = str(uuid4())
 
     try:
         response = (client or _client).post(
             f"{base_url}/execute",
+            headers={
+                "X-Trace-Id": state.trace_id,
+                "X-Request-Id": request_id,
+            },
             json={
                 "instruction": instruction,
                 "context": _context_for(agent_name, state.context),

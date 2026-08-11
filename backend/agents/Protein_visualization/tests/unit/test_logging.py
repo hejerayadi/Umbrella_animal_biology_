@@ -124,6 +124,33 @@ def test_pretty_marks_revise_verdict_as_warning() -> None:
     assert "! INFO" in stream.getvalue()
 
 
+def test_pretty_keeps_expected_retry_on_one_line() -> None:
+    logger, stream = _pretty_logger(colors=False)
+    log_event(
+        logger,
+        "protein.tool.request.retried",
+        logging.WARNING,
+        status="retrying",
+        provider="RCSB",
+        attempt=1,
+        max_attempts=3,
+        backoff_ms=200,
+    )
+
+    output = stream.getvalue()
+    assert "↻ WARNING" in output
+    assert "provider=RCSB" in output
+    assert len(output.splitlines()) == 1
+
+
+def test_pretty_indents_nested_spans() -> None:
+    logger, stream = _pretty_logger(colors=False)
+    with log_context(span_depth=2):
+        log_event(logger, "protein.tool.request.completed", status="completed")
+
+    assert "│  ├─ protein.tool.request.completed" in stream.getvalue()
+
+
 def test_text_alias_selects_rich_handler_and_json_keeps_json_formatter() -> None:
     with patch(f"{LOGGING_MODULE}.logging.basicConfig") as basic_config:
         configure_logging("INFO", "text")
@@ -167,3 +194,19 @@ def test_log_stage_records_error_code_and_reraises(caplog: pytest.LogCaptureFixt
     assert payload["status"] == "failed"
     assert payload["error_code"] == "TimeoutError"
     assert "RCSB timed out" in str(payload["error"])
+
+
+def test_nested_stages_record_parent_child_relationship(caplog: pytest.LogCaptureFixture) -> None:
+    logger = logging.getLogger("test.stage.nested")
+    with caplog.at_level(logging.INFO, logger="test.stage.nested"):
+        with log_stage(logger, "protein.workflow"):
+            with log_stage(logger, "protein.node.resolve_identity"):
+                pass
+
+    payloads = {record.getMessage(): json.loads(JsonFormatter().format(record)) for record in caplog.records}
+    parent = payloads["protein.workflow.completed"]
+    child = payloads["protein.node.resolve_identity.completed"]
+    assert parent["span_depth"] == 0
+    assert child["span_depth"] == 1
+    assert child["parent_span_id"] == parent["span_id"]
+    assert get_log_context() == {}

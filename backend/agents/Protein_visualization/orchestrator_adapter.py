@@ -31,7 +31,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .app.api.v1.dependencies import get_orchestrator
 from .app.configuration.settings import get_settings
@@ -40,6 +40,8 @@ from .app.contracts.agent_result import AgentStatus as ScientificStatus
 from .app.contracts.protein_request import ProteinAnalysisRequest, ProteinTaskInput, SpeciesContract
 from .app.domain.enums import PreferredSource
 from .app.domain.exceptions import ProteinAgentError
+from .app.observability.context import get_log_context
+from .app.observability.logging import log_event
 from .app.tools.uniprot_client import UniProtClient
 from .schema import AgentRequest, AgentResult, AgentStatus
 
@@ -59,6 +61,15 @@ _GENE_KEYS = ("gene_name", "resolved_gene_id", "gene_symbol", "gene")
 _SPECIES_KEYS = ("species", "species_name", "scientific_name")
 _ACCESSION_KEYS = ("uniprot_accession", "accession")
 _MUTATION_PATTERN = re.compile(r"^[A-Z]([1-9]\d*)[A-Z]$", re.IGNORECASE)
+
+
+def _active_trace_id() -> UUID:
+    """Reuse the distributed HTTP trace when it is a UUID; otherwise create one."""
+    value = get_log_context().get("trace_id")
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return uuid4()
 
 
 class IdentityUnresolved(Exception):
@@ -426,7 +437,12 @@ def to_result(scientific: ScientificResult) -> AgentResult:
         # `target_agent` is passed through but not obeyed: the workflow names
         # agents in its own vocabulary ("literature_agent"), and the platform's
         # capability resolver re-decides from the prompt text anyway.
-        _logger.info("[Protein] needs another agent -> %r", scientific.prompt_to_target_agent)
+        log_event(
+            _logger,
+            "protein.adapter.handoff",
+            status="needs_agent",
+            target_agent=scientific.target_agent,
+        )
         return AgentResult(
             status=AgentStatus.NEEDS_AGENT,
             target_agent=scientific.target_agent,
@@ -436,7 +452,12 @@ def to_result(scientific: ScientificResult) -> AgentResult:
 
     if status is ScientificStatus.CONTINUE:
         reason = scientific.continuation_reason or "The protein workflow did not reach a result."
-        _logger.info("[Protein] continue (retryable=%s) -> %s", scientific.retryable, reason)
+        log_event(
+            _logger,
+            "protein.adapter.continue",
+            status="continue",
+            retryable=scientific.retryable,
+        )
         return AgentResult(
             status=AgentStatus.CONTINUE,
             output=_shared_context(output),
@@ -474,14 +495,26 @@ class OrchestratorProteinAgent:
             analysis_options = _analysis_options(context)
         except ValueError as exc:
             reason = f"Invalid protein analysis options: {exc}."
-            _logger.info("[Protein] invalid context -> %s", reason)
+            log_event(
+                _logger,
+                "protein.adapter.invalid_input",
+                logging.ERROR,
+                status="failed",
+                error_code="INVALID_PROTEIN_OPTIONS",
+            )
             return AgentResult(status=AgentStatus.FAILED, output=reason, error=reason)
 
         if not gene and not accession:
             # A real dependency, unlike the mock's unconditional demand for a
             # genome: the user named a trait or a species but no gene, and
             # nothing here can fold a protein that has not been identified.
-            _logger.info("[Protein] no gene or accession in context -> asking for one")
+            log_event(
+                _logger,
+                "protein.adapter.handoff",
+                status="needs_agent",
+                target_agent="Trait",
+                reason_code="IDENTITY_ANCHOR_MISSING",
+            )
             return AgentResult(
                 status=AgentStatus.NEEDS_AGENT,
                 target_agent="Trait",
@@ -495,7 +528,13 @@ class OrchestratorProteinAgent:
         try:
             identity = await self._resolve_identity(gene, species, accession)
         except IdentityUnresolved as exc:
-            _logger.info("[Protein] identity unresolved -> %s", exc)
+            log_event(
+                _logger,
+                "protein.adapter.handoff",
+                status="needs_agent",
+                target_agent="Genome",
+                reason_code="IDENTITY_UNRESOLVED",
+            )
             return AgentResult(
                 status=AgentStatus.NEEDS_AGENT,
                 target_agent="Genome",
@@ -507,7 +546,15 @@ class OrchestratorProteinAgent:
                 output=str(exc),
             )
         except ProteinAgentError as exc:
-            _logger.warning("[Protein] UniProt unavailable during identity resolution", exc_info=True)
+            log_event(
+                _logger,
+                "protein.adapter.identity.degraded",
+                logging.WARNING,
+                exc_info=True,
+                status="degraded",
+                provider="UniProt",
+                error_code=type(exc).__name__,
+            )
             return AgentResult(
                 status=AgentStatus.CONTINUE,
                 output=f"UniProt could not be reached to identify the protein: {exc}",
@@ -515,17 +562,20 @@ class OrchestratorProteinAgent:
                 retryable=True,
             )
 
-        _logger.info(
-            "[Protein] resolved %s -> %s (%s, taxon %d)",
-            gene or accession,
-            identity.accession,
-            identity.scientific_name,
-            identity.taxon_id,
+        log_event(
+            _logger,
+            "protein.adapter.identity.resolved",
+            status="completed",
+            requested_identity=gene or accession,
+            accession=identity.accession,
+            scientific_name=identity.scientific_name,
+            taxon_id=identity.taxon_id,
+            reviewed=identity.reviewed,
         )
 
         task = ProteinAnalysisRequest(
             task_id=uuid4(),
-            trace_id=uuid4(),
+            trace_id=_active_trace_id(),
             # Every chat turn is a fresh scientific task; the orchestrator has
             # no id of its own to borrow, and reusing one would let the
             # persistence layer treat two different questions as a repeat.

@@ -28,7 +28,7 @@ This module only does the wiring; the nodes themselves live in `nodes/`.
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable
-from typing import Any
+from typing import Any, cast
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -49,6 +49,19 @@ from .nodes import (
     make_worker_node,
 )
 from .nodes.worker_node import CONTINUE_RETRY_DELAYS
+
+WorkflowNode = Callable[[WorkflowState], dict[str, Any]]
+
+
+def _add_workflow_node(graph: StateGraph, name: str, node: WorkflowNode) -> None:
+    """Register a partial-state node across LangGraph typing versions.
+
+    LangGraph accepts callables returning a partial state dictionary at runtime,
+    but some releases expose an internal protocol in ``add_node`` overloads that
+    mypy cannot match to the equivalent public ``Callable`` type. Keep the cast
+    narrow at that third-party boundary instead of weakening each node's type.
+    """
+    graph.add_node(name, cast(Any, node))
 
 
 def build_orchestrator_graph(
@@ -83,11 +96,11 @@ def build_orchestrator_graph(
     # StateGraph(WorkflowState) means: every node in this graph reads and
     # writes a WorkflowState object (the "clipboard" described in state.py).
     graph = StateGraph(WorkflowState)
-    graph.add_node("planner", make_planner_node(planner))
-    graph.add_node("extractor", make_extractor_node(extractor))
-    graph.add_node("capability_resolver", make_resolver_node(resolver))
-    graph.add_node("direct_answer", make_direct_answer_node(responder))
-    graph.add_node("responder", make_responder_node(responder))
+    _add_workflow_node(graph, "planner", make_planner_node(planner))
+    _add_workflow_node(graph, "extractor", make_extractor_node(extractor))
+    _add_workflow_node(graph, "capability_resolver", make_resolver_node(resolver))
+    _add_workflow_node(graph, "direct_answer", make_direct_answer_node(responder))
+    _add_workflow_node(graph, "responder", make_responder_node(responder))
 
     # One node per worker agent (Genome, Evolution, Protein, ...), all built
     # the same way via the factory function above. Each node holds the URL of
@@ -99,7 +112,9 @@ def build_orchestrator_graph(
         }
         if sleep is not None:
             worker_options["sleep"] = sleep
-        graph.add_node(name, make_worker_node(name, base_url, **worker_options))
+        _add_workflow_node(
+            graph, name, make_worker_node(name, base_url, **worker_options)
+        )
 
     # The workflow always starts by running the planner first.
     graph.add_edge(START, "planner")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import uuid4
 
 
 @dataclass
@@ -27,6 +28,11 @@ class WorkflowState:
     # The original question the user asked, in plain English. This never
     # changes once the workflow starts.
     user_query: str
+
+    # Stable correlation id for the complete Main Orchestrator run. Every
+    # worker HTTP call receives it through X-Trace-Id, including hand-offs and
+    # automatic resumes, while X-Request-Id remains unique to one HTTP attempt.
+    trace_id: str = field(default_factory=lambda: str(uuid4()))
 
     # Set when the user attached an image to this message. The image itself is
     # NOT here - only its id, in `context["recognition_image_id"]`, with the
