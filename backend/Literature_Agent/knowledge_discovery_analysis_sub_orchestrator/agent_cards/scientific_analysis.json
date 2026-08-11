@@ -1,30 +1,15 @@
 {
   "name": "scientific_analysis",
   "display_name": "Scientific Analysis Sub Agent",
-  "description": "Analyse scientifique : réponse factuelle (QA/RAG), détection de contradictions dans la littérature, ou détection de lacunes de recherche.",
+  "description": "Analyse scientifique (QA, contradiction_detection, gap_detection). Analyse un corpus déjà récupéré.",
+  "depends_on": ["retrieval_processing"],
   "capabilities": [
-    {
-      "id": "qa",
-      "description": "Répondre à une question factuelle précise via RAG"
-    },
-    {
-      "id": "contradiction_detection",
-      "description": "Détecter des contradictions/désaccords entre différentes sources de la littérature"
-    },
-    {
-      "id": "gap_detection",
-      "description": "Identifier des lacunes ou zones peu explorées dans la recherche"
-    }
+    { "id": "qa", "description": "Répondre à une question factuelle précise, à partir du contenu déjà récupéré" },
+    { "id": "contradiction_detection", "description": "Détecter des contradictions entre sources déjà récupérées/synthétisées" },
+    { "id": "gap_detection", "description": "Identifier des lacunes de recherche à partir du corpus déjà récupéré/synthétisé" }
   ],
   "input_schema": {
-    "capability": {
-      "type": "string",
-      "enum": ["qa", "contradiction_detection", "gap_detection"]
-    },
-    "query": {
-      "type": "string",
-      "description": "La requête reformulée à transmettre à cet agent"
-    }
-  },
-  "status": "planned"
+    "capability": { "type": "string", "enum": ["qa", "contradiction_detection", "gap_detection"] },
+    "query": { "type": "string", "description": "La requête reformulée à transmettre à cet agent" }
+  }
 }

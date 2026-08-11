@@ -1,60 +1,39 @@
-# Knowledge Discovery & Analysis Sub-Orchestrator
+# Knowledge Discovery & Analysis Sub-Orchestrator (séquentiel)
 
-Sous-système multi-agents pour l'analyse de littérature scientifique en génomique animale.
-
-## Architecture
-
-```
-Knowledge Discovery & Analysis Sub-Orchestrator
-├── Retrieval and Knowledge Processing Sub Agent
-│     ├── synthesis
-│     └── summary
-└── Scientific Analysis Sub Agent
-      ├── qa
-      ├── contradiction_detection
-      └── gap_detection
-```
-
-L'orchestrateur ne répond jamais directement aux questions : il route
-uniquement vers l'agent enfant le plus pertinent, via function/tool calling
-(Azure OpenAI). Les agents enfants sont responsables de l'exécution réelle
-(RAG sur Qdrant, etc.) — actuellement implémentés en stub, à connecter.
+Routage 100% piloté par le LLM (tool calling, aucun if/else métier),
+exécution des agents strictement séquentielle (pas de fan-out parallèle).
 
 ## Setup
 
 ```bash
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate     # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env      # puis remplir avec tes vraies valeurs Azure
+cp .env.example .env         # puis remplir avec tes vraies valeurs Azure
 ```
 
-## Structure
-
-- `agent_cards/` — fiches descriptives JSON de chaque agent (nom, capacités, schéma d'input)
-- `data_classes/` — structures de données partagées (routing, réponses)
-- `orchestrators/` — logique de routage + registry (charge les agent cards → tools)
-- `agents/` — implémentation de chaque agent enfant
-- `llm/` — client Azure OpenAI centralisé
-- `tests/` — tests du routage
-
-## Tester le routage
+## Tester
 
 ```bash
-python -m orchestrators.knowledge_discovery_orchestrator
+python -m orchestrators.graph
 ```
 
-Ou via pytest :
+## Tests automatisés
 
 ```bash
 pytest tests/test_routing.py -v
 ```
 
-## Statut actuel
+## Structure
 
-- [x] Client Azure OpenAI fonctionnel
-- [x] Routage via tool calling validé (2 niveaux : agent → capability)
-- [x] Structure de projet (agent cards, data classes)
-- [ ] Connexion des agents enfants à Qdrant (RAG réel)
-- [ ] Intégration LangGraph pour les workflows conditionnels/parallèles
-- [ ] API d'exposition (FastAPI)
+```
+agent_cards/            # Fiches JSON des agents enfants
+data_classes/           # AgentCall, RoutingDecision, AgentResponse, AggregatedResponse
+llm/                    # Client Azure OpenAI centralisé
+orchestrators/
+  registry.py            # Charge les agent cards -> tools LLM
+  knowledge_discovery_orchestrator.py   # route() — routing logic (LLM only)
+  graph.py               # Graphe LangGraph séquentiel (delegation + communication + aggregation)
+agents/                 # Implémentation des agents enfants (stubs)
+tests/                  # Tests pytest
+```

@@ -1,31 +1,11 @@
-# Environnement & secrets
 .env
 *.env
-
-# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.egg-info/
-.eggs/
-dist/
-build/
-
-# Environnements virtuels
 venv/
 .venv/
-env/
-
-# Jupyter / Colab
 .ipynb_checkpoints/
-
-# IDE
 .vscode/
 .idea/
-
-# OS
 .DS_Store
-Thumbs.db
-
-# Logs
 *.log
