@@ -43,10 +43,18 @@ def _sep(label: str) -> None:
 
 
 def _as_analysis(result) -> EvolutionAnalysisResult:
-    """Normalise result.output (dataclass or flat platform dict)."""
+    """Normalise result.output (dataclass or platform dict)."""
+    from backend.agents.evolution_agent.orchestrator_adapter import (
+        EVOLUTION_OUTPUT_KEY,
+    )
+
     output = result.output
     if isinstance(output, EvolutionAnalysisResult):
         return output
+    # The platform dict wraps the findings in one key, so unwrap before
+    # reading them (see `to_platform_result`).
+    if isinstance(output, dict) and EVOLUTION_OUTPUT_KEY in output:
+        output = output[EVOLUTION_OUTPUT_KEY]
     if isinstance(output, dict) and "newick_tree" in output:
         from backend.agents.evolution_agent.schema import (
             MolecularComparisonResult,

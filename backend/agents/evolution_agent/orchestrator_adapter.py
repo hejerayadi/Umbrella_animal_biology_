@@ -42,19 +42,44 @@ _TOO_FEW_SPECIES_MESSAGE = (
 # Request helpers
 # ---------------------------------------------------------------------------
 
+def _as_list(value: Any) -> list[str]:
+    """Normalise a context entry that may be a single name or a list of them."""
+    if isinstance(value, str):
+        value = [value]
+    return [s for s in (value or []) if s]
+
+
 def resolve_species(
     context: dict[str, Any],
     intent:  RecognizedIntent,
 ) -> list[str]:
-    ctx_species = (
-        context.get("species_list")
-        or context.get("species")
-        or intent.species_list
-        or []
-    )
-    if isinstance(ctx_species, str):
-        ctx_species = [ctx_species]
-    return [s for s in ctx_species if s]
+    """The species to compare, from the context or from the classifier.
+
+    The context wins when it carries enough species, because a caller that
+    named them explicitly means them literally. It cannot win on its own
+    though: the Global Orchestrator's extractor seeds `context["species"]`
+    with the ONE main subject of the question, and the Multimodal agent
+    publishes the single species it recognised in a photo. Either would
+    otherwise override the full list the classifier read out of "how are
+    humans and chimps related?" and leave this agent refusing its own
+    question with "needs at least 2 species".
+
+    So a context that is short falls back to the classifier, and the two are
+    merged when the classifier confirms the context's species and adds the
+    rest.
+    """
+
+    from_context = _as_list(context.get("species_list") or context.get("species"))
+    from_intent  = _as_list(intent.species_list)
+
+    if len(from_context) >= 2 or not from_intent:
+        return from_context
+
+    # The classifier found more names than the context did. Keep any context
+    # species it missed - that one is the subject the user actually asked
+    # about - then add the rest in the order the classifier read them.
+    lowered = {s.lower() for s in from_intent}
+    return [s for s in from_context if s.lower() not in lowered] + from_intent
 
 
 def to_orchestrator_request(
@@ -110,11 +135,27 @@ def _build_summary(analysis: EvolutionAnalysisResult) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Result reshaping — flat output matching EvolutionOutput
+# Result reshaping — EvolutionOutput published under one context key
 # ---------------------------------------------------------------------------
 
+# The single key this agent publishes its findings under.
+#
+# The Global Orchestrator merges `output` straight into the context every
+# other agent reads (see its worker_node.py), so a flat payload puts generic
+# names like `status`, `model` and `explanation` into a namespace shared with
+# eight other agents, where the last writer wins and the Responder renders
+# every one of them as a separate finding.
+#
+# The name is not free either: the Reconstruction agent waits specifically for
+# `evolution_analysis` in the context before it will run, so this is the key
+# that closes its dependency. Publishing anything else leaves it escalating to
+# an agent that has already answered, until the orchestrator's loop-breaker
+# turns the whole run into a failure.
+EVOLUTION_OUTPUT_KEY = "evolution_analysis"
+
+
 def to_platform_result(result: AgentResult) -> AgentResult:
-    """Flatten the pipeline result into a clean, readable response."""
+    """Reshape the pipeline result into the platform's output contract."""
     if result.status is not AgentStatus.COMPLETED:
         return result
 
@@ -128,10 +169,12 @@ def to_platform_result(result: AgentResult) -> AgentResult:
         return AgentResult(
             status=result.status,
             output={
-                "status":        "completed",
-                "decision":      "analysis_complete",
-                "explanation":   str(result.output),
-                "score_is_mock": True,
+                EVOLUTION_OUTPUT_KEY: {
+                    "status":        "completed",
+                    "decision":      "analysis_complete",
+                    "explanation":   str(result.output),
+                    "score_is_mock": True,
+                }
             },
             confidence=result.confidence,
             source_agents=list(result.source_agents),
@@ -140,7 +183,7 @@ def to_platform_result(result: AgentResult) -> AgentResult:
     mc    = analysis.molecular
     phylo = analysis.phylogenetic
 
-    output: dict[str, Any] = {
+    findings: dict[str, Any] = {
         # Headline fields
         "status":             "completed",
         "decision":           "analysis_complete",
@@ -178,7 +221,7 @@ def to_platform_result(result: AgentResult) -> AgentResult:
 
     return AgentResult(
         status=AgentStatus.COMPLETED,
-        output=output,
+        output={EVOLUTION_OUTPUT_KEY: findings},
         newick_tree=phylo.newick_tree,
         tree_url=phylo.tree_url,
         similarity_scores=[

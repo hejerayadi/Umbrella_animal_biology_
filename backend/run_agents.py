@@ -25,6 +25,11 @@ agent is its own container, which is why each declares its own dependencies.
 Two declaration styles are supported, and `--setup` picks per agent:
 `pyproject.toml` + `uv.lock`, installed with `uv sync`, or the older
 `requirements.txt`, installed with pip into a `python -m venv` environment.
+
+uv is not a hard requirement. Without it, a `pyproject.toml` agent is set up
+from the dependency ranges it declares, using the same pip path as the others
+- the environment works, it is just resolved fresh instead of replayed from
+the lock file. Install uv (`pip install uv`) to get the locked versions.
 """
 from __future__ import annotations
 
@@ -34,6 +39,8 @@ import shutil
 import subprocess
 import sys
 import threading
+import tomllib
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -58,10 +65,19 @@ _VENV_PYTHON = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/pyth
 # os.getenv at import time, and nothing calls load_dotenv before then, so
 # putting it in its .env would silently do nothing.
 #
+# The Evolution Agent is the same story with a different name: its api.py
+# defaults to the stub in `mock.py`, which only ever escalates to Genome and
+# Literature and then answers "Evolutionary relationship completed." The real
+# LangGraph pipeline (species resolver -> molecular comparison -> phylogenetic
+# reconstruction) is behind EVOLUTION_AGENT_IMPL=orchestrator. It needs that
+# agent's own .env for intent classification; without one it logs the reason
+# and falls back to the mock rather than failing to start.
+#
 # Anything already exported in the shell wins, so `set TRAIT_AGENT_IMPL=mock`
 # still gets you the stub for an offline demo.
 _AGENT_ENV: dict[str, dict[str, str]] = {
     "Trait": {"TRAIT_AGENT_IMPL": "workflow"},
+    "Evolution": {"EVOLUTION_AGENT_IMPL": "orchestrator"},
 }
 
 
@@ -97,7 +113,24 @@ def _stream(prefix: str, process: subprocess.Popen) -> None:
 
 
 def _explain(pip_output: str) -> str | None:
-    """Turn a wall of pip output into one actionable line, when we recognise it."""
+    """Turn a wall of pip or uv output into one actionable line, when we recognise it."""
+
+    # Windows locks the .pyd/.dll files a running process has loaded, so
+    # rewriting an environment underneath a live agent fails on the first
+    # compiled package it tries to replace - numpy, usually. Neither pip nor uv
+    # says why, they just report the rename that was denied, which reads like a
+    # permissions problem and sends you looking for an admin shell.
+    if (
+        "Access is denied" in pip_output
+        or "os error 5" in pip_output
+        or "WinError 5" in pip_output
+    ):
+        return (
+            "A file in that agent's .venv is in use, so it could not be replaced. "
+            "This is almost always an agent that is still running - Windows locks "
+            "the libraries a live process has loaded. Stop `python -m "
+            "backend.run_agents` (and any stray uvicorn) and run --setup again."
+        )
 
     if "Failed building wheel for" in pip_output or "Microsoft Visual C++" in pip_output:
         packages = sorted(
@@ -111,8 +144,8 @@ def _explain(pip_output: str) -> str | None:
         return (
             f"{named} has no prebuilt wheel for Python {sys.version_info.major}."
             f"{sys.version_info.minor} on this platform, so pip tried to compile it "
-            f"from source and failed. Bump the pin in that agent's requirements.txt "
-            f"to a version that ships wheels for your Python."
+            f"from source and failed. Bump the pin in the dependency file named "
+            f"above to a version that ships wheels for your Python."
         )
     if "No matching distribution found" in pip_output:
         return "A pinned version does not exist for this Python. Check the pins."
@@ -125,6 +158,35 @@ def _manifest(folder: str) -> Path:
     return pyproject if pyproject.exists() else _AGENTS_DIR / folder / "requirements.txt"
 
 
+@lru_cache(maxsize=1)
+def _uv_command() -> list[str] | None:
+    """How to invoke uv here, or None if it is not installed at all.
+
+    Two ways it can be present. Installed standalone it is a `uv` executable on
+    PATH; installed with `pip install uv` into the environment running this
+    script it is a module, and on Windows the shim only lands on PATH while
+    that venv is activated. Checking both means `python -m backend.run_agents
+    --setup` works either way.
+
+    Cached because answering it costs a subprocess, and `setup()` asks once per
+    pyproject agent plus once more inside `_setup_with_uv`. uv does not appear
+    or vanish part-way through one run.
+    """
+    on_path = shutil.which("uv")
+    if on_path:
+        return [on_path]
+
+    found = subprocess.run(
+        [sys.executable, "-m", "uv", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    if found.returncode == 0:
+        return [sys.executable, "-m", "uv"]
+
+    return None
+
+
 def _setup_with_uv(folder: str) -> tuple[bool, str]:
     """Build one agent's environment from its pyproject.toml + uv.lock.
 
@@ -132,14 +194,83 @@ def _setup_with_uv(folder: str) -> tuple[bool, str]:
     lock file records, so a developer's environment matches the one CI resolved
     rather than whatever the ranges happen to allow today.
     """
-    if shutil.which("uv") is None:
-        return False, "uv is not on PATH. Install it from https://docs.astral.sh/uv/"
+    uv = _uv_command()
+    if uv is None:
+        return False, "uv is not installed"
+
     result = subprocess.run(
-        ["uv", "sync", "--project", str(_AGENTS_DIR / folder)],
+        [*uv, "sync", "--project", str(_AGENTS_DIR / folder)],
         capture_output=True,
         text=True,
     )
     return result.returncode == 0, result.stdout + result.stderr
+
+
+def _pyproject_dependencies(folder: str) -> list[str]:
+    """The runtime requirements one pyproject declares, as pip would read them.
+
+    Only `[project].dependencies` - not the optional extras, and not the dev
+    group. Those are opt-in under uv too (`uv sync --extra embeddings`), and
+    the extras here are the expensive ones: the Protein agent's `embeddings`
+    extra pulls in torch at around 2 GB for a feature it falls back out of.
+    """
+    with (_AGENTS_DIR / folder / "pyproject.toml").open("rb") as handle:
+        pyproject = tomllib.load(handle)
+    return list(pyproject.get("project", {}).get("dependencies", []))
+
+
+def _setup_with_pyproject_pip(folder: str) -> tuple[bool, str]:
+    """Build a pyproject agent's environment WITHOUT uv, using pip.
+
+    The fallback for a machine that has no uv. It reads the same dependency
+    list uv would, but resolves it fresh from the version ranges instead of
+    replaying `uv.lock`, so the result is a working environment rather than a
+    reproducible one. That is the right trade for local development - the
+    alternative is one agent that cannot start at all - but it is why the
+    caller labels this run differently in the output.
+
+    Nothing is built or installed as a package: these projects set
+    `package = false` because the importable path is
+    `backend.agents.<agent>.*` from the repository root, not this directory.
+    """
+    venv_dir = _venv_dir(folder)
+    if not venv_dir.exists():
+        created = subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            capture_output=True,
+            text=True,
+        )
+        if created.returncode != 0:
+            return False, created.stdout + created.stderr
+
+    dependencies = _pyproject_dependencies(folder)
+    if not dependencies:
+        return False, f"{folder}/pyproject.toml declares no [project].dependencies"
+
+    python = venv_dir / _VENV_PYTHON
+
+    # A `.venv` left behind by an earlier `uv sync` has no pip in it - uv
+    # installs packages itself and does not seed one. Reusing that directory
+    # would fail with "No module named pip", which reads like a broken Python
+    # rather than a missing bootstrap, so put pip there first.
+    has_pip = subprocess.run(
+        [str(python), "-m", "pip", "--version"], capture_output=True, text=True
+    )
+    if has_pip.returncode != 0:
+        seeded = subprocess.run(
+            [str(python), "-m", "ensurepip", "--default-pip"],
+            capture_output=True,
+            text=True,
+        )
+        if seeded.returncode != 0:
+            return False, seeded.stdout + seeded.stderr
+
+    installed = subprocess.run(
+        [str(python), "-m", "pip", "install", "-q", *dependencies],
+        capture_output=True,
+        text=True,
+    )
+    return installed.returncode == 0, installed.stdout + installed.stderr
 
 
 def _setup_with_pip(folder: str) -> tuple[bool, str]:
@@ -172,7 +303,10 @@ def setup() -> None:
 
     print(f"Setting up {len(_AGENT_FOLDERS)} agent environments on Python "
           f"{sys.version_info.major}.{sys.version_info.minor}.")
-    print("This takes a while - some agents pin large packages (torch).\n")
+    print("This takes a while - some agents pin large packages (torch).")
+    print("Stop any running agents first: this rewrites the environments they "
+          "are using, and\n         on Windows a live process locks its own "
+          "libraries against replacement.\n")
 
     failures: list[tuple[str, str, str]] = []
 
@@ -180,12 +314,18 @@ def setup() -> None:
         manifest = _manifest(folder)
 
         print(f"--- {agent_name} ({folder})")
-        if manifest.name == "pyproject.toml":
+        if manifest.name != "pyproject.toml":
+            ok, output = _setup_with_pip(folder)
+            tool = "pip install"
+        elif _uv_command() is not None:
             ok, output = _setup_with_uv(folder)
             tool = "uv sync"
         else:
-            ok, output = _setup_with_pip(folder)
-            tool = "pip install"
+            # No uv anywhere. Install the declared ranges with pip rather than
+            # leaving this agent with no environment - it still runs, it just
+            # is not pinned to the lock file.
+            ok, output = _setup_with_pyproject_pip(folder)
+            tool = "pip install (no uv - lock file NOT used)"
 
         if not ok:
             print(f"    FAILED ({tool})\n")
