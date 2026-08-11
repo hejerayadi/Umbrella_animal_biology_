@@ -6,15 +6,19 @@ edge is END), which is why they live together:
 - `direct_answer` - the planner decided no research agent was needed.
 - `responder`     - agents ran, and their findings need writing up.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ...responder import Responder
 from ...state import WorkflowState
 
 
-def make_direct_answer_node(responder: Responder):
+def make_direct_answer_node(
+    responder: Responder,
+) -> Callable[[WorkflowState], dict[str, Any]]:
     """Build the node that replies conversationally, with no agents involved.
 
     Reached when the planner decides the message is a greeting, small talk,
@@ -25,13 +29,18 @@ def make_direct_answer_node(responder: Responder):
         answer = responder.answer_directly(state.user_query)
         return {
             "final_answer": answer,
-            "execution_history": [*state.execution_history, "Responder -> answered directly"],
+            "execution_history": [
+                *state.execution_history,
+                "Responder -> answered directly",
+            ],
         }
 
     return _node
 
 
-def make_responder_node(responder: Responder):
+def make_responder_node(
+    responder: Responder,
+) -> Callable[[WorkflowState], dict[str, Any]]:
     """Build the node that writes the final answer once the agents are done.
 
     Every research path ends here, including failed ones - so the user always
@@ -54,7 +63,10 @@ def make_responder_node(responder: Responder):
         )
         return {
             "final_answer": answer,
-            "execution_history": [*state.execution_history, "Responder -> answer ready"],
+            "execution_history": [
+                *state.execution_history,
+                "Responder -> answer ready",
+            ],
         }
 
     return _node

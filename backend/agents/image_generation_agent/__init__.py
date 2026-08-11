@@ -1,1 +1,1 @@
-"""Protein Structure Generation / Visualization Agent."""
+"""Image Generation Agent."""

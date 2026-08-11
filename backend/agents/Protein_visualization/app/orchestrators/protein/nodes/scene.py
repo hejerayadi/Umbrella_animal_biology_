@@ -15,7 +15,12 @@ class SceneNode:
 
     async def __call__(self, state: ProteinWorkflowState) -> dict[str, Any]:
         structure = state["selected_structure"]
-        with log_stage(logger, BUILD_SCENE, node=BUILD_SCENE) as outcome:
+        with log_stage(
+            logger,
+            f"protein.node.{BUILD_SCENE}",
+            node=BUILD_SCENE,
+            capability="visualization",
+        ) as outcome:
             spec = self.capability.build(structure, state["residue_mappings"])
             config = self.capability.to_config(spec, structure, state["annotations"])
             outcome["selections"] = len(config.get("selections", []))

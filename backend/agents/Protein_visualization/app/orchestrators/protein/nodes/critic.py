@@ -18,7 +18,12 @@ class CriticNode:
         self.llm = llm
 
     async def __call__(self, state: ProteinWorkflowState) -> dict[str, Any]:
-        with log_stage(logger, RUN_CRITIC, node=RUN_CRITIC) as outcome:
+        with log_stage(
+            logger,
+            f"protein.node.{RUN_CRITIC}",
+            node=RUN_CRITIC,
+            capability="scientific_critic",
+        ) as outcome:
             report = self.capability.review(
                 state["task"],
                 state["resolved_protein"],
@@ -33,6 +38,7 @@ class CriticNode:
             outcome["verdict"] = audited.verdict
             if usage:
                 outcome["tokens"] = usage.total_tokens
+                outcome["model"] = usage.model
 
         verdict = ValidationStatus(audited.verdict)
         warnings = (

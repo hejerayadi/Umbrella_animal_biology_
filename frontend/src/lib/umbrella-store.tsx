@@ -11,6 +11,7 @@ import {
 import { MOCK_AGENT_ACTIVITY, MOCK_CONVERSATIONS, MOCK_MESSAGES } from "./mock-data";
 import {
   askOrchestrator,
+  generatedImageFrom,
   imageUrlFor,
   parseExecutionHistory,
   proteinViewerFrom,
@@ -203,6 +204,10 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 ...(() => {
                   const viewer = proteinViewerFrom(response.context);
                   return viewer ? { proteinViewer: viewer } : {};
+                })(),
+                ...(() => {
+                  const generated = generatedImageFrom(response);
+                  return generated ? { generatedImageUrl: generated } : {};
                 })(),
               },
             ],

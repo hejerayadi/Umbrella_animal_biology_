@@ -173,6 +173,20 @@ _RENDER_ONLY_KEYS: dict[str, str] = {
         "answer. Refer to it as already visible; never tell the user to open RCSB, AlphaFold "
         "or another viewer to see it."
     ),
+    # FLUX.2-pro answers with a base64 data URI, not a link - a single 1024x1024
+    # image measured ~440 KB of characters. Left in, it is the biggest "finding"
+    # by far: it would consume the whole `_MAX_FINDING_CHARS` budget and hand the
+    # model 4000 characters of base64 to summarise.
+    #
+    # The note matters as much as the exclusion. Told nothing, the model sees a
+    # request to draw and no drawing, and apologises - which is exactly what the
+    # Genome agent did on the Arctic fox run ("I'm not able to draw an image of
+    # an Arctic fox for you").
+    "image": (
+        "The generated illustration is displayed directly below your answer. Refer to it as "
+        "already visible - describe what it shows and the biology behind it. Never say you "
+        "cannot draw or display images, and never suggest searching for one elsewhere."
+    ),
 }
 
 

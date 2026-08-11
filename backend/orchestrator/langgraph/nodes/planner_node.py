@@ -3,15 +3,17 @@
 This is the first node of every run: it decides whether the message needs a
 research agent at all, and if so which agent starts the work.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from ...planner import Planner
 from ...state import WorkflowState
 
 
-def make_planner_node(planner: Planner):
+def make_planner_node(planner: Planner) -> Callable[[WorkflowState], dict[str, Any]]:
     """Build the graph node that runs the Planner.
 
     This is a "node factory": it takes the planner object once and hands

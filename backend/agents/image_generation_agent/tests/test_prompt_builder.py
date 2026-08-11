@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from backend.agents.Protein_visualization.orchestrator_logic import organize_result
-from backend.agents.Protein_visualization.prompt_builder import build_visualization_prompt
-from backend.agents.Protein_visualization.schema import AgentRequest
+from backend.agents.image_generation_agent.orchestrator_logic import organize_result
+from backend.agents.image_generation_agent.prompt_builder import build_visualization_prompt
+from backend.agents.image_generation_agent.schema import AgentRequest
 
 
 def test_organize_result_creates_flexible_sections():
