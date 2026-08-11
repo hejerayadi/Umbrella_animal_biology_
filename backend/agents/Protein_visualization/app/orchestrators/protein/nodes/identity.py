@@ -8,6 +8,7 @@ from backend.agents.Protein_visualization.app.domain.exceptions import ProteinAg
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes._common import (
     executed,
+    failed,
     failure_code,
     logger,
 )
@@ -21,24 +22,30 @@ class IdentityNode:
 
     async def __call__(self, state: ProteinWorkflowState) -> dict[str, Any]:
         try:
-            with log_stage(logger, RESOLVE_IDENTITY, node=RESOLVE_IDENTITY) as outcome:
+            with log_stage(
+                logger,
+                f"protein.node.{RESOLVE_IDENTITY}",
+                node=RESOLVE_IDENTITY,
+                capability="identity",
+            ) as outcome:
                 protein, evidence = await self.capability.resolve(state["task"])
                 outcome["accession"] = protein.uniprot_accession
         except ProteinNotFoundError as exc:
             # Ambiguous or mismatched identity: never guess, never select a structure.
-            return executed(
+            return failed(
                 RESOLVE_IDENTITY,
+                "IDENTITY_UNRESOLVED",
+                exc,
                 current_status=AnalysisStatus.failed,
-                warnings=[f"IDENTITY_UNRESOLVED: {exc}"],
-                errors=[f"{RESOLVE_IDENTITY}: {type(exc).__name__}"],
                 resolved_protein=None,
             )
         except ProteinAgentError as exc:
-            return executed(
+            code = failure_code(exc, "UNIPROT_UNAVAILABLE", "UNIPROT_TIMEOUT")
+            return failed(
                 RESOLVE_IDENTITY,
+                code,
+                exc,
                 current_status=AnalysisStatus.failed,
-                warnings=[f"{failure_code(exc, 'UNIPROT_UNAVAILABLE', 'UNIPROT_TIMEOUT')}: {exc}"],
-                errors=[f"{RESOLVE_IDENTITY}: {type(exc).__name__}"],
                 resolved_protein=None,
             )
 

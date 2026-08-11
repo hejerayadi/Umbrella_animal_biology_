@@ -3,7 +3,8 @@
 Every record is emitted as a single JSON object carrying the workflow fields the
 implementation document requires: ``timestamp``, ``level``, ``trace_id``,
 ``task_id``, ``analysis_id``, ``node``, ``capability``, ``status``,
-``duration_ms`` and ``error_code``. Context fields come from
+``duration_ms``, ``error_code``, ``span_id``, ``parent_span_id`` and
+``span_depth``. Context fields come from
 ``app.observability.context``; per-event fields are passed through ``extra``.
 """
 
@@ -15,13 +16,19 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from backend.agents.Protein_visualization.app.observability.context import CONTEXT_FIELDS, get_log_context
+from backend.agents.Protein_visualization.app.observability.context import (
+    CONTEXT_FIELDS,
+    bind_log_context,
+    get_log_context,
+    reset_log_context,
+)
 
 EXTRA_KEY = "umbrella_fields"
 
@@ -44,9 +51,19 @@ _COMPACT_CONTEXT = {
     "trace_id": "trace",
     "task_id": "task",
     "analysis_id": "analysis",
+    "span_id": "span",
 }
 _SUCCESS_STATUSES = {"completed", "success", "ready", "accept"}
-_WARNING_STATUSES = {"partial", "revise", "rejected", "abstain", "abstained", "degraded"}
+_WARNING_STATUSES = {
+    "partial",
+    "revise",
+    "rejected",
+    "abstain",
+    "abstained",
+    "degraded",
+    "retrying",
+    "skipped",
+}
 
 
 def _record_payload(record: logging.LogRecord) -> dict[str, Any]:
@@ -98,7 +115,7 @@ class RichStructuredHandler(logging.Handler):
             payload = _record_payload(record)
             renderable = (
                 self._detail_panel(payload, record)
-                if record.levelno >= logging.WARNING
+                if self._requires_detail(payload, record)
                 else self._compact_line(payload, record)
             )
             # logging.Handler.handle() holds the handler lock for this entire call,
@@ -106,6 +123,15 @@ class RichStructuredHandler(logging.Handler):
             self.console.print(renderable)
         except Exception:
             self.handleError(record)
+
+    @staticmethod
+    def _requires_detail(payload: dict[str, Any], record: logging.LogRecord) -> bool:
+        """Reserve panels for actionable failures; expected retries stay one line."""
+        return bool(
+            record.levelno >= logging.ERROR
+            or record.exc_info
+            or str(payload.get("status", "")).lower() == "failed"
+        )
 
     def _compact_line(self, payload: dict[str, Any], record: logging.LogRecord) -> Text:
         status = str(payload.get("status", "")).lower()
@@ -116,16 +142,29 @@ class RichStructuredHandler(logging.Handler):
         }
         warning = status in _WARNING_STATUSES or bool(verdicts & _WARNING_STATUSES)
         success = status in _SUCCESS_STATUSES or event.endswith(".completed")
-        symbol, style = (
-            ("!", "bold dark_orange") if warning else ("✓", "bold green") if success else ("•", "bold cyan")
-        )
+        if event.endswith(".started"):
+            symbol, style = "▶", "bold cyan"
+        elif event.endswith(".retried") or status == "retrying":
+            symbol, style = "↻", "bold dark_orange"
+        elif event.endswith(".skipped") or status == "skipped":
+            symbol, style = "–", "bold yellow"
+        else:
+            symbol, style = (
+                ("!", "bold dark_orange")
+                if warning
+                else ("✓", "bold green")
+                if success
+                else ("•", "bold cyan")
+            )
 
         line = Text(no_wrap=True, overflow="ellipsis")
         local_time = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
         line.append(local_time, style="dim")
         line.append(f"  {symbol} ", style=style)
         line.append(f"{record.levelname:<5}", style=style)
-        line.append(f"  {event}", style="bold white")
+        depth = max(0, int(payload.get("span_depth") or 0))
+        branch = "│  " * max(0, depth - 1) + ("├─ " if depth else "")
+        line.append(f"  {branch}{event}", style="bold white")
 
         duration = payload.get("duration_ms")
         if duration is not None:
@@ -240,7 +279,14 @@ def log_event(
 
 
 @contextmanager
-def log_stage(logger: logging.Logger, event: str, **fields: Any) -> Iterator[dict[str, Any]]:
+def log_stage(
+    logger: logging.Logger,
+    event: str,
+    *,
+    start_level: int = logging.DEBUG,
+    completed_level: int = logging.INFO,
+    **fields: Any,
+) -> Iterator[dict[str, Any]]:
     """Log ``<event>`` start/completion with ``duration_ms``, and failures with ``error_code``.
 
     Extra fields collected in the yielded dict are attached to the closing record,
@@ -251,7 +297,16 @@ def log_stage(logger: logging.Logger, event: str, **fields: Any) -> Iterator[dic
     """
     started = time.perf_counter()
     result: dict[str, Any] = {}
-    log_event(logger, f"{event}.started", logging.DEBUG, **fields)
+    parent = get_log_context()
+    span_id = uuid4().hex[:16]
+    token = bind_log_context(
+        node=fields.get("node") or event,
+        capability=fields.get("capability"),
+        span_id=span_id,
+        parent_span_id=parent.get("span_id"),
+        span_depth=(int(parent.get("span_depth") or 0) + 1 if parent.get("span_id") else 0),
+    )
+    log_event(logger, f"{event}.started", start_level, **fields)
     try:
         yield result
     except Exception as exc:
@@ -267,14 +322,18 @@ def log_stage(logger: logging.Logger, event: str, **fields: Any) -> Iterator[dic
             **result,
         )
         raise
-    log_event(
-        logger,
-        f"{event}.completed",
-        status="completed",
-        duration_ms=_elapsed_ms(started),
-        **fields,
-        **result,
-    )
+    else:
+        log_event(
+            logger,
+            f"{event}.completed",
+            completed_level,
+            status="completed",
+            duration_ms=_elapsed_ms(started),
+            **fields,
+            **result,
+        )
+    finally:
+        reset_log_context(token)
 
 
 def _elapsed_ms(started: float) -> int:

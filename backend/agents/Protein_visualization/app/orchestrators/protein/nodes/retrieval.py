@@ -24,7 +24,14 @@ class RetrievalNode:
         protein = state["resolved_protein"]
         assert protein is not None
         try:
-            with log_stage(logger, RETRIEVE_KNOWLEDGE, node=RETRIEVE_KNOWLEDGE) as outcome:
+            with log_stage(
+                logger,
+                f"protein.rag.{RETRIEVE_KNOWLEDGE}",
+                node=RETRIEVE_KNOWLEDGE,
+                capability="retrieval",
+                retriever=type(self.capability.retriever).__name__,
+                top_k=self.capability.top_k,
+            ) as outcome:
                 hits = await self.capability.retrieve(protein)
                 outcome["hits"] = len(hits)
         except Exception as exc:  # the vector store is infrastructure, not a domain source

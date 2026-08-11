@@ -6,7 +6,17 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any
 
-CONTEXT_FIELDS = ("request_id", "trace_id", "task_id", "analysis_id", "node", "capability")
+CONTEXT_FIELDS = (
+    "request_id",
+    "trace_id",
+    "task_id",
+    "analysis_id",
+    "node",
+    "capability",
+    "span_id",
+    "parent_span_id",
+    "span_depth",
+)
 
 _log_context: ContextVar[dict[str, Any] | None] = ContextVar("log_context", default=None)
 _request_started_at: ContextVar[float | None] = ContextVar("request_started_at", default=None)

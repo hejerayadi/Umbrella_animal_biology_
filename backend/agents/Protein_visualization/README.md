@@ -25,6 +25,12 @@ answers on both:
 against UniProt before running the workflow. See that module's docstring for
 why the gene and species are resolved *together* rather than the species alone.
 
+The shared context also carries optional protein-analysis intent extracted from
+the chat message: `mutation`, `residue_position`, `requested_regions`,
+`preferred_source` (`auto`, `pdb`, or `alphafold`) and `include_explanation`.
+The adapter validates these fields before contacting a provider and forwards
+them to the same `ProteinTaskInput` used by the versioned scientific endpoint.
+
 ### What `/execute` puts in the shared context
 
 Deliberately a summary, not the whole `ProteinAnalysisResponse`: everything a
@@ -71,7 +77,7 @@ version, none of which the API exposes, so it is left unset rather than guessed.
 
 ## Infrastructure in this sprint
 
-- **Qdrant** — a managed cluster; set `QDRANT_URL` and `QDRANT_API_KEY` in `.env`. There is no `docker-compose.yml`: nothing is provisioned locally.
+- **Qdrant** — a managed cluster; set `QDRANT_URL` and `QDRANT_API_KEY` in `.env`. There is no `docker-compose.yml`: nothing is provisioned locally. When `QDRANT_URL` is absent, retrieval reports `RETRIEVAL_UNAVAILABLE` before loading BGE-M3; it never presents an empty in-memory store as a successful production search.
 - **PostgreSQL** — out of scope for this sprint. `PERSISTENCE_ENABLED=false` keeps the repository layer dormant; the API answers without a database.
 - **Azure** — the LLM provider for explanation and critic generation (`LLM_PROVIDER=azure`).
 - **BGE-M3** — the embedding model for ingestion and retrieval, and the only one `get_embedding_provider` will build. It ships in the `embeddings` extra (`uv sync --extra embeddings`), because it pulls torch; without that extra, the retrieval node reports `RETRIEVAL_UNAVAILABLE` in the response warnings rather than falling back to anything. `HashEmbedding` carries no semantics and is reachable only from `tests/`.
@@ -177,28 +183,40 @@ Use `LOG_FORMAT=pretty` for compact, colorized local logs (`text` is an alias), 
 `LOG_FORMAT=json` for JSON Lines in deployments. Both renderers carry the same
 structured fields: `timestamp`, `level`, `logger`, `event`, and — when in scope —
 `request_id`, `trace_id`, `task_id`, `analysis_id`, `node`, `capability`, `status`,
-`duration_ms`, `error_code`.
+`duration_ms`, `error_code`, `span_id`, `parent_span_id`, and `span_depth`. Nested
+workflow, node, LLM, RAG, and external-tool stages therefore form one local
+parent/child trace without requiring a remote tracing service.
 
 ```env
 LOG_LEVEL=INFO
 LOG_FORMAT=pretty
 ```
 
-Pretty output shortens correlation IDs on compact success lines. Warning and
-error panels, as well as JSON logs, retain the complete IDs and exception details.
+Pretty output shortens correlation IDs and indents nested spans. Expected retries
+remain compact one-line warnings; terminal failures use detailed panels. JSON logs
+retain the complete IDs and exception details.
 
 ```json
-{"timestamp":"2026-08-06T10:00:00Z","level":"INFO","logger":"app.analyses","event":"protein_analysis.completed","request_id":"…","trace_id":"…","task_id":"…","status":"completed","duration_ms":412}
+{"timestamp":"2026-08-06T10:00:00Z","level":"INFO","logger":"app.tools.http","event":"protein.tool.request.completed","request_id":"…","trace_id":"…","task_id":"…","analysis_id":"…","span_id":"…","parent_span_id":"…","node":"search_experimental_structures","capability":"external_http","status":"completed","duration_ms":412,"provider":"RCSB","attempts":2,"status_code":200}
 ```
 
-Correlation ids are taken from the `X-Trace-Id` / `X-Request-Id` request headers when the Grand Orchestrator supplies them, generated otherwise, and echoed back on the response.
+The Main Orchestrator keeps one `X-Trace-Id` across delegation, hand-offs, and
+automatic resumes, while every HTTP attempt receives a new `X-Request-Id`. The
+Protein service accepts both headers, generates missing values, and echoes them on
+the response. Provider query strings, request bodies, protein sequences, prompts,
+authorization headers, and response bodies are not logged.
 
 In code:
 
 ```python
-with log_context(task_id=str(task.task_id)):  # fields inherited by every log line
-    with log_stage(logger, "search_pdb", node="search_pdb") as outcome:
-        outcome["candidates"] = len(candidates)  # attached to search_pdb.completed
+with log_context(task_id=str(task.task_id)):  # inherited by every child span
+    with log_stage(
+        logger,
+        "protein.node.search_experimental_structures",
+        node="search_experimental_structures",
+        capability="structure_search",
+    ) as outcome:
+        outcome["candidates"] = len(candidates)
 ```
 
 `GET /api/v1/ready` reports whether Qdrant, the Azure LLM, and persistence are configured and reachable.
@@ -217,6 +235,11 @@ uv run --project $agent ruff format --check $agent
 uv run --project $agent mypy --config-file $agent\pyproject.toml $agent\app
 uv run --project $agent pytest $agent\tests -q -m "not live and not bge and not qdrant"
 ```
+
+That command is the deterministic offline gate. The `live`, `bge`, and
+`qdrant` markers are opt-in because they contact external services, may incur
+Azure cost, download the embedding model, or write to a managed collection;
+passing the offline gate does not claim those operational checks were run.
 
 `mypy` has to be started from the repository root: that is what makes it resolve
 these files as `backend.agents.Protein_visualization.*` rather than as a second,

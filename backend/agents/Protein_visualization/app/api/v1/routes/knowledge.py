@@ -29,7 +29,12 @@ async def search_knowledge(
     request: KnowledgeSearchRequest,
     knowledge_base: Annotated[KnowledgeBase, Depends(get_knowledge_base)],
 ) -> ApiResponse[list[KnowledgeHit]]:
-    with log_stage(logger, "knowledge_search", capability="retrieval") as outcome:
+    with log_stage(
+        logger,
+        "protein.rag.search",
+        node="knowledge_search",
+        capability="retrieval",
+    ) as outcome:
         hits = await knowledge_base.search(
             request.query,
             request.limit,
@@ -54,7 +59,12 @@ async def ingest_documents(
     expected = get_settings().internal_ingestion_api_key
     if expected and x_api_key != expected:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ingestion API key")
-    with log_stage(logger, "knowledge_ingestion", capability="ingestion") as outcome:
+    with log_stage(
+        logger,
+        "protein.rag.ingestion",
+        node="knowledge_ingestion",
+        capability="ingestion",
+    ) as outcome:
         result = await ingestion.ingest(documents)
         outcome["documents"] = len(documents)
         outcome["inserted"] = result.inserted

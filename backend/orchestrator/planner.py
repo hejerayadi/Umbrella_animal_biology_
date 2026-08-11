@@ -14,6 +14,7 @@ The agent catalog it chooses from comes from `backend/registry.py`, which is
 built only from the stable `card.json` files - not from the agents'
 (still-changing) Python code.
 """
+
 from __future__ import annotations
 
 import logging
@@ -156,18 +157,22 @@ class Planner:
 
         # Actually call the model: fill in the prompt's placeholders and get
         # back a `_PlannerOutput` object.
-        response = self._chain.invoke(
-            {
-                "agent_catalog": _format_agent_catalog(self._agent_cards),
-                "user_query": user_query,
-                "image_note": _IMAGE_ATTACHED_NOTE if has_image else _NO_IMAGE_NOTE,
-            }
+        response = _PlannerOutput.model_validate(
+            self._chain.invoke(
+                {
+                    "agent_catalog": _format_agent_catalog(self._agent_cards),
+                    "user_query": user_query,
+                    "image_note": _IMAGE_ATTACHED_NOTE if has_image else _NO_IMAGE_NOTE,
+                }
+            )
         )
 
         # No agent needed - this message gets a direct conversational reply.
         if not response.needs_agent or not response.initial_agent:
             _logger.info(
-                "[Planner] query=%r -> no agent needed (%s)", user_query, response.reasoning
+                "[Planner] query=%r -> no agent needed (%s)",
+                user_query,
+                response.reasoning,
             )
             return ExecutionPlan(initial_agent=None, reasoning=response.reasoning)
 

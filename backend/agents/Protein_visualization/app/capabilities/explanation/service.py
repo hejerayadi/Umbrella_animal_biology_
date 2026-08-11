@@ -3,6 +3,7 @@ from typing import Protocol
 
 from backend.agents.Protein_visualization.app.domain.models import EvidencePack, Explanation, LlmUsage
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
+from backend.agents.Protein_visualization.app.observability.logging import log_event
 
 logger = logging.getLogger("app.explanation")
 
@@ -38,7 +39,14 @@ class ExplanationCapability:
                 output, usage = await self.llm.explain(evidence_context(evidence), node)
             except Exception as exc:
                 # A model failure must never cost the caller its structured evidence.
-                logger.warning("explanation_llm_failed", exc_info=exc)
+                log_event(
+                    logger,
+                    "protein.llm.explanation.degraded",
+                    logging.WARNING,
+                    exc_info=True,
+                    status="degraded",
+                    error_code=type(exc).__name__,
+                )
             else:
                 limitations = tuple(dict.fromkeys((*evidence.limitations, *output.limitations)))
                 return Explanation(summary=output.summary, limitations=limitations, generated=True), usage

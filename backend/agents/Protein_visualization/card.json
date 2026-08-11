@@ -32,6 +32,6 @@
     "context": "dict"
   },
   "output": {
-    "protein_structure": "object"
+    "protein_structure": "string"
   }
 }

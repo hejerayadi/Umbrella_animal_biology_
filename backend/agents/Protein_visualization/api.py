@@ -39,6 +39,7 @@ import logging
 from fastapi import FastAPI
 
 from .app.main import create_app
+from .app.observability.logging import log_stage
 from .orchestrator_adapter import OrchestratorProteinAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
 
@@ -63,11 +64,22 @@ async def execute(request: AgentRequest) -> AgentResult:
     """The agent's single endpoint. Always answers with an `AgentResult`."""
 
     try:
-        return await _agent.run(request)
+        with log_stage(
+            _logger,
+            "protein.execute",
+            start_level=logging.INFO,
+            node="execute",
+            capability="inter_agent",
+            instruction_length=len(request.instruction),
+            context_keys=sorted(request.context),
+        ) as outcome:
+            result = await _agent.run(request)
+            outcome["agent_status"] = result.status.value
+            outcome["target_agent"] = result.target_agent
+            return result
     except Exception as exc:  # noqa: BLE001 - the boundary must not leak exceptions
         # Deliberately not an HTTPException: the orchestrator's router expects
         # one schema back every time, and it already knows how to handle a
         # FAILED status. A 500 with FastAPI's {"detail": ...} body would break
         # that contract.
-        _logger.warning("protein agent request failed", exc_info=True)
         return AgentResult(status=AgentStatus.FAILED, output=f"Protein Visualization Agent error: {exc}")
