@@ -1,0 +1,27 @@
+{
+  "name": "Scientific Analysis Sub Agent",
+  "type": "worker",
+  "description": "Analyse scientifique (QA, contradiction_detection, gap_detection). Analyse un corpus déjà récupéré.",
+  "reports_to": [
+    "Knowledge Discovery & Analysis Sub-Orchestrator"
+  ],
+  "may need": [
+    "Retrieval and Knowledge Processing Sub Agent"
+  ],
+  "managed_services": [
+    "Azure AI Foundry (GPT-5 )",
+    "Qdrant Vector Database"
+  ],
+  "capabilities": [
+    "Répondre à une question factuelle précise, à partir du contenu déjà récupéré",
+    "Détecter des contradictions entre sources déjà récupérées/synthétisées",
+    "Identifier des lacunes de recherche à partir du corpus déjà récupéré/synthétisé"
+  ],
+  "input": {
+    "capability": "string (enum: qa, contradiction_detection, gap_detection)",
+    "query": "string — la requête reformulée à transmettre à cet agent"
+  },
+  "output": {
+    "result": "string"
+  }
+}

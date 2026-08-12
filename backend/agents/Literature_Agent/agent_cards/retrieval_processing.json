@@ -1,0 +1,24 @@
+{
+  "name": "Retrieval and Knowledge Processing Sub Agent",
+  "type": "worker",
+  "description": "Récupère et traite des connaissances : synthèse d'informations multi-sources ou résumé d'un document/ensemble de documents.",
+  "reports_to": [
+    "Knowledge Discovery & Analysis Sub-Orchestrator"
+  ],
+  "may need": [],
+  "managed_services": [
+    "Azure AI Foundry (GPT-5 )",
+    "Qdrant Vector Database"
+  ],
+  "capabilities": [
+    "Intégrer et synthétiser des informations issues de plusieurs sources",
+    "Résumer un document ou un ensemble de documents précis"
+  ],
+  "input": {
+    "capability": "string (enum: synthesis, summary)",
+    "query": "string — la requête reformulée à transmettre à cet agent"
+  },
+  "output": {
+    "result": "string"
+  }
+}
