@@ -20,6 +20,7 @@ from backend.agents.Protein_visualization.app.domain.enums import AnalysisStatus
 from backend.agents.Protein_visualization.app.domain.models import LlmUsage, StructureCandidate
 from backend.agents.Protein_visualization.app.observability.context import log_context
 from backend.agents.Protein_visualization.app.observability.logging import log_event, log_stage
+from backend.agents.Protein_visualization.app.observability.tracing import get_tracing_status, trace_config
 from backend.agents.Protein_visualization.app.orchestrators.protein.nodes.names import WORKFLOW_SEQUENCE
 from backend.agents.Protein_visualization.app.orchestrators.protein.result_policy import to_agent_result
 from backend.agents.Protein_visualization.app.orchestrators.protein.state import (
@@ -79,6 +80,8 @@ class ProteinOrchestrator:
     async def analyze(self, task: ProteinAnalysisRequest) -> ProteinAnalysisResponse:
         analysis_id = uuid4()
         request = task.to_domain()
+        settings = get_settings()
+        tracing = get_tracing_status()
         with log_context(analysis_id=str(analysis_id), task_id=str(task.task_id)):
             with log_stage(
                 logger,
@@ -98,7 +101,30 @@ class ProteinOrchestrator:
             ) as outcome:
                 result = await self.graph.ainvoke(
                     initial_state(request, analysis_id),
-                    config={"configurable": {"thread_id": str(analysis_id)}},
+                    config=trace_config(
+                        run_name="protein_workflow",
+                        run_id=analysis_id,
+                        thread_id=str(analysis_id),
+                        tags=[
+                            "protein-visualization-agent",
+                            f"env:{settings.app_env}",
+                            f"source:{request.preferred_source.value}",
+                        ],
+                        service="protein-visualization-agent",
+                        app_version=settings.app_version,
+                        app_env=settings.app_env,
+                        analysis_id=str(analysis_id),
+                        task_id=str(task.task_id),
+                        trace_id=str(task.trace_id),
+                        gene=request.resolved_gene_id,
+                        uniprot_accession=request.uniprot_accession,
+                        scientific_name=request.species.scientific_name,
+                        taxon_id=request.species.taxon_id,
+                        preferred_source=request.preferred_source.value,
+                        mutation=request.mutation,
+                        residue_position=request.residue_position,
+                        include_explanation=request.include_explanation,
+                    ),
                 )
                 final = cast(ProteinWorkflowState, result)
                 selected = final.get("selected_structure")
@@ -115,6 +141,10 @@ class ProteinOrchestrator:
                     llm_calls=len(usages),
                     total_tokens=sum(usage.total_tokens or 0 for usage in usages),
                     retry_count=sum(final.get("retry_counts", {}).values()),
+                    # The LangSmith root run carries analysis_id as its own id,
+                    # so this line is enough to open the trace for this run.
+                    langsmith_project=tracing.project if tracing.enabled else None,
+                    langsmith_run_id=str(analysis_id) if tracing.enabled else None,
                 )
         return self.to_response(task.task_id, analysis_id, final)
 

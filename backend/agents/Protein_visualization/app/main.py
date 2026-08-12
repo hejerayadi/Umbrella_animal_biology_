@@ -21,6 +21,10 @@ from backend.agents.Protein_visualization.app.domain.exceptions import (
 )
 from backend.agents.Protein_visualization.app.observability.logging import configure_logging, log_event
 from backend.agents.Protein_visualization.app.observability.middleware import RequestContextMiddleware
+from backend.agents.Protein_visualization.app.observability.tracing import (
+    configure_tracing,
+    get_tracing_status,
+)
 
 PROBLEM_BASE = "https://umbrella.bio/problems"
 
@@ -49,6 +53,7 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
                 collection=settings.qdrant_collection,
                 dimensions=knowledge_base.embedding.dimensions,
             )
+    tracing = get_tracing_status()
     log_event(
         logger,
         "protein.service.started",
@@ -56,6 +61,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         biological_sources="real",
         llm_provider=settings.llm_provider,
         qdrant_configured=bool(settings.qdrant_url),
+        tracing_enabled=tracing.enabled,
+        tracing_project=tracing.project,
         routes=len(application.routes),
     )
     yield
@@ -80,6 +87,9 @@ def _envelope_response(response: ApiResponse[None]) -> JSONResponse:
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_format)
+    # Before the graph is compiled or any capability is built: LangChain decides
+    # whether to attach a tracer from the environment as it constructs runnables.
+    configure_tracing(settings)
 
     application = FastAPI(
         title=settings.app_name,
