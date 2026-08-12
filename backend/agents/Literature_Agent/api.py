@@ -1,39 +1,22 @@
-"""HTTP boundary for the Literature Agent.
+"""Pure Python entry point for the Literature Agent.
 
-Communication only - this layer holds no business logic. It receives a request
-from the Global Orchestrator, validates it into `AgentRequest`, hands it to the
-agent implementation in `mock.py`, and returns whatever `AgentResult` comes
-back. The orchestrator is the only caller; the frontend never reaches an agent
-directly.
-
-Run it (from the repository root, with this agent's venv active):
-
-    python -m uvicorn backend.agents.Literature_Agent.api:app --port 8004
+This module intentionally contains no FastAPI dependency. The agent logic is
+kept in its orchestrator and mock implementations, and this wrapper exists only
+as a simple callable interface for direct Python usage.
 """
 from __future__ import annotations
 
-from fastapi import FastAPI
-
-from .mock import LiteratureMock
+from .orchestrator.graph import LiteratureOrchestrator
 from .schema import AgentRequest, AgentResult, AgentStatus
 
-app = FastAPI(title="Literature Agent")
-
-# Built once at startup rather than per request: mocks are free to construct,
-# but real implementations load models and open connections, and this keeps
-# that cost out of the request path.
-_agent = LiteratureMock()
+_orchestrator = LiteratureOrchestrator()
 
 
-@app.post("/execute", response_model=AgentResult)
 def execute(request: AgentRequest) -> AgentResult:
-    """The agent's single endpoint. Always answers with an `AgentResult`."""
-
+    """Execute the Literature Agent directly in-process."""
     try:
-        return _agent.run(request)
-    except Exception as exc:  # noqa: BLE001 - the boundary must not leak exceptions
-        # Deliberately not an HTTPException: the orchestrator's router expects
-        # one schema back every time, and it already knows how to handle a
-        # FAILED status. A 500 with FastAPI's {"detail": ...} body would break
-        # that contract.
+        result = _orchestrator._graph.invoke({"request": request, "route": "", "discovery_result": None, "writing_result": None, "final_result": None})
+        return result.get("final_result", AgentResult(status=AgentStatus.FAILED, output="No final result"))
+    except Exception as exc:  # pragma: no cover - safety net
         return AgentResult(status=AgentStatus.FAILED, output=f"Literature Agent error: {exc}")
+
