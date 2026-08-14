@@ -2,14 +2,13 @@ import logging
 
 from workflows.state import TraitDiscoveryState
 from schemas.inputs import GeneMapperInput
-from subagents.gene_mapper import mock_gene_mapper
+from subagents.gene_mapper import gene_mapper_agent  # real agent
 
 logger = logging.getLogger(__name__)
 
-
 async def gene_mapper_node(state: TraitDiscoveryState) -> dict:
     logger.info("gene_mapper input gene list=%s", state.gene_list)
-    out = await mock_gene_mapper(GeneMapperInput(
+    out = await gene_mapper_agent(GeneMapperInput(
         trait_name=state.trait_name,
         gene_list=state.gene_list,
         species_name=state.species_name,

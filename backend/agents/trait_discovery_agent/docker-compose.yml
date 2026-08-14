@@ -62,3 +62,34 @@ services:
     volumes:
       - .:/app
     command: python -m scripts.demo_live_integration --verbose
+
+  # -------------------------------------------------------------------------
+  # NEW: Pathways Agent services
+  # -------------------------------------------------------------------------
+  pathways-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.check_pathways
+
+  test-pathways:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_pathways.py -v -s
+
+
+  # -------------------------------------------------------------------------
+  # Gene Mapper Agent service
+  # -------------------------------------------------------------------------
+  gene-mapper-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.check_gene_mapper

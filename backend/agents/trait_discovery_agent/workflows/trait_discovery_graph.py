@@ -12,7 +12,6 @@ from workflows.state import FunctionalEvidenceState, TraitDiscoveryState
 
 logger = logging.getLogger(__name__)
 
-
 async def aggregate_node(state: TraitDiscoveryState) -> dict:
     genes = ", ".join(a.gene_symbol for a in state.go_annotations)
     pathways = ", ".join(p.pathway_name for p in state.pathway_data)
@@ -30,18 +29,15 @@ async def aggregate_node(state: TraitDiscoveryState) -> dict:
     logger.info("aggregate explanation=%s", explanation)
     return {"status": AgentStatus.COMPLETED, "explanation": explanation}
 
-
 async def check_gene_list_node(state: TraitDiscoveryState) -> dict:
     logger.info("check_gene_list incoming gene list=%s", state.gene_list)
     if state.gene_list:
         return {"gene_list": state.gene_list}
     return {"status": AgentStatus.NEEDS_AGENT}
 
-
 async def failed_node(state: TraitDiscoveryState) -> dict:
     logger.info("workflow terminated in failed node")
     return {"status": AgentStatus.FAILED}
-
 
 async def join_and_route_node(state: TraitDiscoveryState) -> dict:
     logger.info(
@@ -58,10 +54,8 @@ async def join_and_route_node(state: TraitDiscoveryState) -> dict:
         return {"status": AgentStatus.FAILED}
     return {"status": AgentStatus.COMPLETED}
 
-
 def route_after_check_gene_list(state: TraitDiscoveryState) -> str:
     return "escalate_genome_agent" if state.status == AgentStatus.NEEDS_AGENT else "gene_mapper"
-
 
 def route_after_join(state: TraitDiscoveryState) -> str:
     if state.status == AgentStatus.NEEDS_AGENT:
@@ -69,7 +63,6 @@ def route_after_join(state: TraitDiscoveryState) -> str:
     if state.status == AgentStatus.FAILED:
         return "failed"
     return "aggregate"
-
 
 def build_trait_discovery_graph():
     graph = StateGraph(TraitDiscoveryState)
@@ -80,6 +73,7 @@ def build_trait_discovery_graph():
         sub_result = await functional_evidence_graph.ainvoke(FunctionalEvidenceState(
             gene_list=state.gene_list,
             instruction=state.instruction,
+            trait_name=state.trait_name,      # NEW — threaded down
             context=state.context,
         ))
         logger.info("functional_evidence output=%s", sub_result)
