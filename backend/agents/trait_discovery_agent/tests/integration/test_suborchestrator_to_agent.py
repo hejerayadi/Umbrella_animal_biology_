@@ -68,7 +68,30 @@ async def test_one_agent_failing_does_not_affect_the_other(monkeypatch):
     # Protein Data still ran and still succeeded, independent of Pathways.
     assert result["protein_data_status"] == AgentStatus.COMPLETED
     assert result["protein_data"][0].gene_symbol == "FGF5"
-    # merge_node's rule: either child FAILED -> whole sub-orchestrator FAILED.
+    # merge_node's rule (§0.2): a SINGLE child failing is non-critical — the
+    # sub-orchestrator only fails when BOTH children fail.
+    assert result["status"] == AgentStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_both_agents_failing_fails_the_suborchestrator(monkeypatch):
+    async def empty_kegg(kegg_gene_id):
+        return None
+    async def empty_uniprot(gene_symbol, tax_id):
+        return None
+    monkeypatch.setattr(pathways_module, "fetch_pathway", empty_kegg)
+    monkeypatch.setattr(protein_data_module, "fetch_uniprot", empty_uniprot)
+
+    app = build_functional_evidence_graph()
+    result = await app.ainvoke(FunctionalEvidenceState(
+        gene_list=["FGF5"],
+        instruction="find functional evidence",
+        context={"kegg_gene_ids": {"FGF5": "hsa:FGF5"}, "tax_id": 9606},
+    ))
+
+    assert result["pathways_status"] == AgentStatus.FAILED
+    assert result["protein_data_status"] == AgentStatus.FAILED
+    # merge_node's rule (§0.2): BOTH children FAILED -> whole sub-orchestrator FAILED.
     assert result["status"] == AgentStatus.FAILED
 
 

@@ -67,9 +67,12 @@ async def test_parent_passes_gene_list_and_merges_child_output(
 
 
 @pytest.mark.asyncio
-async def test_suborchestrator_failure_propagates_and_short_circuits_parent(
+async def test_one_functional_evidence_child_failing_does_not_short_circuit_parent(
     patch_llm_boundary, monkeypatch
 ):
+    """§0.2: Protein Data failing alone is non-critical. Pathways still
+    resolved, so functional_evidence_status is COMPLETED and the parent run
+    proceeds all the way through to aggregate() rather than being aborted."""
     async def empty_uniprot(gene_symbol, tax_id):
         return None  # Protein Data resolves nothing -> FAILED
     monkeypatch.setattr(protein_data_module, "fetch_uniprot", empty_uniprot)
@@ -90,6 +93,41 @@ async def test_suborchestrator_failure_propagates_and_short_circuits_parent(
         },
     ))
 
+    assert result["pathway_data"], "Pathways still succeeded independently"
+    assert result["protein_data"] == []
+    assert result["functional_evidence_status"] == AgentStatus.COMPLETED
+    assert result["status"] == AgentStatus.COMPLETED
+    assert len(patch_llm_boundary["explain"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_total_functional_evidence_failure_is_still_non_critical_at_parent(
+    patch_llm_boundary, monkeypatch
+):
+    """§0.2: even when Functional Evidence fails completely (both Pathways
+    AND Protein Data failed, so its own status is FAILED), join_and_route
+    only hard-fails on a Gene Mapper failure. The run must still complete."""
+    async def empty_uniprot(gene_symbol, tax_id):
+        return None
+    async def empty_kegg(kegg_gene_id):
+        return None
+    monkeypatch.setattr(protein_data_module, "fetch_uniprot", empty_uniprot)
+    monkeypatch.setattr(pathways_module, "fetch_pathway", empty_kegg)
+
+    app = td_graph_module.build_trait_discovery_graph()
+    result = await app.ainvoke(TraitDiscoveryState(
+        trait_name="fur growth",
+        species_name="mouse",
+        instruction="Which genes cause fur growth?",
+        context={
+            "gene_list": ["FGF5"],
+            "kegg_gene_ids": {"FGF5": "hsa:FGF5"},
+            "tax_id": 9606,
+        },
+    ))
+
+    assert result["pathway_data"] == []
+    assert result["protein_data"] == []
     assert result["functional_evidence_status"] == AgentStatus.FAILED
-    assert result["status"] == AgentStatus.FAILED
-    assert patch_llm_boundary["explain"] == []
+    assert result["status"] == AgentStatus.COMPLETED
+    assert len(patch_llm_boundary["explain"]) == 1

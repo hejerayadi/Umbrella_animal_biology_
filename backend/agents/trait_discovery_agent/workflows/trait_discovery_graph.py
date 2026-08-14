@@ -40,6 +40,11 @@ async def failed_node(state: TraitDiscoveryState) -> dict:
     return {"status": AgentStatus.FAILED}
 
 async def join_and_route_node(state: TraitDiscoveryState) -> dict:
+    """§0.2: Gene Mapper is the only stage whose failure is critical — without
+    it there are no genes to explain anything about. Functional Evidence is
+    supplementary; even a total Functional Evidence failure (both Pathways
+    and Protein Data failed, per merge_node) must NOT hard-fail the run, so
+    functional_evidence_status is deliberately not checked here."""
     logger.info(
         "join_and_route statuses gene_mapper=%s functional_evidence=%s literature=%s",
         state.gene_mapper_status,
@@ -50,8 +55,6 @@ async def join_and_route_node(state: TraitDiscoveryState) -> dict:
         return {"status": AgentStatus.FAILED}
     if state.literature_status == AgentStatus.NEEDS_AGENT:
         return {"status": AgentStatus.NEEDS_AGENT}
-    if state.functional_evidence_status == AgentStatus.FAILED:
-        return {"status": AgentStatus.FAILED}
     return {"status": AgentStatus.COMPLETED}
 
 def route_after_check_gene_list(state: TraitDiscoveryState) -> str:

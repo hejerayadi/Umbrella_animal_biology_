@@ -27,11 +27,15 @@ async def protein_data_node(state: FunctionalEvidenceState) -> dict:
     return {"protein_data": out.proteins, "protein_data_status": out.status}
 
 async def merge_node(state: FunctionalEvidenceState) -> dict:
-    """Same rule as Task 1: FAILED if either child resolved nothing."""
+    """§0.2: Pathways and Protein Data are independent, best-effort evidence
+    sources. Either one failing on its own is non-critical — the other still
+    has standalone value, so the sub-orchestrator only fails when BOTH
+    children came back FAILED (i.e. there is no functional evidence left at
+    all)."""
     status = (
         AgentStatus.FAILED
         if state.pathways_status == AgentStatus.FAILED
-        or state.protein_data_status == AgentStatus.FAILED
+        and state.protein_data_status == AgentStatus.FAILED
         else AgentStatus.COMPLETED
     )
     logger.info("functional evidence merge status=%s", status)

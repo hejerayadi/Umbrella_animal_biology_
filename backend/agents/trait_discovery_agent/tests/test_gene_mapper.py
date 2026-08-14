@@ -57,7 +57,7 @@ async def test_multi_candidate_uses_llm(monkeypatch):
     monkeypatch.setattr(gm_module, "list_go_candidates", _fake_list_multi)
     monkeypatch.setattr(gm_module, "resolve_go_term_name", _fake_resolve)
 
-    async def fake_llm_pick(trait, gene, candidates):
+    async def fake_llm_pick(trait, gene, candidates, *args, **kwargs):
         return "GO:0009409", "response to cold", "trait is cold adaptation"
 
     monkeypatch.setattr(gm_module, "_llm_pick_candidate", fake_llm_pick)
