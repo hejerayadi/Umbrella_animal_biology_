@@ -2,13 +2,11 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from .common import AgentStatus
 
-
 @dataclass
 class GOAnnotation:
     gene_symbol: str
-    go_id: str          # e.g. "GO:0031069"
-    go_name: str         # e.g. "hair follicle development"
-
+    go_id: str
+    go_name: str
 
 @dataclass
 class GeneMapperOutput:
@@ -18,12 +16,11 @@ class GeneMapperOutput:
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None
 
-
 @dataclass
 class PathwayEntry:
-    pathway_id: str      # e.g. "hsa04151"
-    pathway_name: str    # e.g. "PI3K-Akt signaling pathway"
-
+    pathway_id: str
+    pathway_name: str
+    reasoning: str = ""          # NEW — why this pathway was selected
 
 @dataclass
 class PathwaysOutput:
@@ -33,14 +30,12 @@ class PathwaysOutput:
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None
 
-
 @dataclass
 class ProteinEntry:
     gene_symbol: str
     protein_name: str
     function_summary: str
     source_accession: str = ""
-
 
 @dataclass
 class ProteinDataOutput:
@@ -50,7 +45,6 @@ class ProteinDataOutput:
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None
 
-
 @dataclass
 class FunctionalEvidenceOutput:
     status: AgentStatus
@@ -59,7 +53,6 @@ class FunctionalEvidenceOutput:
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None
 
-
 @dataclass
 class LiteratureRecord:
     pmid: str
@@ -67,14 +60,12 @@ class LiteratureRecord:
     year: int
     short_summary: str
 
-
 @dataclass
 class LiteratureSupportOutput:
     status: AgentStatus
     evidence: List[LiteratureRecord] = field(default_factory=list)
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None
-
 
 @dataclass
 class TraitDiscoveryOutput:

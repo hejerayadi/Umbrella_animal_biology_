@@ -25,7 +25,7 @@ def build_ping_graph():
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(
-    not os.getenv("NVIDIA_NIM_API_KEY") and not os.getenv("NVIDIA_NIM_API_KEY"),
+    not os.getenv("NVIDIA_NIM_API_KEY") and not os.getenv("NIM_API_KEY"),
     reason="NVIDIA_NIM_API_KEY not set",
 )
 async def test_nim_smoke():
@@ -37,5 +37,9 @@ async def test_nim_smoke():
         message = str(exc).lower()
         if "401" in message or "unauthorized" in message or "authentication failed" in message:
             pytest.skip(f"NVIDIA NIM authentication failed: {exc}")
+        # ---- ADD THIS ----
+        if "404" in message and ("not found" in message or "function" in message):
+            pytest.skip(f"NVIDIA NIM model not available on this account: {exc}")
+        # ------------------
         raise
     assert "pong" in result["answer"].lower()
