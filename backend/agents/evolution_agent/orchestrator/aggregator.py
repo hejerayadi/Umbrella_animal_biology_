@@ -1,8 +1,8 @@
 """Sprint 2 aggregator for the Evolution Orchestrator.
 
-Sprint 2 runs a fixed two-step sequential pipeline, not a parallel fan-out,
-so the aggregator's job is much simpler than in Sprint 1: it receives the
-completed MC and phylo results and assembles them into one EvolutionAnalysisResult.
+Sprint 2 runs a parallel fan-out: the Molecular Comparison and Phylogenetic
+Tree workers both run concurrently, and the aggregator receives the two
+completed results and assembles them into one EvolutionAnalysisResult.
 
 The function is kept as a standalone module (rather than inlined into the
 orchestrator) so it can be unit-tested independently and swapped out in

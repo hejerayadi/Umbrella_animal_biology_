@@ -1,16 +1,18 @@
-"""Evolution Agent Orchestrator — Sprint 2 sequential pipeline.
+"""Evolution Agent Orchestrator — Sprint 2 parallel pipeline.
 
 Sprint 2 design
 ---------------
-The orchestrator runs two subagents in a fixed order:
+The orchestrator runs two subagents concurrently:
 
     1. molecular_comparison   — fetch sequences, align, embed, score, cluster
-    2. phylogenetic_tree      — build tree from the alignment MC produced
+    2. phylogenetic_tree      — build tree from the species list
 
-This is a *dependent* pipeline, not a fan-out:
-  • Step 2 only runs if Step 1 completed successfully.
-  • The alignment string produced by Step 1 is injected into the request
-    context before Step 2 is called (context["alignment"]).
+This is a *fan-out* pipeline, not a sequential handoff:
+  • Both workers are dispatched together via ``asyncio.gather``.
+  • Each worker is offloaded to a thread (``asyncio.to_thread``) so the two
+    synchronous mocks genuinely run at the same time.
+  • The phylo worker does NOT consume MC's alignment — it reconstructs its
+    own alignment from the species list (see mock's ``alignment_source``).
   • A failure at either step short-circuits the whole pipeline.
 
 LangGraph graph shape
@@ -20,12 +22,9 @@ LangGraph graph shape
             "resolve"    → species_resolver_node
             "no_feature" → fail_node
       species_resolver_node
-            "run"        → molecular_comparison_node
+            "run"        → dispatch_node
             "failed"     → fail_node
-      molecular_comparison_node
-            "next"       → phylogenetic_tree_node
-            "failed"     → fail_node
-      phylogenetic_tree_node
+      dispatch_node
             "assemble"   → assemble_node
             "failed"     → fail_node
       assemble_node → END
@@ -83,11 +82,11 @@ class EvolutionState:
     resolved_species:   list[str] = field(default_factory=list)
     unresolved_species: list[str] = field(default_factory=list)
 
-    # Set by molecular_comparison_node
+    # Set by the dispatch step (parallel fan-out)
     mc_result:    MolecularComparisonResult | None = None
     mc_error:     str | None = None            # non-None → pipeline aborts
 
-    # Set by phylogenetic_tree_node
+    # Set by the dispatch step (parallel fan-out)
     phylo_result: PhylogeneticResult | None = None
     phylo_error:  str | None = None            # non-None → pipeline aborts
 
@@ -104,9 +103,9 @@ class EvolutionOrchestrator:
     """Domain orchestrator: accepts an AgentRequest, returns an AgentResult.
 
     Wires the Molecular Comparison and Phylogenetic Tree subagents into a
-    sequential LangGraph pipeline.  The pipeline is recompiled once at
-    construction time — cheap for mocks, important for real workers that
-    open network connections.
+    parallel LangGraph pipeline (``asyncio.gather`` fan-out).  The pipeline is
+    recompiled once at construction time — cheap for mocks, important for
+    real workers that open network connections.
     """
 
     def __init__(
@@ -140,8 +139,7 @@ class EvolutionOrchestrator:
 
         g.add_node("plan",                    self._plan_node)
         g.add_node("species_resolver",        self._species_resolver_node)
-        g.add_node("molecular_comparison",    self._molecular_comparison_node)
-        g.add_node("phylogenetic_tree",       self._phylogenetic_tree_node)
+        g.add_node("dispatch",                self._dispatch_node)
         g.add_node("assemble",                self._assemble_node)
         g.add_node("fail",                    self._fail_node)
 
@@ -155,16 +153,11 @@ class EvolutionOrchestrator:
         g.add_conditional_edges(
             "species_resolver",
             self._route_after_resolve,
-            {"run": "molecular_comparison", "failed": "fail"},
+            {"run": "dispatch", "failed": "fail"},
         )
         g.add_conditional_edges(
-            "molecular_comparison",
-            self._route_after_mc,
-            {"next": "phylogenetic_tree", "failed": "fail"},
-        )
-        g.add_conditional_edges(
-            "phylogenetic_tree",
-            self._route_after_phylo,
+            "dispatch",
+            self._route_after_dispatch,
             {"assemble": "assemble", "failed": "fail"},
         )
 
@@ -235,83 +228,66 @@ class EvolutionOrchestrator:
             return "failed"
         return "run"
 
-    async def _molecular_comparison_node(self, state: EvolutionState) -> dict:
-        """Run the Molecular Comparison subagent.
+    async def _dispatch_node(self, state: EvolutionState) -> dict:
+        """Fan out to both subagents in parallel via ``asyncio.gather``.
 
-        Wraps the synchronous mock in asyncio.to_thread so the event loop
-        stays free.  Real async workers drop the wrapper.
+        Mock workers are synchronous — offload each to a thread so the two
+        run concurrently.  A failure or escalation in either short-circuits
+        the pipeline via ``fail_node``; otherwise both results are stored for
+        the assembler.
         """
-        result: AgentResult = await asyncio.to_thread(
-            self._mc_worker.run, state.request
+        req = state.request
+
+        async def call(worker: Any) -> AgentResult:
+            return await asyncio.to_thread(worker.run, req)
+
+        mc_result, phylo_result = await asyncio.gather(
+            call(self._mc_worker),
+            call(self._phylo_worker),
         )
 
-        if result.status is AgentStatus.FAILED:
-            return {"mc_error": result.output}
-
-        if result.status is AgentStatus.NEEDS_AGENT:
+        # NEEDS_AGENT wins over a sibling failure: it is the actionable
+        # signal (the pipeline pauses to fetch help from another agent),
+        # whereas the sibling's failure is often just a side-effect of the
+        # same missing input.
+        if mc_result.status is AgentStatus.NEEDS_AGENT:
             # Propagate escalation immediately — pack it as the terminal result.
             return {
                 "result": AgentResult(
                     status=AgentStatus.NEEDS_AGENT,
-                    target_agent=result.target_agent,
-                    prompt_to_target_agent=result.prompt_to_target_agent,
-                    output=result.output,
+                    target_agent=mc_result.target_agent,
+                    prompt_to_target_agent=mc_result.prompt_to_target_agent,
+                    output=mc_result.output,
                     source_agents=["Evolution Agent Orchestrator",
-                                   *result.source_agents],
+                                   *mc_result.source_agents],
                 )
             }
 
-        mc: MolecularComparisonResult = result.output
-        return {"mc_result": mc}
-
-    def _route_after_mc(self, state: EvolutionState) -> str:
-        # NEEDS_AGENT path sets result directly; we still reach this router.
-        if state.result is not None:
-            return "failed"          # re-route to fail to surface the result
-        if state.mc_error:
-            return "failed"
-        return "next"
-
-    async def _phylogenetic_tree_node(self, state: EvolutionState) -> dict:
-        """Run the Phylogenetic Tree subagent.
-
-        Injects the alignment from the MC step into the request context
-        so the phylo worker receives it as its primary input.
-        """
-        req = state.request
-        mc  = state.mc_result
-
-        # Hand the alignment forward — this is the core of the sequential
-        # handoff that Sprint 2 requires.
-        if mc is not None:
-            req.context = {**(req.context or {}), "alignment": mc.alignment}
-
-        result: AgentResult = await asyncio.to_thread(
-            self._phylo_worker.run, req
-        )
-
-        if result.status is AgentStatus.FAILED:
-            return {"phylo_error": result.output}
-
-        if result.status is AgentStatus.NEEDS_AGENT:
+        if phylo_result.status is AgentStatus.NEEDS_AGENT:
             return {
                 "result": AgentResult(
                     status=AgentStatus.NEEDS_AGENT,
-                    target_agent=result.target_agent,
-                    prompt_to_target_agent=result.prompt_to_target_agent,
-                    output=result.output,
+                    target_agent=phylo_result.target_agent,
+                    prompt_to_target_agent=phylo_result.prompt_to_target_agent,
+                    output=phylo_result.output,
                     source_agents=["Evolution Agent Orchestrator",
-                                   *result.source_agents],
+                                   *phylo_result.source_agents],
                 )
             }
 
-        phylo: PhylogeneticResult = result.output
-        return {"phylo_result": phylo}
+        if mc_result.status is AgentStatus.FAILED:
+            return {"mc_error": mc_result.output}
 
-    def _route_after_phylo(self, state: EvolutionState) -> str:
+        if phylo_result.status is AgentStatus.FAILED:
+            return {"phylo_error": phylo_result.output}
+
+        return {"mc_result": mc_result.output, "phylo_result": phylo_result.output}
+
+    def _route_after_dispatch(self, state: EvolutionState) -> str:
+        # NEEDS_AGENT path sets result directly; we still reach this router.
         if state.result is not None:
-            return "failed"
-        if state.phylo_error:
+            return "failed"          # re-route to fail to surface the result
+        if state.mc_error or state.phylo_error:
             return "failed"
         return "assemble"
 

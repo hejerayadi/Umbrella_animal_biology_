@@ -5,8 +5,8 @@ Run from the repo root:
     $env:PYTHONIOENCODING="utf-8"
     python -m backend.agents.evolution_agent.capture_report [output.json]
 
-Each instruction is classified by the real Azure LLM, then the sequential
-MC -> Phylo pipeline runs.  The intent, raw result, and an HTTP-style
+Each instruction is classified by the real Azure LLM, then the parallel
+MC + Phylo pipeline runs.  The intent, raw result, and an HTTP-style
 response body are captured for review.
 """
 

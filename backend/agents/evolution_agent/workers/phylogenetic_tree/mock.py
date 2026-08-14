@@ -4,10 +4,10 @@ Simulates the full tree-building pipeline:
     MAFFT alignment  →  ModelFinder (substitution model)
     →  IQ-TREE ML tree  →  UFBoot bootstrap support
 
-The key Sprint 2 contract: this subagent **receives the alignment produced
-by the Molecular Comparison subagent** as input (via
-``request.context["alignment"]``), rather than fetching sequences itself.
-That is the handoff the orchestrator manages.
+The Sprint 2 orchestrator runs this subagent in *parallel* with the Molecular
+Comparison subagent (``asyncio.gather`` fan-out), so it does not consume MC's
+alignment.  When ``request.context["alignment"]`` is absent it reconstructs
+its own alignment from the species list (see ``alignment_source``).
 
 What this mock returns (PhylogeneticResult):
   • newick_tree       — Newick-format tree string
@@ -102,10 +102,10 @@ _MODEL = "LG+G4"
 class PhylogeneticTreeMock:
     """Deterministic stand-in for the ModelFinder + IQ-TREE + UFBoot pipeline.
 
-    Accepts the alignment from the Molecular Comparison subagent via
-    ``request.context["alignment"]``.  If that key is absent the worker
-    falls back to the species list — the pipeline still works, but the
-    alignment is marked as reconstructed rather than passed through.
+    Runs independently of the Molecular Comparison subagent (parallel
+    fan-out).  If ``request.context["alignment"]`` happens to be present it
+    is used; otherwise the worker falls back to the species list and the
+    alignment is marked as reconstructed.
     """
 
     # ------------------------------------------------------------------

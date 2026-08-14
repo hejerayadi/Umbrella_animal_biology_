@@ -204,7 +204,7 @@ def _failed(message: str) -> AgentResult:
 # ---------------------------------------------------------------------------
 
 class OrchestratorEvolutionAgent:
-    """Serves the sequential orchestrator behind the agent's HTTP endpoint."""
+    """Serves the parallel fan-out orchestrator behind the agent's HTTP endpoint."""
 
     def __init__(
         self, orchestrator: EvolutionOrchestrator | None = None

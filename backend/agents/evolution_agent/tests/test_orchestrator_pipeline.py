@@ -1,10 +1,10 @@
-"""End-to-end tests for the Sprint 2 sequential pipeline.
+"""End-to-end tests for the Sprint 2 parallel pipeline.
 
 Tests verify:
   1. The happy path produces a complete EvolutionAnalysisResult.
-  2. The alignment is passed from MC to phylo (handoff contract).
-  3. MC failure short-circuits before phylo runs.
-  4. Phylo failure is surfaced correctly after MC succeeds.
+  2. Both workers run concurrently (parallel fan-out, no alignment handoff).
+  3. MC failure short-circuits the pipeline.
+  4. Phylo failure is surfaced correctly.
   5. Species resolution failures stop the pipeline before any worker.
   6. Common names are resolved to scientific names.
   7. NEEDS_AGENT escalations from either worker are propagated.
@@ -132,16 +132,61 @@ async def test_all_five_species_full_pipeline(orchestrator) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Alignment handoff: MC → phylo
+# 2. Parallel fan-out: both workers run concurrently
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_alignment_is_passed_to_phylo_worker(make_orchestrator) -> None:
-    """The phylo worker must receive context['alignment'] set by the MC step."""
+async def test_both_workers_are_called_in_parallel(make_orchestrator) -> None:
+    """MC and phylo must both run on the same request (fan-out)."""
+    calls: list[str] = []
+
+    class _MCSpy:
+        def run(self, request: AgentRequest) -> AgentResult:
+            calls.append("mc")
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                output=MolecularComparisonResult(
+                    species_list=request.species_list,
+                    alignment="",
+                    alignment_url="http://alignment",
+                    similarity_scores=[],
+                    species_groups=[],
+                    similarity_network={},
+                ),
+            )
+
+    class _PhyloSpy:
+        def run(self, request: AgentRequest) -> AgentResult:
+            calls.append("phylo")
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                output=PhylogeneticResult(
+                    newick_tree="('x':1.0,'y':1.0,'z':1.0);",
+                    tree_url="http://tree",
+                    model="LG+G4",
+                    bootstrap_support={"node_root": 80},
+                    confidence_values={s: 0.8 for s in request.species_list},
+                    overall_confidence=0.8,
+                ),
+            )
+
+    orch = make_orchestrator(mc_worker=_MCSpy(), phylo_worker=_PhyloSpy())
+    await orch.run(
+        AgentRequest(
+            instruction="test", context={},
+            species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
+        )
+    )
+
+    assert sorted(calls) == ["mc", "phylo"], "Both workers must be dispatched"
+
+
+@pytest.mark.asyncio
+async def test_phylo_runs_without_mc_alignment(make_orchestrator) -> None:
+    """Phylo no longer consumes MC's alignment — it reconstructs its own."""
     received_alignment: list[str] = []
 
     class _PhyloSpy:
-        """Wraps the real mock but records what context['alignment'] it got."""
         from backend.agents.evolution_agent.workers.phylogenetic_tree.mock import (
             PhylogeneticTreeMock as _Real,
         )
@@ -154,57 +199,16 @@ async def test_alignment_is_passed_to_phylo_worker(make_orchestrator) -> None:
             return self._real.run(request)
 
     orch = make_orchestrator(phylo_worker=_PhyloSpy())
-    await orch.run(
+    result = await orch.run(
         AgentRequest(
             instruction="test", context={},
             species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
         )
     )
 
+    assert result.status is AgentStatus.COMPLETED
     assert received_alignment, "Phylo worker was never called"
-    assert received_alignment[0], "context['alignment'] was empty"
-    # FASTA format: should contain '>'
-    assert ">" in received_alignment[0]
-
-
-@pytest.mark.asyncio
-async def test_alignment_content_matches_mc_output(make_orchestrator) -> None:
-    """The alignment injected into phylo must be exactly what MC produced."""
-    mc_alignments:    list[str] = []
-    phylo_alignments: list[str] = []
-
-    class _MCSpy:
-        from backend.agents.evolution_agent.workers.molecular_comparison.mock import (
-            MolecularComparisonMock as _Real,
-        )
-        _real = _Real()
-
-        def run(self, request: AgentRequest) -> AgentResult:
-            result = self._real.run(request)
-            if result.status is AgentStatus.COMPLETED:
-                mc_alignments.append(result.output.alignment)
-            return result
-
-    class _PhyloSpy:
-        from backend.agents.evolution_agent.workers.phylogenetic_tree.mock import (
-            PhylogeneticTreeMock as _Real,
-        )
-        _real = _Real()
-
-        def run(self, request: AgentRequest) -> AgentResult:
-            phylo_alignments.append((request.context or {}).get("alignment", ""))
-            return self._real.run(request)
-
-    orch = make_orchestrator(mc_worker=_MCSpy(), phylo_worker=_PhyloSpy())
-    await orch.run(
-        AgentRequest(
-            instruction="test", context={},
-            species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
-        )
-    )
-
-    assert mc_alignments and phylo_alignments
-    assert mc_alignments[0] == phylo_alignments[0]
+    assert not received_alignment[0], "Phylo must not receive MC's alignment in parallel mode"
 
 
 # ---------------------------------------------------------------------------
@@ -212,15 +216,9 @@ async def test_alignment_content_matches_mc_output(make_orchestrator) -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_mc_failure_stops_pipeline_before_phylo(make_orchestrator) -> None:
-    phylo_called: list[bool] = []
-
-    class _PhyloSpy:
-        def run(self, request: AgentRequest) -> AgentResult:
-            phylo_called.append(True)
-            return AgentResult(status=AgentStatus.COMPLETED, output=None)
-
-    orch = make_orchestrator(phylo_worker=_PhyloSpy())
+async def test_mc_failure_fails_pipeline(make_orchestrator) -> None:
+    """MC failure must fail the whole pipeline even though phylo was dispatched."""
+    orch = make_orchestrator()
     result = await orch.run(
         AgentRequest(
             instruction="test", context={},
@@ -229,7 +227,6 @@ async def test_mc_failure_stops_pipeline_before_phylo(make_orchestrator) -> None
     )
 
     assert result.status is AgentStatus.FAILED
-    assert not phylo_called, "Phylo must not run when MC fails"
 
 
 @pytest.mark.asyncio
@@ -267,7 +264,7 @@ async def test_unknown_species_fails_before_mc_runs(make_orchestrator) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. Phylo failure after MC success
+# 4. Phylo failure
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
