@@ -75,6 +75,9 @@ class RecognitionState:
     classification_provider: str | None = None
     classification_mode: str | None = None
     classifier_version: str | None = None
+    # Extra, provider-supplied provenance (remote space id, revision,
+    # model version). Empty for a provider that reports none.
+    classification_provenance: dict | None = None
     requested_top_k: int | None = None
 
     # -- candidates, confidence, taxonomy --

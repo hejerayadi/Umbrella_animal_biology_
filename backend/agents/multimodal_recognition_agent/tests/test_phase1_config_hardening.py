@@ -256,7 +256,9 @@ def test_the_smoke_script_env_path_resolves_inside_the_agent_directory():
 # ===========================================================================
 
 def test_the_supported_mode_vocabularies_are_explicit():
-    assert BIOCLIP_PROVIDER_MODES == ("mock", "real")
+    # Phase 3 replaced the placeholder BioCLIP `real` mode with the implemented
+    # `remote` one. Taxonomy still has an unimplemented `real` mode until Phase 4.
+    assert BIOCLIP_PROVIDER_MODES == ("mock", "remote")
     assert TAXONOMY_PROVIDER_MODES == ("mock", "real")
     assert REASONING_LLM_PROVIDER_MODES == ("disabled", "fake", "azure")
 
@@ -291,15 +293,24 @@ def test_an_unknown_llm_mode_fails_loudly(clean_env, mode):
     assert "RECOGNITION_LLM_PROVIDER_MODE" in str(caught.value)
 
 
-def test_real_bioclip_mode_is_recognised_but_refused_until_phase_3(clean_env):
-    """Not "unknown value" - a named mode whose implementation has not landed.
-    The message must say which, so nobody assumes it is a typo."""
+def test_the_remote_bioclip_mode_is_implemented_and_selectable(clean_env):
+    """Phase 3 landed: `remote` is a working mode, not a placeholder."""
+    clean_env.setenv("BIOCLIP_PROVIDER_MODE", "remote")
+    config = RecognitionConfig.from_env()
+    assert config.bioclip_provider_mode == "remote"
+    assert config.recognition_mode == "remote_bioclip2_open_domain_species"
+
+
+def test_the_old_real_bioclip_mode_name_is_refused_as_unknown(clean_env):
+    """`real` was the placeholder name for the cancelled LOCAL design. It is not
+    a synonym for `remote`: an operator who sets it must be told, not silently
+    given remote inference they did not ask for."""
     clean_env.setenv("BIOCLIP_PROVIDER_MODE", "real")
     with pytest.raises(ConfigError) as caught:
         RecognitionConfig.from_env()
     message = str(caught.value)
     assert "BIOCLIP_PROVIDER_MODE" in message
-    assert "Phase 3" in message
+    assert "remote" in message  # names the legal values
 
 
 def test_real_taxonomy_mode_is_recognised_but_refused_until_phase_4(clean_env):
@@ -461,17 +472,17 @@ def test_mock_mode_is_disclosed_as_mock_not_as_classification():
     assert provenance["ncbi_mode"] == "mock"
 
 
-def test_the_only_constructible_modes_are_the_ones_provenance_claims():
-    """Phases 3 and 4 rewire provenance for real providers. Until then the
-    guarantee is structural: mock is the only mode that can be built, so the
-    mock wording in provenance cannot be wrong."""
+def test_each_supported_mode_builds_exactly_its_own_provider():
+    """Provenance cannot disagree with the mode, because each mode constructs a
+    distinct provider and only `mock` can ever produce the fixture oracle."""
+    from ..adapters.bioclip import RemoteBioCLIP2Provider
+
+    expected = {"mock": MockBioCLIP2Provider, "remote": RemoteBioCLIP2Provider}
     for mode in BIOCLIP_PROVIDER_MODES:
-        config = make_config(bioclip_provider_mode=mode)
-        if mode == "mock":
-            assert isinstance(build_classifier(config), MockBioCLIP2Provider)
-        else:
-            with pytest.raises(ConfigError):
-                build_classifier(config)
+        built = build_classifier(make_config(bioclip_provider_mode=mode))
+        assert isinstance(built, expected[mode]), mode
+        if mode != "mock":
+            assert not isinstance(built, MockBioCLIP2Provider), mode
 
 
 # ===========================================================================

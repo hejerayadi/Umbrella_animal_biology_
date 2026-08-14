@@ -34,6 +34,11 @@ presented as real BioCLIP-2 inference.
 from __future__ import annotations
 
 import json
+import logging
+import math
+import os
+import tempfile
+import time
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -42,6 +47,14 @@ from ..config import (
     BIOCLIP_PROVIDER_MODES,
     MOCK_CLASSIFIER_VERSION,
     RECOGNITION_MODE_MOCK_CLASSIFICATION,
+    RECOGNITION_MODE_REMOTE_CLASSIFICATION,
+    REMOTE_MODEL_VERSION,
+    REMOTE_SPACE_API_NAME,
+    REMOTE_SPACE_ID,
+    REMOTE_SPACE_MAX_PREDICTIONS,
+    REMOTE_SPACE_RANK,
+    REMOTE_SPACE_REVISION,
+    DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS,
     ConfigError,
     RecognitionConfig,
 )
@@ -56,6 +69,8 @@ _FIXTURE_PATH = (
 # A SHA-256 hex digest, lowercase. Fixture keys are checked against this so a
 # truncated or upper-cased key is caught as a malformed oracle rather than
 # silently never matching any image.
+_logger = logging.getLogger(__name__)
+
 _SHA256_LENGTH = 64
 _HEX_DIGITS = frozenset("0123456789abcdef")
 
@@ -248,11 +263,16 @@ def build_classifier(config: RecognitionConfig) -> BioCLIP2Classifier:
             fixture_path=config.classification_fixture_path,
         )
 
+    if mode == "remote":
+        # Constructed only; no connection is opened until the first classify.
+        return RemoteBioCLIP2Provider(
+            timeout_seconds=config.remote_classifier_timeout_seconds,
+        )
+
     if mode in BIOCLIP_PROVIDER_MODES:
         raise ConfigError(
-            f"BIOCLIP_PROVIDER_MODE={mode!r} has no implementation yet "
-            "(real BioCLIP-2 inference arrives in Phase 3). Refusing to start "
-            "rather than serving mock predictions as real ones."
+            f"BIOCLIP_PROVIDER_MODE={mode!r} has no implementation yet. "
+            "Refusing to start rather than serving mock predictions as real ones."
         )
 
     raise ConfigError(
@@ -264,3 +284,293 @@ def build_classifier(config: RecognitionConfig) -> BioCLIP2Classifier:
 
 # Named so a test can assert the two lists have not drifted apart.
 IMPLEMENTED_CLASSIFIER_MODES = BIOCLIP_IMPLEMENTED_MODES
+
+
+# ===========================================================================
+# Remote BioCLIP-2, executed on the official public Hugging Face Space
+#
+# The local design was cancelled. Running BioCLIP-2 in-process would have meant
+# caching a 2.66 GB TreeOfLife text-embedding artifact on disk, and that
+# exception was refused, so inference happens on the Space the model authors
+# publish.
+#
+# What crosses the boundary is one image and the word "Species". What comes back
+# is a ranked list of taxonomic labels. No weight, embedding, index or reference
+# corpus is downloaded, and there is still nothing here through which a vector or
+# a similarity search could enter the agent.
+# ===========================================================================
+
+# The Space returns "Kingdom Phylum Class Order Family Genus species (Common)".
+# Ranks are positional and CAN BE EMPTY - a real reply contained
+# "Animalia Chordata Squamata  Liolaemidae Ctenoblepharys adspersa", where the
+# doubled space is a missing Order. So the taxon string is split on a single
+# space and never with str.split(), which would collapse the gap and silently
+# shift every rank after it.
+_TAXON_RANK_COUNT = 7
+_GENUS_INDEX = 5
+_SPECIES_INDEX = 6
+
+_SUFFIX_BY_MEDIA_TYPE = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
+
+
+def parse_space_label(raw: Any) -> tuple[str, str, str | None] | None:
+    """Split one Space label into (species_id, scientific_name, common_name).
+
+    Returns None for anything that does not parse. A label that cannot be read
+    is dropped rather than guessed at: inventing a binomial from a malformed
+    string is how an agent ends up publishing a species nobody predicted.
+    """
+    if not isinstance(raw, str):
+        return None
+
+    text = raw.strip()
+    if not text:
+        return None
+
+    common: str | None = None
+    if text.endswith(")") and " (" in text:
+        text, _, trailing = text.rpartition(" (")
+        common = trailing[:-1].strip() or None
+        text = text.strip()
+
+    parts = text.split(" ")
+    if len(parts) != _TAXON_RANK_COUNT:
+        return None
+
+    genus = parts[_GENUS_INDEX].strip()
+    species = parts[_SPECIES_INDEX].strip()
+    if not genus or not species:
+        return None
+
+    scientific_name = genus + " " + species
+    # Same shape the fixture oracle uses, so nothing downstream can tell the two
+    # providers apart by identifier style.
+    species_id = (genus + "_" + species).lower()
+    return species_id, scientific_name, common
+
+
+class RemoteBioCLIP2Provider:
+    """Real BioCLIP-2 label classification, executed on the official Space.
+
+    Holds the same `classify(image, top_k)` contract as the mock, so the
+    workflow, the ranking rules and the confidence gate are untouched.
+
+    The client is built on first use, never at import: constructing this object
+    opens no connection, which is what keeps the offline suite offline.
+    """
+
+    provider_name = "RemoteBioCLIP2Provider"
+    recognition_mode = RECOGNITION_MODE_REMOTE_CLASSIFICATION
+    model_target = "BioCLIP-2"
+    space_max_predictions = REMOTE_SPACE_MAX_PREDICTIONS
+
+    def __init__(
+        self,
+        *,
+        space_id: str = REMOTE_SPACE_ID,
+        api_name: str = REMOTE_SPACE_API_NAME,
+        rank: str = REMOTE_SPACE_RANK,
+        timeout_seconds: float = DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS,
+        version: str = REMOTE_MODEL_VERSION,
+        client: Any = None,
+    ) -> None:
+        self.space_id = space_id
+        self.api_name = api_name
+        self.rank = rank
+        self.timeout_seconds = timeout_seconds
+        self.version = version
+        # Injectable so every offline test drives the real mapping code with no
+        # network, no account and no download.
+        self._client = client
+
+    # -- lazy client --------------------------------------------------------
+
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            # Imported here, not at module scope: importing this package must not
+            # pull in an HTTP client or reach the network.
+            from gradio_client import Client
+
+            self._client = Client(
+                self.space_id,
+                verbose=False,
+                # Constructing the client fetches the Space's API description
+                # over HTTP, so it needs a bound of its own - otherwise the very
+                # first step could hang before a deadline is ever consulted.
+                httpx_kwargs={"timeout": self.timeout_seconds},
+                # The endpoint also returns a sample image of the predicted
+                # taxon. It is an illustration, not evidence, so it is never
+                # fetched: no download, no temp file, no cleanup to get wrong.
+                download_files=False,
+            )
+        return self._client
+
+    # -- the production interface -------------------------------------------
+
+    def classify(
+        self,
+        image: NormalizedRecognitionInput,
+        top_k: int,
+    ) -> list[BioCLIPTaxonPrediction]:
+        """Top-K taxonomic labels for one image, from the remote Space."""
+
+        if top_k <= 0:
+            raise RecognitionError(ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION)
+
+        payload = self._call(image)
+        predictions = self._to_predictions(payload)
+
+        # The provider promises "already ranked, distinct". Hold it to that here
+        # rather than downstream, so a misbehaving Space is a controlled failure
+        # and not a quietly reordered answer.
+        assert_ranked_and_distinct(predictions)
+        # Never padded: the Space caps its own output at five, and a configured
+        # Top-K above that returns fewer candidates rather than invented ones.
+        return predictions[:top_k]
+
+    # -- transport ----------------------------------------------------------
+
+    def _call(self, image: NormalizedRecognitionInput) -> Any:
+        """One request to the Space, under ONE overall deadline. No retry loop.
+
+        `Client.predict()` is deliberately not used: it takes no timeout and
+        blocks until the server answers, so a stalled queue holds the request
+        open indefinitely. The official asynchronous mechanism is used instead -
+        `submit()` returns a Job, the wait is bounded, and a Job that overruns is
+        cancelled rather than abandoned to a worker thread.
+
+        The deadline spans everything: client construction, upload, queue wait,
+        inference and result retrieval. Every failure mode - a sleeping Space, a
+        full queue, a timeout, a changed endpoint, a broken client - lands on the
+        same controlled `CLASSIFICATION_UNAVAILABLE`, because from the workflow's
+        point of view they are all "no classification happened".
+        """
+        deadline = time.monotonic() + self.timeout_seconds
+        temp_path = None
+        result = None
+        job = None
+        try:
+            from gradio_client import handle_file
+
+            # The endpoint takes a file. The bytes are the already-validated
+            # ones; they go to a private temp file for the length of the call and
+            # are removed in `finally`, never kept.
+            suffix = _SUFFIX_BY_MEDIA_TYPE.get(image.media_type, ".png")
+            descriptor, temp_path = tempfile.mkstemp(suffix=suffix)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(image.image_bytes)
+
+            client = self._ensure_client()
+            job = client.submit(
+                handle_file(temp_path),
+                self.rank,
+                api_name=self.api_name,
+            )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("remote classification deadline exhausted")
+            # Bounded, single wait. Not a polling loop.
+            result = job.result(timeout=remaining)
+        except RecognitionError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - every remote failure is one outcome
+            # Type only. A remote error body can echo the request or the Space's
+            # internals, and neither belongs in this agent's logs.
+            _logger.info(
+                "[Recognition] remote classification failed (%s); controlled "
+                "CLASSIFICATION_UNAVAILABLE.", type(exc).__name__,
+            )
+            raise RecognitionError(ErrorCode.CLASSIFICATION_UNAVAILABLE) from exc
+        finally:
+            # Never leave a job running behind a request that has already given
+            # up on it.
+            if job is not None and not job.done():
+                try:
+                    job.cancel()
+                except Exception:  # noqa: BLE001 - cleanup must not mask the outcome
+                    pass
+            _remove_quietly(temp_path)
+
+        # The endpoint also returns a sample image of the predicted taxon and an
+        # HTML link. Neither is scientific evidence: the sample image is an
+        # illustration, and the link is NOT the taxonomy source - Phase 4 calls
+        # the official GBIF API instead. The downloaded sample is deleted here so
+        # nothing survives the call.
+        if isinstance(result, (list, tuple)):
+            if len(result) > 1 and isinstance(result[1], str):
+                _remove_quietly(result[1])
+            return result[0] if result else None
+        return result
+
+    # -- mapping ------------------------------------------------------------
+
+    def _to_predictions(self, payload: Any) -> list[BioCLIPTaxonPrediction]:
+        """Turn the Space's reply into the existing typed predictions.
+
+        A reply that does not match the documented shape is a contract
+        violation, not an empty result: "the endpoint changed" and "this image
+        has no match" must never look the same to the confidence gate.
+        """
+        if not isinstance(payload, dict):
+            raise RecognitionError(ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION)
+
+        confidences = payload.get("confidences")
+        if not isinstance(confidences, list):
+            raise RecognitionError(ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION)
+
+        predictions: list[BioCLIPTaxonPrediction] = []
+        seen: set[str] = set()
+        for entry in confidences:
+            if not isinstance(entry, dict):
+                raise RecognitionError(ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION)
+
+            parsed = parse_space_label(entry.get("label"))
+            score = entry.get("confidence")
+            if parsed is None or isinstance(score, bool) or not isinstance(score, (int, float)):
+                # An unreadable row is skipped, not repaired.
+                continue
+            score = float(score)
+            if not math.isfinite(score):
+                continue
+
+            species_id, scientific_name, common_name = parsed
+            if species_id in seen:
+                # The Space ranks distinct taxa; a repeat would break the
+                # distinctness rule, so the first (highest) occurrence wins.
+                continue
+            seen.add(species_id)
+
+            predictions.append(
+                BioCLIPTaxonPrediction(
+                    species_id=species_id,
+                    scientific_name=scientific_name,
+                    common_name=common_name,
+                    rank="species",
+                    # Ranking score, NOT a calibrated probability - it is a
+                    # softmax over ~867k labels and is never presented as one.
+                    classification_score=score,
+                )
+            )
+
+        return predictions
+
+    def provenance(self) -> dict:
+        """What this provider will report about itself. Read by the finalizer."""
+        return {
+            "remote_space_id": self.space_id,
+            "remote_space_revision": REMOTE_SPACE_REVISION,
+            "model_version": self.version,
+        }
+
+
+def _remove_quietly(path: object) -> None:
+    """Delete a temporary file if it exists. A failure here is never fatal."""
+    if isinstance(path, str) and path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass

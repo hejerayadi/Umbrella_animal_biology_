@@ -51,8 +51,42 @@ MOCK_CLASSIFIER_VERSION = "sprint2-mock-bioclip2-classifier-v1"
 # a message listing the legal ones. Neither outcome ever hands back a mock -
 # a production deployment that silently degraded to fixture data would publish
 # invented biology as though it were measured.
-BIOCLIP_PROVIDER_MODES = ("mock", "real")
-BIOCLIP_IMPLEMENTED_MODES = ("mock",)
+BIOCLIP_PROVIDER_MODES = ("mock", "remote")
+BIOCLIP_IMPLEMENTED_MODES = ("mock", "remote")
+
+# --- remote BioCLIP-2 execution -------------------------------------------
+# Inference runs on the official public Hugging Face Space rather than locally.
+# The local design was cancelled: it required a 2.66 GB TreeOfLife text-embedding
+# artifact cached on disk, and that exception was refused. Nothing here downloads
+# a model weight, an embedding file or a cache.
+REMOTE_SPACE_ID = "imageomics/bioclip-2-demo"
+REMOTE_SPACE_BASE_URL = "https://imageomics-bioclip-2-demo.hf.space"
+
+# The endpoint discovered from the Space's own generated API description. It takes
+# an image plus a taxonomic rank and returns the open-domain prediction, a sample
+# image and an HTML link; only the prediction is scientific output here.
+REMOTE_SPACE_API_NAME = "/lambda"
+
+# Always Species. The agent names species; no dynamic rank selection exists.
+REMOTE_SPACE_RANK = "Species"
+
+# The Space itself caps its output at five predictions (`k = 5` in its app.py).
+# Recorded so a configured Top-K above it is reported honestly rather than padded.
+REMOTE_SPACE_MAX_PREDICTIONS = 5
+
+# The model the Space runs. Not a local artifact - a label for provenance.
+REMOTE_MODEL_VERSION = "imageomics/bioclip-2"
+
+# Space revision observed during the Phase 3 API checkpoint. The Space is owned by
+# a third party and may move; provenance reports this as the configured revision,
+# never as a guarantee.
+REMOTE_SPACE_REVISION = "4768b0d8b743582f6eaa058fde15d303ed073522"
+
+RECOGNITION_MODE_REMOTE_CLASSIFICATION = "remote_bioclip2_open_domain_species"
+
+# The Space runs on shared `cpu-basic` hardware and may queue, so this is more
+# generous than the LLM timeout. It is still a hard bound: no request waits forever.
+DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS = 90.0
 
 TAXONOMY_PROVIDER_MODES = ("mock", "real")
 TAXONOMY_IMPLEMENTED_MODES = ("mock",)
@@ -65,6 +99,7 @@ REASONING_LLM_PROVIDER_MODES = ("disabled", "fake", "azure")
 # the same commit that adds the real provider, so the two cannot disagree.
 RECOGNITION_MODE_BY_BIOCLIP_MODE = {
     "mock": RECOGNITION_MODE_MOCK_CLASSIFICATION,
+    "remote": RECOGNITION_MODE_REMOTE_CLASSIFICATION,
 }
 
 # The ceiling the whole agent is built around: one planning call, one grounded
@@ -262,6 +297,11 @@ class RecognitionConfig:
     # log line, a fixture or this source file.
     # Two calls at most, and the workflow spends them in fixed roles: one to
     # plan, one to explain. Never more, whatever the model asks for.
+    # --- remote classifier -------------------------------------------------
+    # Bounded wait for the remote Space, covering queue time plus inference.
+    # Mock mode never uses it.
+    remote_classifier_timeout_seconds: float = DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS
+
     reasoning_llm_enabled: bool = False
     reasoning_llm_max_calls_per_request: int = MAX_REASONING_LLM_CALLS_PER_REQUEST
     # The single effective timeout. See DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
@@ -304,7 +344,7 @@ class RecognitionConfig:
             "BIOCLIP_PROVIDER_MODE",
             supported=BIOCLIP_PROVIDER_MODES,
             implemented=BIOCLIP_IMPLEMENTED_MODES,
-            pending_note="real BioCLIP-2 inference arrives in Phase 3",
+            pending_note="no unimplemented BioCLIP mode remains",
         )
 
         taxonomy_mode = _provider_selection(
@@ -325,6 +365,10 @@ class RecognitionConfig:
             classification_fixture_path=_str("RECOGNITION_CLASSIFICATION_FIXTURE_PATH"),
             taxonomy_provider_mode=taxonomy_mode,
             text_analyzer_mode=_str("TEXT_ANALYZER_MODE", "rules"),
+            remote_classifier_timeout_seconds=_timeout(
+                "RECOGNITION_REMOTE_CLASSIFIER_TIMEOUT_SECONDS",
+                DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS,
+            ),
             top_k_species=_positive("RECOGNITION_TOP_K_SPECIES", _int("RECOGNITION_TOP_K_SPECIES", 5)),
             reasoning_llm_enabled=_flag("RECOGNITION_REASONING_LLM_ENABLED"),
             reasoning_llm_max_calls_per_request=_call_budget(

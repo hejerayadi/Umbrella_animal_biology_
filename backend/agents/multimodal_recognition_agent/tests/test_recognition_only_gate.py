@@ -162,10 +162,22 @@ def test_no_qdrant_module_file_survives():
 
 
 def test_no_qdrant_dependency_is_declared():
-    requirements = (PACKAGE / "requirements.txt").read_text(encoding="utf-8").lower()
+    """Checked on the DECLARED requirement lines, not on the explanatory comments.
+
+    Same rule the `.env.example` gate below already uses, and the same rule
+    `executable_text` applies to source: documentation may describe the
+    architecture - including naming what deliberately is NOT installed - while
+    the declarations themselves may not pull any of it in.
+    """
+    lines = [
+        line.strip().lower()
+        for line in (PACKAGE / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    declared = "\n".join(lines)
     for forbidden in ("qdrant", "torch", "open-clip", "open_clip", "bioclip",
                       "faiss", "chromadb", "pinecone", "weaviate", "milvus"):
-        assert forbidden not in requirements, forbidden
+        assert forbidden not in declared, forbidden
 
 
 def test_no_qdrant_or_vector_variable_is_declared_in_the_environment_example():
@@ -291,10 +303,19 @@ def test_a_non_mock_taxonomy_mode_is_refused_at_startup(monkeypatch, mode):
 
 
 def test_no_module_can_reach_a_biological_service():
-    """No HTTP client and no service host anywhere in the shipped runtime."""
+    """No taxonomy-service host anywhere in the shipped runtime.
+
+    Phase 3 narrowed this gate rather than weakened it. BioCLIP-2 now runs on its
+    authors' public Space, so the BioCLIP host is expected - but ONLY in the two
+    modules that own that boundary, and every taxonomy host stays forbidden
+    everywhere, because live GBIF/NCBI belong to Phase 4 and do not exist yet.
+    """
     forbidden_hosts = ("api.gbif.org", "gbif.org", "eutils.ncbi.nlm.nih.gov",
-                       "ncbi.nlm.nih.gov", "apiv3.iucnredlist.org", "iucnredlist.org",
-                       "huggingface.co", "imageomics")
+                       "ncbi.nlm.nih.gov", "apiv3.iucnredlist.org", "iucnredlist.org")
+    # The classification boundary, and nothing else, may name the BioCLIP Space.
+    bioclip_host_allowed = {"config.py", "bioclip.py"}
+    bioclip_hosts = ("huggingface.co", "imageomics")
+
     offenders = []
     for path in shipped_files(".py"):
         if path.name == "smoke_test_azure.py":  # a standalone script, never imported
@@ -303,6 +324,8 @@ def test_no_module_can_reach_a_biological_service():
             continue
         text = path.read_text(encoding="utf-8").lower()
         offenders += [f"{path.name}: {host}" for host in forbidden_hosts if host in text]
+        if path.name not in bioclip_host_allowed:
+            offenders += [f"{path.name}: {host}" for host in bioclip_hosts if host in text]
     assert not offenders, offenders
 
 

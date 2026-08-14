@@ -36,7 +36,7 @@ from langgraph.graph import END, START, StateGraph
 from ..adapters.bioclip import BioCLIP2Classifier
 from ..adapters.reasoning_llm import NullRecognitionLLM
 from ..adapters.taxonomy import MockTaxonomyProvider
-from ..config import MODEL_TARGET, RecognitionConfig
+from ..config import MODEL_TARGET, RECOGNITION_MODE_MOCK_CLASSIFICATION, RecognitionConfig
 from ..schema import AgentResult, AgentStatus
 from ..text_analysis import RuleBasedTextAnalyzer
 from . import nodes
@@ -165,19 +165,34 @@ def _provenance(state: RecognitionState) -> dict:
     real service or assume that "mocked" applied to only some of them.
     """
     config = state.config_snapshot
-    return {
+    # Mock and remote execution must never be described in the same words. The
+    # discriminator is the mode the provider that actually ran reports about
+    # itself, not a configured value, so provenance cannot outlive a swap.
+    is_mock = state.classification_mode == RECOGNITION_MODE_MOCK_CLASSIFICATION
+
+    provenance = {
         "model_target": MODEL_TARGET,
         "recognition_provider": state.classification_provider,
-        # "mock_classification" - never plain "classification".
+        # "mock_classification" or "remote_bioclip2_open_domain_species" -
+        # never plain "classification".
         "recognition_mode": state.classification_mode,
-        "mock_provider_version": state.classifier_version or config["mock_provider_version"],
+        # A real model version must never be filed under a key named "mock".
+        "mock_provider_version": (
+            (state.classifier_version or config["mock_provider_version"])
+            if is_mock else None
+        ),
         "top_k_requested": state.requested_top_k,
         "gbif_mode": "mock",
         "ncbi_mode": "mock",
         "taxonomy_degraded": state.taxonomy_degraded,
         "taxonomy_report": state.taxonomy_report,
+        # False in both modes. The remote score is a softmax over ~867k labels,
+        # which is a ranking value and not calibrated confidence.
         "score_is_probability": False,
-        "score_kind": "deterministic_sprint2_test_score",
+        "score_kind": (
+            "deterministic_sprint2_test_score" if is_mock
+            else "bioclip2_remote_zero_shot_ranking_score"
+        ),
         "text_analysis_mode": config["text_analysis_mode"],
         "workflow_engine": "langgraph",
         "reasoning_llm_enabled": config["reasoning_llm_enabled"],
@@ -188,6 +203,13 @@ def _provenance(state: RecognitionState) -> dict:
         "reasoning_llm_calls": state.reasoning_llm_calls,
         "reasoning_llm_used": state.reasoning_llm_used,
     }
+
+    # Additive, remote-only detail. Mock mode keeps exactly the keys it always
+    # had, so every existing mock-mode assertion still describes the whole dict.
+    if not is_mock:
+        provenance.update(state.classification_provenance or {})
+
+    return provenance
 
 
 class RecognitionWorkflow:

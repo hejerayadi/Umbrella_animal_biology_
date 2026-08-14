@@ -215,6 +215,10 @@ def make_classify_node(classifier: BioCLIP2Classifier, config: RecognitionConfig
             "classification_provider": getattr(classifier, "provider_name", None),
             "classification_mode": getattr(classifier, "recognition_mode", None),
             "classifier_version": getattr(classifier, "version", None),
+            # Whatever the provider chooses to disclose about itself.
+            "classification_provenance": (
+                classifier.provenance() if hasattr(classifier, "provenance") else None
+            ),
             "requested_top_k": top_k,
         }
 

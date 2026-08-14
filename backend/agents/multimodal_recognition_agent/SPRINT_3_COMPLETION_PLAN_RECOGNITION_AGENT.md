@@ -312,77 +312,112 @@ A redacted Azure smoke-test report containing deployment alias, status, call cou
 
 ---
 
-## Phase 3 — Integrate real BioCLIP-2 inference
+## Phase 3 — Integrate real BioCLIP-2 inference (remote Hugging Face Space)
+
+> **Amended.** The local-inference design is cancelled. The exception for a local
+> 2.66 GB TreeOfLife text-embedding artifact was **refused**, so BioCLIP-2 now runs
+> remotely on the official public Space. Phases 0-2 remain complete; Phases 5-8 are
+> structurally unchanged.
 
 ### Objective
 
-Replace fixture-based visual classification in production with real BioCLIP-2 inference through the existing `BioCLIP2Classifier` contract.
+Replace fixture-based visual classification in production with **real BioCLIP-2
+inference executed on the official public Hugging Face Space**, through the
+existing `BioCLIP2Classifier` contract.
+
+### Cancelled — marked N/A
+
+The following are **N/A** and must not be implemented, installed or downloaded:
+
+- local `pybioclip`; local `open_clip`; local PyTorch inference;
+- downloading BioCLIP-2 weights;
+- downloading or caching TreeOfLife text embeddings;
+- `local-dir:` snapshots; `HF_HUB_OFFLINE`;
+- the 4.46 GB download; the 6 GB RAM / 8 GB commit preflight;
+- the Windows `torch.compile` workaround;
+- any local model or embedding cache;
+- adding `torch`, `torchvision`, `open_clip_torch` or `pybioclip`.
+
+### Remote design
+
+- Space ID: `imageomics/bioclip-2-demo`
+- Base URL: `https://imageomics-bioclip-2-demo.hf.space`
+- Model target: `imageomics/bioclip-2`
+- Mode: remote open-domain species classification
+- Taxonomic rank sent to the Space: always `Species`
+- Expected maximum result: Top 5
+- No API key is expected for the public Space. If a mandatory credential is
+  discovered, stop and report it without requesting or printing its value.
+
+The external Space is the **only** source of visual species candidates. GPT-5 mini,
+GBIF, NCBI and user text must never create, replace, promote or rescore a candidate.
 
 ### Non-negotiable design constraints
 
 - Use the selected pre-trained BioCLIP-2 model; do not train or fine-tune.
-- Implement a real provider behind the existing `classify(image, top_k)` interface.
+- Implement the provider behind the existing `classify(image, top_k)` interface.
 - Do not edit the LangGraph node sequence to accommodate the provider.
 - BioCLIP-2 remains the **only source of species candidates**.
-- Text, GPT-5 mini, GBIF, and NCBI must not introduce candidates.
-- No Qdrant, vector database, persisted embedding, reference collection, similarity lookup, or nearest-neighbour logic.
-- In-memory operations required internally by the official BioCLIP-2 inference library are model execution, not a retrieval architecture; do not expose or persist them as a new application subsystem.
-- Model loading must be lazy or startup-controlled so ordinary module imports and offline tests do not download weights.
-- Model weights and caches must not be committed.
-
-### Dependency and credential checkpoint
-
-Before writing code, Claude must inspect the current Python version, operating environment, dependency constraints, and existing classifier protocol.
-
-Claude must then report:
-
-- the official/supported BioCLIP-2 package or model-loading mechanism compatible with the repository;
-- exact pinned dependencies to add;
-- expected CPU/GPU behaviour;
-- model identifier/version;
-- expected cache location;
-- whether access requires an account, token, licence acceptance, or no credential.
-
-If any token or access value is required, Claude must use the Section 6 credential block and stop. If no credential is required, Claude must explicitly write `No API key required` and continue only after reporting the dependency plan.
+- No Qdrant, vector database, persisted embedding, reference collection, similarity
+  lookup, or nearest-neighbour logic.
+- The remote client must be created lazily: ordinary imports and offline tests
+  perform no network request.
+- No model weight, embedding or cache artifact may be downloaded or committed.
 
 ### Claude actions
 
-1. Add `RealBioCLIP2Provider` implementing the current classifier protocol.
-2. Decode/use the already-validated image bytes without changing input validation.
-3. Perform real inference and return the existing typed prediction objects.
-4. Enforce finite scores, allowed score range, descending order, distinct taxa, and configured Top-K through the existing ranking contract.
-5. Keep scores labelled as ranking/classification values, not probabilities, unless a later evidence-based calibration explicitly proves otherwise.
-6. Add explicit provider construction for real mode and retain dependency injection for tests.
-7. Make model-load and inference failures produce the existing controlled classification-unavailable behaviour; never return HTTP 500.
-8. Update provenance so real execution no longer reports a mock provider or mock mode.
-9. Keep the fixture-backed classifier only as an offline test double; production mode must use the real provider.
-10. Add focused unit, contract, and opt-in integration tests.
+1. Add `RemoteBioCLIP2Provider` implementing the current classifier protocol.
+2. Use the already-validated image bytes without changing input validation.
+3. Create the remote client lazily; always request the `Species` rank.
+4. Map returned predictions into the existing typed prediction objects.
+5. Enforce finite scores, allowed score range, descending order, distinct taxa, and
+   the configured Top-K through the existing ranking contract.
+6. Keep scores labelled as ranking/classification values, not calibrated probabilities.
+7. Never fabricate candidates beyond what the Space returns (at most five).
+8. Ignore the endpoint's sample image and HTML link for scientific purposes; never
+   parse the displayed GBIF HTML link as the production taxonomy source, and do not
+   retain downloaded sample files beyond the call lifecycle.
+9. Apply an explicit bounded timeout; add no unbounded retry loop.
+10. Map timeout, queue failure, sleeping/unavailable Space, malformed payload,
+    API-contract change and client failure onto the existing controlled
+    `CLASSIFICATION_UNAVAILABLE` path; never return an unhandled HTTP 500.
+11. Production remote mode must never silently fall back to `MockBioCLIP2Provider`.
+12. Keep the fixture-backed classifier only as an injected offline test double.
+13. Update provenance so real execution no longer reports a mock provider or mode.
+14. Add only the smallest compatible pinned client dependency required for the call.
+15. Add focused offline tests plus one opt-in live smoke test.
 
 ### Required tests
 
 - Provider protocol conformance.
-- Real provider selected only in real mode.
-- Production mode cannot fall back silently to the fixture classifier.
-- Unknown/arbitrary valid photographs are actually processed rather than looked up by SHA-256.
-- Top-K, ordering, deduplication, finite-score, and invalid-output enforcement.
-- CPU-compatible smoke inference when the environment supports it.
-- Controlled model-load failure.
-- Controlled inference failure.
-- No weight download during import or offline tests.
-- No Qdrant/vector/retrieval/similarity dependency or source symbol introduced.
+- Remote provider selected only in remote production mode.
+- No network call during import or construction.
+- Image and `Species` rank mapped correctly.
+- Valid Top-5 response mapping, and requested Top-K slicing without fabrication.
+- Descending ordering, deduplication, non-finite/malformed scores, malformed labels.
+- Malformed payload, timeout, queue rejection, sleeping Space, API-contract change.
+- Controlled `CLASSIFICATION_UNAVAILABLE`; no silent mock fallback.
+- Arbitrary valid photographs are sent to the provider rather than looked up by SHA-256.
+- Mock mode unchanged; provenance follows the provider that ran.
+- No local ML dependency, weight, cache, embedding, Qdrant or similarity symbol introduced.
 - Full offline suite passes.
 
 ### Acceptance gate
 
-- At least one real, previously unregistered animal image produces BioCLIP-2 candidates through actual model inference.
+- At least one previously unregistered public animal image produces real BioCLIP-2
+  candidates through the remote Space.
 - Re-encoding a photograph does not depend on an exact SHA-256 fixture match.
-- `recognition_provider`, `recognition_mode`, and model version correctly report real execution.
-- Existing confidence and safety logic consumes the provider output without workflow changes.
+- `recognition_provider`, `recognition_mode` and model version correctly report
+  remote execution.
+- No local model/embedding artifact is downloaded.
+- Existing confidence and safety logic consumes the provider output without workflow
+  changes.
 - No scientific accuracy claim is made yet; that is evaluated in Phase 5.
 
 ### Deliverable
 
-Real BioCLIP-2 provider, pinned dependencies, placeholder-only environment documentation if required, tests, and a redacted inference evidence report.
+`RemoteBioCLIP2Provider`, one pinned client dependency, tests, and a redacted remote
+inference evidence report.
 
 ---
 
@@ -392,10 +427,26 @@ Real BioCLIP-2 provider, pinned dependencies, placeholder-only environment docum
 
 Replace fixture-backed taxonomy enrichment in production with live GBIF and NCBI lookups through the existing taxonomy interfaces.
 
+> **Amended.** GBIF validates BioCLIP's existing Top 5 directly through the official
+> GBIF API. NCBI Taxonomy is looked up only for the final selected candidate. The
+> complete structured taxonomy is returned inside the existing nested output
+> contract, and the seven top-level output keys are unchanged.
+
 ### Fixed behaviour
 
 - Taxonomy runs only after classification and confidence.
 - Taxonomy annotates existing candidates only.
+- **GBIF validates the existing BioCLIP Top 5 directly via the official GBIF API.**
+- **NCBI Taxonomy is queried only for the final selected candidate.**
+- **The complete structured taxonomy - kingdom, phylum, class, order, family, genus,
+  species - is returned inside the existing nested output contract.** The seven
+  top-level output keys do not change.
+- **GBIF and NCBI never create, reorder, promote or rescore a candidate.**
+- By default GPT-5 mini may present the complete validated taxonomy. If the user asks
+  for a single rank, it presents that existing validated field only. GPT-5 mini never
+  generates or modifies taxonomy.
+- **No new blurry-image detection or image-quality subsystem will be added.** Existing
+  validation, confidence and `request_better_image` behaviour remain unchanged.
 - Taxonomy must not add, delete, reorder, rescore, or promote a candidate.
 - A missing identifier stays `null`.
 - A service outage degrades taxonomy information but does not crash an otherwise valid recognition request.
