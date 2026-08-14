@@ -78,13 +78,12 @@ async def test_missing_gene_list_halts_pipeline_before_any_stage_runs(patch_llm_
 
 
 # ---------------------------------------------------------------------------
-# 3. Failure path: a hard failure partway through (Protein Data resolves
-#    nothing) must reach the terminal `failed` node with the failure reason
-#    visible on functional_evidence_status, and must not fabricate a status
-#    of COMPLETED or silently drop the failure.
+# 3a. Non-critical failure: Protein Data resolving nothing (Pathways still
+#     succeeds) must NOT abort the pipeline (§0.2) — it reaches aggregate
+#     with whatever data DID resolve, rather than the terminal `failed` node.
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_midpipeline_failure_reaches_failed_terminal_node(patch_llm_boundary, monkeypatch):
+async def test_partial_functional_evidence_failure_still_completes(patch_llm_boundary, monkeypatch):
     monkeypatch.setattr(pathways_module, "fetch_pathway", make_fake_kegg_client(CallLog()))
     async def empty_uniprot(gene_symbol, tax_id):
         return None
@@ -102,11 +101,33 @@ async def test_midpipeline_failure_reaches_failed_terminal_node(patch_llm_bounda
         },
     ))
 
-    # upstream data that DID resolve is preserved, not discarded, on failure
+    # upstream data that DID resolve is preserved, not discarded
     assert result["go_annotations"], "Gene Mapper output should still be present"
     assert result["pathway_data"], "Pathways output should still be present"
     assert result["protein_data"] == [], "Protein Data found nothing"
-    assert result["functional_evidence_status"] == AgentStatus.FAILED
+    assert result["functional_evidence_status"] == AgentStatus.COMPLETED
+    assert result["status"] == AgentStatus.COMPLETED
+    assert len(patch_llm_boundary["explain"]) == 1, "aggregate must still run"
+
+
+# ---------------------------------------------------------------------------
+# 3b. Hard failure: Gene Mapper resolving nothing is the ONLY thing that must
+#     reach the terminal `failed` node (§0.2), with the failure reason
+#     visible on gene_mapper_status, and must not fabricate a status of
+#     COMPLETED or silently drop the failure.
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_gene_mapper_failure_reaches_failed_terminal_node(patch_llm_boundary, monkeypatch):
+    app = td_graph_module.build_trait_discovery_graph()
+    result = await app.ainvoke(TraitDiscoveryState(
+        trait_name="fur growth",
+        species_name="mouse",
+        instruction="Which genes cause fur growth?",
+        context={"gene_list": ["ZZZTOP"]},  # not in any mock GO database
+    ))
+
+    assert result["go_annotations"] == []
+    assert result["gene_mapper_status"] == AgentStatus.FAILED
     assert result["status"] == AgentStatus.FAILED
     assert patch_llm_boundary["explain"] == [], "aggregate must not run on a failed pipeline"
 
