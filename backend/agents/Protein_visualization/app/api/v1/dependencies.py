@@ -32,7 +32,7 @@ from backend.agents.Protein_visualization.app.tools import (
 )
 
 if TYPE_CHECKING:  # SQLAlchemy is only imported when persistence is enabled
-    from backend.agents.Protein_visualization.app.persistence.repositories import AnalysisRepository
+    from app.persistence.repositories import AnalysisRepository
 
 
 @lru_cache
@@ -113,7 +113,7 @@ def get_analysis_repository() -> "AnalysisRepository | None":
     settings = get_settings()
     if not settings.persistence_enabled:
         return None
-    from backend.agents.Protein_visualization.app.persistence.db import Database
-    from backend.agents.Protein_visualization.app.persistence.repositories import AnalysisRepository
+    from app.persistence.db import Database
+    from app.persistence.repositories import AnalysisRepository
 
     return AnalysisRepository(Database(settings.database_url))
