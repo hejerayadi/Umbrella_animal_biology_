@@ -20,7 +20,8 @@ async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]
     genome_size = state.metadata["genome_size_bp"] if state.metadata else None
     gene_table = state.annotation["gene_table"] if state.annotation else None
     species = state.species or {}
-    logger.info("[generate_visualization] scope=%r", scope)
+    user_question = state.user_question
+    logger.info("[generate_visualization] scope=%r, user_question=%r", scope, user_question)
 
     try:
         result = await generate_visualization(
@@ -30,6 +31,7 @@ async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]
             assembly_id=state.assembly_id,
             common_name=species.get("common_name"),
             scientific_name=species.get("scientific_name"),
+            user_question=user_question,
         )
     except Exception as exc:
         return {
