@@ -47,10 +47,11 @@ async def get_gene_annotation_node(state: GenomeAgentState) -> dict[str, Any]:
         return {"_annotation_done": True}
 
     assembly_id = state.assembly_id
-    logger.info("[get_gene_annotation] fetching annotation for assembly=%r", assembly_id)
+    user_question = state.user_question
+    logger.info("[get_gene_annotation] fetching annotation for assembly=%r, question=%r", assembly_id, user_question)
 
     try:
-        result = await get_gene_annotation(assembly_id)
+        result = await get_gene_annotation(assembly_id, user_question=user_question)
     except Exception as exc:
         return {
             "errors": [
