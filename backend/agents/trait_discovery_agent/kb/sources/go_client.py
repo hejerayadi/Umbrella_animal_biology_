@@ -1,7 +1,10 @@
+import asyncio
+
 import httpx
 from langchain_core.tools import tool
 
 from schemas.outputs import GOAnnotation
+from kb.sources._http_retry import request_with_retry
 
 QUICKGO_SEARCH_URL = "https://www.ebi.ac.uk/QuickGO/services/annotation/search"
 QUICKGO_TERMS_URL = "https://www.ebi.ac.uk/QuickGO/services/ontology/go/terms/{go_id}"
@@ -23,8 +26,7 @@ async def _list_go_candidates_raw(gene_symbol: str, uniprot_accession: str) -> l
         "aspect": "biological_process",
     }
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(QUICKGO_SEARCH_URL, params=params)
-        resp.raise_for_status()
+        resp = await request_with_retry(client, "GET", QUICKGO_SEARCH_URL, params=params)
         raw = resp.json().get("results", [])
 
         # Deduplicate by goId while preserving QuickGO order
@@ -41,15 +43,30 @@ async def _list_go_candidates_raw(gene_symbol: str, uniprot_accession: str) -> l
 async def _resolve_go_term_name_raw(go_id: str) -> str | None:
     """Resolve a GO id to its human-readable name via the QuickGO ontology endpoint."""
     async with httpx.AsyncClient(timeout=10.0) as client:
-        term_resp = await client.get(
-            QUICKGO_TERMS_URL.format(go_id=go_id),
+        term_resp = await request_with_retry(
+            client, "GET", QUICKGO_TERMS_URL.format(go_id=go_id),
             headers={"Accept": "application/json"},
         )
-        term_resp.raise_for_status()
         term_results = term_resp.json().get("results", [])
         if not term_results or not term_results[0].get("name"):
             return None
         return term_results[0]["name"]
+
+
+async def _resolve_go_term_names_raw(go_ids: list[str]) -> dict[str, str | None]:
+    """Resolve MULTIPLE GO ids concurrently. A gene can have a dozen+ real
+    biological_process annotations, and resolving them one per LLM turn means
+    paying a full NIM round-trip (which can itself take up to ~60s+ on a
+    cold/queued request) per candidate. This collapses that into a single
+    tool call/turn regardless of candidate count."""
+    results = await asyncio.gather(
+        *[_resolve_go_term_name_raw(gid) for gid in go_ids],
+        return_exceptions=True,
+    )
+    return {
+        gid: (name if isinstance(name, str) else None)
+        for gid, name in zip(go_ids, results)
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -66,6 +83,14 @@ async def list_go_candidates(gene_symbol: str, uniprot_accession: str) -> list[d
 async def resolve_go_term_name(go_id: str) -> str | None:
     """Resolve a GO id to its human-readable name via the QuickGO ontology endpoint."""
     return await _resolve_go_term_name_raw(go_id)
+
+
+@tool
+async def resolve_go_term_names(go_ids: list[str]) -> dict[str, str | None]:
+    """Resolve MULTIPLE GO ids to their names in a single call. Prefer this
+    over calling resolve_go_term_name repeatedly — pass every candidate id
+    you need resolved at once, not one at a time."""
+    return await _resolve_go_term_names_raw(go_ids)
 
 
 # --------------------------------------------------------------------------- #

@@ -6,17 +6,18 @@ import logging
 from kb.sources.go_client import (
     list_go_candidates as _list_go_candidates_tool,
     resolve_go_term_name as _resolve_go_term_name_tool,
+    resolve_go_term_names as _resolve_go_term_names_tool,
 )
-from workflows.llm import invoke_tool_loop_with_fallback
+from workflows.llm import invoke_tool_loop_with_fallback, MAX_TOOL_TURNS
 
 logger = logging.getLogger(__name__)
 
-# §2/§5: the tools the model holds via bind_tools and calls itself for a
-# multi-candidate decision. These are the *same* QuickGO calls the node uses
-# for branching (§8) and the deterministic fallback (§9) — just wrapped with
-# @tool so the LLM can invoke them directly instead of being handed a
-# pre-resolved answer.
-_GENE_MAPPER_TOOLS = [_list_go_candidates_tool, _resolve_go_term_name_tool]
+
+_GENE_MAPPER_TOOLS = [
+    _list_go_candidates_tool,
+    _resolve_go_term_name_tool,
+    _resolve_go_term_names_tool,
+]
 
 _SYSTEM_PROMPT = (
     "You are the Gene Mapper agent. You're given a trait, a species, and a gene already "
@@ -24,9 +25,11 @@ _SYSTEM_PROMPT = (
     "biological-process annotation to it, choosing from the candidate GO ids listed "
     "below.\n\n"
     "You have tools available:\n"
-    "- resolve_go_term_name(go_id): look up the human-readable name for any candidate "
-    "GO id you don't already recognize. Use it before deciding, for every candidate "
-    "whose meaning isn't obvious from the id alone.\n"
+    "- resolve_go_term_names(go_ids): look up human-readable names for candidate GO ids "
+    "you don't already recognize. Pass ALL of the ones you need in ONE call — do not "
+    "call this (or resolve_go_term_name) once per id; that wastes a full turn per "
+    "candidate for no benefit.\n"
+    "- resolve_go_term_name(go_id): same lookup for a single id, if you only need one.\n"
     "- list_go_candidates(gene_symbol, uniprot_accession): re-fetch the candidate list "
     "from QuickGO if you need to double-check it. This is rarely necessary since the "
     "complete list is already given to you below.\n\n"
@@ -71,11 +74,19 @@ async def _llm_pick_candidate(
         "final JSON object."
     )
 
+    # With resolve_go_term_names (batch), the model needs ~2-3 turns
+    # regardless of candidate count: one batch resolve + one final answer,
+    # maybe one list_go_candidates double-check. No need to scale max_turns
+    # with the candidate count anymore — that scaling is what let a gene with
+    # a dozen+ real candidates (each needing its own LLM round-trip if the
+    # model insists on one-by-one calls) balloon to a multi-minute decision.
+    # MAX_TOOL_TURNS is enough headroom even for a model that doesn't batch.
     parsed, tool_call_log = await invoke_tool_loop_with_fallback(
         _SYSTEM_PROMPT,
         human_prompt,
         _GENE_MAPPER_TOOLS,
         temperature=0.1,
+        max_turns=MAX_TOOL_TURNS,
     )
     logger.debug("gene_mapper tool_call_log for %s: %s", gene_symbol, tool_call_log)
 

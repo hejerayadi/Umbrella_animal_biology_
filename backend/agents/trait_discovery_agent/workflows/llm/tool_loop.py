@@ -1,6 +1,7 @@
 
 import json
 import logging
+import time
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
@@ -12,6 +13,30 @@ logger = logging.getLogger(__name__)
 # decision, so a model that keeps calling tools instead of answering can't spin
 # forever. One real decision (§0.1 of the guide) should resolve in 1-2 turns.
 MAX_TOOL_TURNS = 6
+
+
+def _as_disguised_tool_call(parsed: dict | None, tools_by_name: dict) -> tuple[str, dict] | None:
+    """Detect a model that, when forced to answer with tool_choice="none", writes
+    the tool call it wanted to make as plain-text JSON instead of the required
+    final-answer schema — e.g. {"name": "resolve_go_term_name",
+    "parameters": {"go_id": "GO:..."}} instead of {"go_id": ..., "go_name": ...,
+    "reasoning": ...}.
+
+    Returns (tool_name, tool_args) if `parsed` looks like this shape and names a
+    tool the loop actually has bound, else None (including when `parsed` is a
+    legitimate final answer that merely happens to share a key name).
+    """
+    if not isinstance(parsed, dict):
+        return None
+    name = parsed.get("name")
+    if not isinstance(name, str) or name not in tools_by_name:
+        return None
+    args = parsed.get("parameters")
+    if args is None:
+        args = parsed.get("args")
+    if not isinstance(args, dict):
+        return None
+    return name, args
 
 
 async def invoke_tool_loop_with_fallback(
@@ -51,18 +76,68 @@ async def invoke_tool_loop_with_fallback(
             HumanMessage(content=human_prompt),
         ]
         tool_call_log: list[dict] = []
+        # A model forced onto its final (tool_choice="none") turn can still try
+        # to "call" a tool by writing the call out as plain-text JSON instead of
+        # the real answer schema (see _as_disguised_tool_call). We honor that
+        # once — running the tool it wanted and pushing the turn ceiling out by
+        # one so it gets a genuine forced-final turn afterward — rather than
+        # burning the whole decision on a formatting slip.
+        grace_used = False
+        turns_limit = max_turns
 
         try:
-            for turn in range(max_turns):
-                is_last_turn = turn == max_turns - 1
+            turn = 0
+            while turn < turns_limit:
+                is_last_turn = turn == turns_limit - 1
                 active_llm = llm_final_turn if is_last_turn else llm_with_tools
+                turn_start = time.monotonic()
+                logger.info(
+                    "Turn %d/%d: invoking %s (tool_choice=%s) — note: NIM can silently "
+                    "poll for up to ~60s on a 202 before this returns anything.",
+                    turn + 1, turns_limit, candidate_model,
+                    "none" if is_last_turn else "auto",
+                )
                 ai_msg = await _retry_on_capacity(lambda: active_llm.ainvoke(convo))
+                logger.info(
+                    "Turn %d/%d: got a response after %.1fs.",
+                    turn + 1, turns_limit, time.monotonic() - turn_start,
+                )
                 convo.append(ai_msg)
 
                 tool_calls = getattr(ai_msg, "tool_calls", None)
                 if not tool_calls:
                     parsed = _parse_json_object(ai_msg.content)
-                    if parsed is None:
+                    disguised = _as_disguised_tool_call(parsed, tools_by_name)
+
+                    if disguised is not None and not grace_used:
+                        # Forced not to call a tool, the model wrote the call out
+                        # as text instead of answering. Run it for real, tell the
+                        # model, and give it exactly one more turn to answer.
+                        grace_used = True
+                        turns_limit += 1
+                        name, args = disguised
+                        logger.warning(
+                            "Model wrote a disguised tool call instead of a final "
+                            "answer on its forced turn (%s(%s)); executing it and "
+                            "granting one extra turn to answer.",
+                            name, args,
+                        )
+                        tool = tools_by_name[name]
+                        result = await tool.ainvoke(args)
+                        tool_call_log.append({"name": name, "args": args, "result": result})
+                        convo.append(HumanMessage(
+                            content=(
+                                f"You wrote a call to {name}({args}) as plain text "
+                                f"instead of answering. Here is what it would have "
+                                f"returned: {json.dumps(result, default=str)}. You "
+                                "must now reply with ONLY the final JSON object — no "
+                                "more tool calls."
+                            )
+                        ))
+                        turn += 1
+                        continue
+
+                    if parsed is None or disguised is not None:
                         raise RuntimeError(
                             f"Model returned a non-JSON final answer: {ai_msg.content!r}"
                         )
@@ -92,9 +167,10 @@ async def invoke_tool_loop_with_fallback(
                             tool_call_id=call["id"],
                         )
                     )
+                turn += 1
 
             raise RuntimeError(
-                f"Tool-calling loop exceeded {max_turns} turns without a final answer"
+                f"Tool-calling loop exceeded {turns_limit} turns without a final answer"
             )
         except Exception as exc:
             last_error = exc

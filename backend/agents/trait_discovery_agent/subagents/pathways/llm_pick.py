@@ -6,24 +6,35 @@ import logging
 from kb.sources.kegg_client import (
     list_pathway_candidates as _list_pathway_candidates_tool,
     fetch_pathway_name as _fetch_pathway_name_tool,
+    fetch_pathway_names as _fetch_pathway_names_tool,
 )
-from workflows.llm import invoke_tool_loop_with_fallback
+from workflows.llm import invoke_tool_loop_with_fallback, MAX_TOOL_TURNS
 
 logger = logging.getLogger(__name__)
 
 # §2/§5: the tools the model holds via bind_tools and calls itself for a
 # multi-candidate decision — the same KEGG calls the node uses for branching
 # (§8) and the deterministic fallback (§9), wrapped with @tool.
-_PATHWAYS_TOOLS = [_list_pathway_candidates_tool, _fetch_pathway_name_tool]
+# fetch_pathway_names (plural) lets the model resolve every unresolved
+# candidate in one turn instead of one per turn — some genes link to a
+# dozen+ real KEGG pathways, and paying a full LLM round-trip per name
+# doesn't scale.
+_PATHWAYS_TOOLS = [
+    _list_pathway_candidates_tool,
+    _fetch_pathway_name_tool,
+    _fetch_pathway_names_tool,
+]
 
 _SYSTEM_PROMPT = (
     "You are the Pathways agent. Given a gene, its KEGG gene id, a list of candidate "
     "KEGG pathway ids linked to that gene, and the trait under investigation, select "
     "the single most trait-relevant pathway.\n\n"
     "You have tools available:\n"
-    "- fetch_pathway_name(pathway_id): look up the human-readable name for any "
-    "candidate pathway id you don't already recognize. Use it before deciding, for "
-    "every candidate whose meaning isn't obvious from the id alone.\n"
+    "- fetch_pathway_names(pathway_ids): look up human-readable names for candidate "
+    "pathway ids you don't already recognize. Pass ALL of the ones you need in ONE "
+    "call — do not call this (or fetch_pathway_name) once per id; that wastes a full "
+    "turn per candidate for no benefit.\n"
+    "- fetch_pathway_name(pathway_id): same lookup for a single id, if you only need one.\n"
     "- list_pathway_candidates(kegg_gene_id): re-fetch the candidate list from KEGG if "
     "you need to double-check it. This is rarely necessary since the complete list is "
     "already given to you below.\n\n"
@@ -68,11 +79,17 @@ async def _llm_pick_pathway(
         "final JSON object."
     )
 
+    # Same reasoning as the gene_mapper equivalent: with fetch_pathway_names
+    # (batch), ~2-3 turns is enough regardless of candidate count, so no need
+    # to scale max_turns with the candidate count — that scaling is what let
+    # a gene with a dozen+ real KEGG links balloon into a multi-minute
+    # decision when the model resolved names one at a time.
     parsed, tool_call_log = await invoke_tool_loop_with_fallback(
         _SYSTEM_PROMPT,
         human_prompt,
         _PATHWAYS_TOOLS,
         temperature=0.1,
+        max_turns=MAX_TOOL_TURNS,
     )
     logger.debug("pathways tool_call_log for %s: %s", gene_symbol, tool_call_log)
 
