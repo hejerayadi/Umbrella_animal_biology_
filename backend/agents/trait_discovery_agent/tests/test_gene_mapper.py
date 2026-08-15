@@ -76,6 +76,41 @@ async def test_multi_candidate_uses_llm(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_three_candidates_one_trait_relevant_uses_llm_pick(monkeypatch):
+    """Gene with 3 GO candidates, only one of which is trait-relevant: the
+    LLM's pick must be the one used in the output, and the gene must not
+    land in unmatched_genes."""
+    async def _fake_list_three(gene, acc):
+        return [
+            {"go_id": "GO:0001", "go_name": "unrelated process one"},
+            {"go_id": "GO:0042633", "go_name": "hair cycle"},
+            {"go_id": "GO:0002", "go_name": "unrelated process two"},
+        ]
+
+    monkeypatch.setattr(gm_module, "list_go_candidates", _fake_list_three)
+    monkeypatch.setattr(gm_module, "resolve_go_term_name", _fake_resolve)
+
+    async def fake_llm_pick(trait, gene, candidates, *args, **kwargs):
+        assert len(candidates) == 3
+        return "GO:0042633", "hair cycle", "most trait-relevant of the three"
+
+    monkeypatch.setattr(gm_module, "_llm_pick_candidate", fake_llm_pick)
+
+    result = await gene_mapper_agent(GeneMapperInput(
+        trait_name="hair growth",
+        gene_list=["HR"],
+        species_name="human",
+        instruction="test",
+        context={"uniprot_accessions": {"HR": "P56524"}},
+    ))
+
+    assert result.status == AgentStatus.COMPLETED
+    assert result.go_annotations[0].go_id == "GO:0042633"
+    assert result.go_annotations[0].go_name == "hair cycle"
+    assert result.unmatched_genes == []
+
+
+@pytest.mark.asyncio
 async def test_llm_unreachable_falls_back_to_first_candidate(monkeypatch):
     monkeypatch.setattr(gm_module, "list_go_candidates", _fake_list_multi)
     monkeypatch.setattr(gm_module, "fetch_go_annotation", _fake_fetch)
@@ -108,6 +143,33 @@ async def test_no_uniprot_goes_unmatched():
     ))
     assert result.status == AgentStatus.FAILED
     assert result.unmatched_genes == ["UNKNOWN"]
+    assert result.go_annotations == []
+
+
+@pytest.mark.asyncio
+async def test_no_uniprot_accession_never_calls_llm(monkeypatch):
+    """No uniprot_accession in context means there's nothing to disambiguate,
+    so the gene must be marked unmatched WITHOUT ever reaching the LLM pick
+    (list_go_candidates should not even be called)."""
+    async def _fail_if_called(*args, **kwargs):
+        raise AssertionError("list_go_candidates should not be called")
+
+    async def _fail_llm_if_called(*args, **kwargs):
+        raise AssertionError("_llm_pick_candidate should not be called")
+
+    monkeypatch.setattr(gm_module, "list_go_candidates", _fail_if_called)
+    monkeypatch.setattr(gm_module, "_llm_pick_candidate", _fail_llm_if_called)
+
+    result = await gene_mapper_agent(GeneMapperInput(
+        trait_name="test",
+        gene_list=["NO_ACCESSION_GENE"],
+        species_name="human",
+        instruction="test",
+        context={"uniprot_accessions": {}},
+    ))
+
+    assert result.status == AgentStatus.FAILED
+    assert result.unmatched_genes == ["NO_ACCESSION_GENE"]
     assert result.go_annotations == []
 
 

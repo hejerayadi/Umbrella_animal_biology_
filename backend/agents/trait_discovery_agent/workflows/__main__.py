@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import logging
 import os
-import sys
 
 from workflows.reporting import WorkflowReportFormatter
 from workflows.scenario_runner import SCENARIOS, run_scenario
@@ -10,14 +9,6 @@ from workflows.trait_discovery_graph import build_trait_discovery_graph
 from workflows.state import TraitDiscoveryState
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
-
-# The model writes real prose, which means real punctuation - non-breaking
-# hyphens, curly quotes, en dashes. A Windows console defaults to cp1252 and
-# raises UnicodeEncodeError on all of it, killing the run *after* the whole
-# workflow already succeeded. Print UTF-8 instead, and degrade to a placeholder
-# rather than crashing if the terminal still cannot render a character.
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 async def main(verbose: bool = False) -> None:

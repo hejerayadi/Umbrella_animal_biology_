@@ -4,6 +4,7 @@ import httpx
 from langchain_core.tools import tool
 
 from schemas.outputs import PathwayEntry
+from kb.sources._http_retry import request_with_retry
 
 KEGG_LINK_URL = "https://rest.kegg.jp/link/pathway/{kegg_gene_id}"
 KEGG_GET_URL = "https://rest.kegg.jp/get/{pathway_id}"
@@ -17,42 +18,44 @@ KEGG_GET_URL = "https://rest.kegg.jp/get/{pathway_id}"
 async def _list_pathway_candidates_raw(kegg_gene_id: str) -> list[dict]:
     """All pathways KEGG's link endpoint returns for this gene, not just the first."""
     async with httpx.AsyncClient(timeout=10.0) as client:
-        for attempt in range(2):
-            try:
-                resp = await client.get(KEGG_LINK_URL.format(kegg_gene_id=kegg_gene_id))
-                resp.raise_for_status()
-                candidates = []
-                for line in resp.text.strip().splitlines():
-                    if "\t" in line:
-                        _gene_part, path_part = line.split("\t", 1)
-                        pathway_id = path_part.replace("path:", "")
-                        candidates.append({"pathway_id": pathway_id})
-                return candidates
-            except httpx.TimeoutException:
-                if attempt == 0:
-                    await asyncio.sleep(1)
-                    continue
-                raise
-    return []
+        resp = await request_with_retry(
+            client, "GET", KEGG_LINK_URL.format(kegg_gene_id=kegg_gene_id)
+        )
+        candidates = []
+        for line in resp.text.strip().splitlines():
+            if "\t" in line:
+                _gene_part, path_part = line.split("\t", 1)
+                pathway_id = path_part.replace("path:", "")
+                candidates.append({"pathway_id": pathway_id})
+        return candidates
 
 
 async def _fetch_pathway_name_raw(pathway_id: str) -> str:
     """Resolve a KEGG pathway ID to its human-readable NAME field."""
     async with httpx.AsyncClient(timeout=10.0) as client:
-        for attempt in range(2):
-            try:
-                resp = await client.get(KEGG_GET_URL.format(pathway_id=pathway_id))
-                resp.raise_for_status()
-                for text_line in resp.text.splitlines():
-                    if text_line.startswith("NAME"):
-                        return text_line.replace("NAME", "").strip()
-                return ""
-            except httpx.TimeoutException:
-                if attempt == 0:
-                    await asyncio.sleep(1)
-                    continue
-                raise
-    return ""
+        resp = await request_with_retry(
+            client, "GET", KEGG_GET_URL.format(pathway_id=pathway_id)
+        )
+        for text_line in resp.text.splitlines():
+            if text_line.startswith("NAME"):
+                return text_line.replace("NAME", "").strip()
+        return ""
+
+
+async def _fetch_pathway_names_raw(pathway_ids: list[str]) -> dict[str, str]:
+    """Resolve MULTIPLE KEGG pathway IDs concurrently. A gene can legitimately
+    have a dozen+ real KEGG links (broadly-connected genes especially), and
+    resolving them one per LLM turn means paying a full NIM round-trip (which
+    can itself take up to ~60s+ on a cold/queued request) per candidate. This
+    collapses that into a single tool call/turn regardless of candidate count."""
+    results = await asyncio.gather(
+        *[_fetch_pathway_name_raw(pid) for pid in pathway_ids],
+        return_exceptions=True,
+    )
+    return {
+        pid: (name if isinstance(name, str) else "")
+        for pid, name in zip(pathway_ids, results)
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -69,6 +72,14 @@ async def list_pathway_candidates(kegg_gene_id: str) -> list[dict]:
 async def fetch_pathway_name(pathway_id: str) -> str:
     """Resolve a KEGG pathway ID to its human-readable NAME field."""
     return await _fetch_pathway_name_raw(pathway_id)
+
+
+@tool
+async def fetch_pathway_names(pathway_ids: list[str]) -> dict[str, str]:
+    """Resolve MULTIPLE KEGG pathway IDs to their names in a single call.
+    Prefer this over calling fetch_pathway_name repeatedly — pass every
+    candidate id you need resolved at once, not one at a time."""
+    return await _fetch_pathway_names_raw(pathway_ids)
 
 
 # --------------------------------------------------------------------------- #

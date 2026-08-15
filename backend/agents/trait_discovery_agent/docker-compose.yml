@@ -93,3 +93,39 @@ services:
     volumes:
       - .:/app
     command: python -m scripts.check_gene_mapper
+
+  test-gene-mapper:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_gene_mapper.py -v -s
+
+  test-tool-loop:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_tool_loop.py -v -s
+
+  # -------------------------------------------------------------------------
+  # Live --scenario runners (real QuickGO/KEGG/Qdrant, LLM patched where
+  # needed for determinism — see the module docstring in each script)
+  # -------------------------------------------------------------------------
+  gene-mapper-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.gene_mapper_scenarios --scenario all --verbose
+
+  pathways-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.pathways_scenarios --scenario all --verbose
