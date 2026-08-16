@@ -23,9 +23,282 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
+
 from ._ncbi_client import ncbi_get
+from ..schemas.outputs import SpeciesResolverOutput
+from ..workflows.llm import get_llm_client, invoke_with_retry, summarize_llm_error
 
 logger = logging.getLogger(__name__)
+
+
+async def _search_taxonomy_core(query: str) -> list[dict]:
+    """Search NCBI taxonomy for candidates matching a query string."""
+    term = query.strip()
+    if not term:
+        return []
+
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esearch.fcgi",
+            "db": "taxonomy",
+            "term": term,
+            "retmode": "json",
+            "retmax": 10,
+        },
+    )
+    data = resp.json()
+    uid_list = data.get("esearchresult", {}).get("idlist", [])
+
+    if not uid_list:
+        return []
+
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esummary.fcgi",
+            "db": "taxonomy",
+            "id": ",".join(uid_list),
+            "retmode": "json",
+        },
+    )
+    data = resp.json()
+    results = data.get("result", {})
+
+    candidates = []
+    for uid in uid_list:
+        info = results.get(uid, {})
+        candidates.append(
+            {
+                "tax_id": info.get("TaxId", uid),
+                "scientific_name": info.get("ScientificName", ""),
+                "common_name": info.get("CommonName", ""),
+                "rank": info.get("Rank", ""),
+            }
+        )
+    return candidates
+
+
+async def _search_assembly_by_taxid_core(tax_id: str) -> list[dict]:
+    """Search NCBI assembly for a given taxonomy ID.
+
+    Tries the latest RefSeq filter first (retmax=1). If that returns
+    zero results, falls back to an unfiltered search (retmax=20) with
+    client-side GCF_-over-GCA_ preference.
+    """
+    filtered_term = f"txid{tax_id}[Organism:exp] AND latest_refseq[filter]"
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esearch.fcgi",
+            "db": "assembly",
+            "term": filtered_term,
+            "retmode": "json",
+            "retmax": 1,
+        },
+    )
+    data = resp.json()
+    uid_list = data.get("esearchresult", {}).get("idlist", [])
+
+    if uid_list:
+        uid = uid_list[0]
+        resp = await asyncio.to_thread(
+            ncbi_get,
+            {
+                "path": "esummary.fcgi",
+                "db": "assembly",
+                "id": uid,
+                "retmode": "json",
+            },
+        )
+        data = resp.json()
+        info = data.get("result", {}).get(uid, {})
+        assembly_id = info.get("assemblyaccession", "")
+        if assembly_id.startswith("GCF_"):
+            return [
+                {
+                    "assembly_id": assembly_id,
+                    "scientific_name": info.get("organism", ""),
+                    "common_name": info.get("organism", ""),
+                    "assembly_level": info.get("assemblylevel", ""),
+                }
+            ]
+
+    unfiltered_term = f"txid{tax_id}[Organism:exp]"
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esearch.fcgi",
+            "db": "assembly",
+            "term": unfiltered_term,
+            "retmode": "json",
+            "retmax": 20,
+        },
+    )
+    data = resp.json()
+    uid_list = data.get("esearchresult", {}).get("idlist", [])
+
+    if not uid_list:
+        return []
+
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "esummary.fcgi",
+            "db": "assembly",
+            "id": ",".join(uid_list),
+            "retmode": "json",
+        },
+    )
+    data = resp.json()
+    results = data.get("result", {})
+
+    assemblies = []
+    for uid in uid_list:
+        info = results.get(uid, {})
+        assemblies.append(
+            {
+                "assembly_id": info.get("assemblyaccession", ""),
+                "scientific_name": info.get("organism", ""),
+                "common_name": info.get("organism", ""),
+                "assembly_level": info.get("assemblylevel", ""),
+            }
+        )
+
+    assemblies.sort(key=lambda x: (not x["assembly_id"].startswith("GCF_"), x["assembly_id"]))
+    return assemblies
+
+
+_SPECIES_RESOLVER_SYSTEM_PROMPT = (
+    "You are the Species Resolver for the Genome Agent. Your job is to identify "
+    "the correct genome assembly for a given species name using the available tools.\n\n"
+    "Rules:\n"
+    "1. ALWAYS call search_taxonomy first with the exact species name provided.\n"
+    "2. If search_taxonomy returns multiple candidates, disambiguate by comparing "
+    "common names and scientific names. Lower confidence if ambiguity remains.\n"
+    "3. If a search returns empty results, try ONE reformulated query (e.g., add or "
+    "remove qualifiers like 'asian', 'african', etc.).\n"
+    "4. After identifying a candidate tax_id, call search_assembly_by_taxid to find assemblies.\n"
+    "5. Before submitting SpeciesResolverOutput, verify that the scientific_name in "
+    "your answer matches the organism name in the assembly results.\n"
+    "6. If no assembly is found, submit assembly_id=null, confidence=0.0, and an "
+    "honest reasoning note.\n"
+    "7. NEVER fabricate an assembly_id. Only submit an assembly_id that literally "
+    "appears in a search_assembly_by_taxid result.\n"
+)
+
+
+@tool
+async def search_taxonomy(query: str) -> list[dict]:
+    """Search NCBI taxonomy for candidates matching a query string."""
+    return await _search_taxonomy_core(query)
+
+
+@tool
+async def search_assembly_by_taxid(tax_id: str) -> list[dict]:
+    """Search NCBI assembly for a given taxonomy ID."""
+    return await _search_assembly_by_taxid_core(tax_id)
+
+
+async def resolve_species_llm(species_name: str) -> dict | None:
+    """Use the LLM with tool calling to resolve a species to an assembly.
+
+    Returns a dict matching SpeciesResolverOutput on success, or None if the
+    LLM path fails or exhausts its retry budget.
+    """
+    try:
+        client = get_llm_client()
+    except Exception as exc:
+        logger.warning("LLM client unavailable: %s", exc)
+        return None
+
+    bound = client.bind_tools(
+        [search_taxonomy, search_assembly_by_taxid, SpeciesResolverOutput],
+        tool_choice="auto",
+    )
+
+    messages: list = [
+        SystemMessage(content=_SPECIES_RESOLVER_SYSTEM_PROMPT),
+        HumanMessage(content=f"Resolve the species: {species_name}"),
+    ]
+
+    seen_tool_results: list[dict] = []
+
+    for step in range(4):
+        try:
+            response = await asyncio.to_thread(
+                invoke_with_retry,
+                lambda: bound.invoke(messages),
+                max_retries=1,
+            )
+        except Exception as exc:
+            logger.info("LLM species resolver failed: %s", summarize_llm_error(exc))
+            return None
+
+        tool_calls = response.tool_calls or []
+        if not tool_calls:
+            continue
+
+        messages.append(AIMessage(content="", tool_calls=tool_calls))
+
+        for call in tool_calls:
+            call_id = call["id"]
+            call_name = call["name"]
+            call_args = call["args"]
+
+            if call_name == "search_taxonomy":
+                try:
+                    result = await search_taxonomy.ainvoke(call_args)
+                except Exception as exc:
+                    result = f"Error: {exc}"
+                messages.append(ToolMessage(content=str(result), tool_call_id=call_id))
+                if isinstance(result, list):
+                    seen_tool_results.extend(result)
+
+            elif call_name == "search_assembly_by_taxid":
+                try:
+                    result = await search_assembly_by_taxid.ainvoke(call_args)
+                except Exception as exc:
+                    result = f"Error: {exc}"
+                messages.append(ToolMessage(content=str(result), tool_call_id=call_id))
+                if isinstance(result, list):
+                    seen_tool_results.extend(result)
+
+            elif call_name == "SpeciesResolverOutput":
+                try:
+                    parsed = SpeciesResolverOutput(**call_args)
+                except Exception as exc:
+                    messages.append(
+                        ToolMessage(
+                            content=f"Error parsing output: {exc}",
+                            tool_call_id=call_id,
+                        )
+                    )
+                    continue
+
+                if parsed.assembly_id is not None:
+                    grounded = any(
+                        isinstance(item, dict) and item.get("assembly_id") == parsed.assembly_id
+                        for item in seen_tool_results
+                    )
+                    if not grounded:
+                        messages.append(
+                            ToolMessage(
+                                content=(
+                                    f"Error: assembly_id '{parsed.assembly_id}' not found in any "
+                                    "tool result. Please search for assemblies first and use an "
+                                    "assembly_id from the results."
+                                ),
+                                tool_call_id=call_id,
+                            )
+                        )
+                        continue
+
+                return parsed.model_dump()
+
+    return None
 
 
 async def _try_refseq_filter(species_term: str) -> tuple[str | None, str | None]:
@@ -127,17 +400,37 @@ async def _try_unfiltered_fallback(species_term: str) -> tuple[str | None, str |
 
 async def resolve_species(species_name: str) -> dict:
     """
-    Real version of Species Resolver.
+    Deterministic fallback: search taxonomy first, then assemblies.
     Input: species_name (str)
     Output: dict matching SpeciesResolverOutput
-            (assembly_id, scientific_name, common_name, confidence)
+            (assembly_id, scientific_name, common_name, confidence, reasoning)
     """
     key = species_name.strip()
 
-    # Strategy 1: Try latest RefSeq filter first
-    uid, assembly_id = await _try_refseq_filter(key)
+    candidates = await _search_taxonomy_core(key)
+    if candidates:
+        tax_id = candidates[0].get("tax_id", "")
+        scientific_name = candidates[0].get("scientific_name", "")
+        common_name = candidates[0].get("common_name", "")
+        assemblies = await _search_assembly_by_taxid_core(tax_id)
+        if assemblies:
+            assemblies.sort(key=lambda x: (not x["assembly_id"].startswith("GCF_"), x["assembly_id"]))
+            chosen = assemblies[0]
+            return {
+                "assembly_id": chosen["assembly_id"],
+                "scientific_name": scientific_name or chosen.get("scientific_name", ""),
+                "common_name": common_name or chosen.get("common_name", ""),
+                "confidence": 0.5,
+                "reasoning": "Deterministic NCBI fallback used (no LLM)",
+            }
+        return {
+            "assembly_id": None,
+            "scientific_name": scientific_name,
+            "common_name": common_name,
+            "confidence": 0.0,
+        }
 
-    # Strategy 2: Fall back to unfiltered search with GCF_ preference
+    uid, assembly_id = await _try_refseq_filter(key)
     if uid is None:
         uid, assembly_id = await _try_unfiltered_fallback(key)
 
@@ -149,7 +442,6 @@ async def resolve_species(species_name: str) -> dict:
             "confidence": 0.0,
         }
 
-    # Get species details using the numeric UID
     resp = await asyncio.to_thread(
         ncbi_get,
         {
@@ -162,9 +454,6 @@ async def resolve_species(species_name: str) -> dict:
     data = resp.json()
     assembly_info = data.get("result", {}).get(uid, {})
 
-    # NCBI esummary only gives us the organism name once (no separate
-    # common/scientific split), so both fields carry the same value —
-    # matches the behavior species_resolver_node already expects.
     scientific_name = assembly_info.get("organism")
     common_name = assembly_info.get("organism")
 
@@ -172,7 +461,8 @@ async def resolve_species(species_name: str) -> dict:
         "assembly_id": assembly_id,
         "scientific_name": scientific_name,
         "common_name": common_name,
-        "confidence": 1.0 if assembly_id else 0.0,
+        "confidence": 0.5,
+        "reasoning": "Deterministic NCBI fallback used (no LLM)",
     }
 
 

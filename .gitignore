@@ -1,40 +1,41 @@
-.venv/
-.pytest_cache/
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
+*.pyo
 
-# Virtual environments and package caches
-.venv/
+# Virtual environments
 venv/
+.venv/
 env/
 ENV/
-.uv-cache/
 
-# Node / frontend outputs
-node_modules/
-dist/
-dist-ssr/
-.output/
-.tanstack/
-.nitro/
-.vinxi/
-
-# Build and runtime artifacts
-build/
-*.log
-*.tmp
-*.sqlite
-*.sqlite3
-*.db
-
-# Biodiversity Agent: generated folium maps (regenerated per request)
-backend/agents/biodiversity_agent/outputs/
-
+# Environment variables / secrets
 .env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build files
+build/
+dist/
+*.egg-info/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local Kilo folder
+kilo/
