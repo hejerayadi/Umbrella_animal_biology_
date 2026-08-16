@@ -1,23 +1,26 @@
 from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
+
 from .common import AgentStatus, AgentResult
 
 
-@dataclass
-class SpeciesResolverOutput:
+class SpeciesResolverOutput(BaseModel):
     assembly_id: str | None
     scientific_name: str | None
     common_name: str | None
     confidence: float
+    reasoning: str = ""
 
 
-@dataclass
-class GenomeMetadataOutput:
+class GenomeMetadataOutput(BaseModel):
     genome_size_bp: int | None
     chromosome_count: int | None
     karyotype: str | None
     assembly_level: str | None
+    assembly_id_used: str
+    reasoning: str = ""
 
 
 @dataclass

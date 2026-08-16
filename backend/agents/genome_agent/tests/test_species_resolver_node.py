@@ -16,6 +16,28 @@ from ..workflows.state import GenomeAgentState
 
 
 @pytest.mark.asyncio
+async def test_species_resolver_node_zero_candidates_is_fatal():
+    """When resolve_species_llm returns None (zero candidates after
+    reformulation), the node must surface this as a fatal error with
+    assembly_id=None, not silently continue."""
+    state = GenomeAgentState(user_question="genome of the xyzzy123", species_name="definitely not a real species xyzzy123")
+
+    with patch(
+        "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
+        return_value=None,
+    ):
+        with patch(
+            "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+            return_value={"assembly_id": None, "scientific_name": None, "common_name": None, "confidence": 0.0},
+        ):
+            result = await species_resolver_node(state)
+
+    assert result["assembly_id"] is None
+    assert len(result["errors"]) == 1
+    assert "could not be resolved to a genome assembly" in result["errors"][0]
+
+
+@pytest.mark.asyncio
 async def test_species_resolver_node_exception_handling():
     """When resolve_species raises, the node must not crash and must return
     a well-shaped error dict with assembly_id=None and an error message
@@ -23,10 +45,14 @@ async def test_species_resolver_node_exception_handling():
     state = GenomeAgentState(user_question="genome of the tiger", species_name="tiger")
 
     with patch(
-        "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
-        side_effect=Exception("Simulated NCBI failure"),
+        "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
+        return_value=None,
     ):
-        result = await species_resolver_node(state)
+        with patch(
+            "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+            side_effect=Exception("Simulated NCBI failure"),
+        ):
+            result = await species_resolver_node(state)
 
     assert result["assembly_id"] is None
     assert len(result["errors"]) == 1
