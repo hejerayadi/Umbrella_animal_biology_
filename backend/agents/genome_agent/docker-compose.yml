@@ -70,3 +70,37 @@ services:
     working_dir: /app
     entrypoint: ["python", "-m", "genome_agent.scripts.run_full_integration_demo"]
     command: []
+
+  # Gene Annotation agent — executes each of the design spec's §3.10
+  # "Test independently" cases as a plain script (not pytest), so the
+  # execution trace is visible: general-question ranking (real-description
+  # genes ahead of uncharacterized ones), trait-specific keyword derivation,
+  # LLM-unavailable fallback, and empty-description grounding. No network
+  # access or API key needed — ncbi_get and the LLM client are mocked at
+  # the boundary. Exits non-zero if any case fails, so it also works as a
+  # CI smoke test.
+  gene-annotation-independent-tests:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    command: python -m genome_agent.scripts.run_gene_annotation_independent_tests
+
+  # Visualization agent — executes each of the design spec's §4.10
+  # "Test independently" cases as a plain script (not pytest): LLM-proposed
+  # reference species actually used for size_comparison, partial reference
+  # failure still renders, chromosome_map highlight driven by the question,
+  # protein_structure never touches the LLM, and both rendering scopes fall
+  # back deterministically when the LLM is unavailable. No network access
+  # or API key needed — everything at the NCBI/LLM boundary is mocked.
+  # Exits non-zero if any case fails.
+  visualization-independent-tests:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    command: python -m genome_agent.scripts.run_visualization_independent_tests
