@@ -12,6 +12,7 @@ Tests the full flow:
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -145,9 +146,9 @@ class TestResolveReferenceSpecies:
         }
 
         with patch(
-            "backend.agents.genome_agent.subagents.visualization.resolve_species"
+            "genome_agent.subagents.visualization.resolve_species"
         ) as mock_rs, patch(
-            "backend.agents.genome_agent.subagents.visualization.get_genome_metadata"
+            "genome_agent.subagents.visualization.get_genome_metadata"
         ) as mock_gm:
             mock_rs.return_value = mock_species_result
             mock_gm.return_value = mock_metadata_result
@@ -176,9 +177,9 @@ class TestResolveReferenceSpecies:
         }
 
         with patch(
-            "backend.agents.genome_agent.subagents.visualization.resolve_species"
+            "genome_agent.subagents.visualization.resolve_species"
         ) as mock_rs, patch(
-            "backend.agents.genome_agent.subagents.visualization.get_genome_metadata"
+            "genome_agent.subagents.visualization.get_genome_metadata"
         ) as mock_gm:
             # First call returns valid result, second raises Exception
             mock_rs.side_effect = [mock_species_result, Exception("Not found")]
@@ -219,6 +220,56 @@ class TestGenerateVisualization:
         assert result["chart_data"] is not None
         assert result["format"] == "svg"
         assert b"ABC" in result["chart_data"]
+
+    @pytest.mark.asyncio
+    async def test_generate_visualization_chromosome_map_highlight_from_question(self):
+        """chromosome_map with a gene named in the question → highlight_gene
+        is set from the question (§4.10). Mocks the LLM resolver directly
+        since generate_visualization() has no LLM-availability parameter."""
+        gene_table = [
+            {"gene_name": "ABC", "location": "chr1", "function": "Function A"},
+            {"gene_name": "Trp53", "location": "chr17", "function": "tumor suppressor"},
+        ]
+        with patch(
+            "genome_agent.subagents.visualization.resolve_chromosome_highlight"
+        ) as mock_resolve:
+            mock_resolve.return_value = SimpleNamespace(
+                highlight_gene="Trp53", reasoning="Question asks about Trp53."
+            )
+            result = await generate_visualization(
+                scope="chromosome_map",
+                gene_table=gene_table,
+                user_question="Show me the chromosome map with Trp53 highlighted",
+            )
+
+        assert result["status"] == "COMPLETED"
+        mock_resolve.assert_called_once()
+        # highlight_gene came from the (mocked) LLM resolver, not invented locally
+        called_question, called_candidates = mock_resolve.call_args[0]
+        assert called_question == "Show me the chromosome map with Trp53 highlighted"
+        assert set(called_candidates) == {"ABC", "Trp53"}
+
+    @pytest.mark.asyncio
+    async def test_generate_visualization_chromosome_map_highlight_fallback(self):
+        """When the LLM resolver is unavailable, the deterministic fallback
+        still finds a highlight_gene named in the question."""
+        gene_table = [
+            {"gene_name": "ABC", "location": "chr1", "function": "Function A"},
+        ]
+        with patch(
+            "genome_agent.subagents.visualization.resolve_chromosome_highlight"
+        ) as mock_resolve:
+            mock_resolve.return_value = None  # simulate LLM unavailable
+            result = await generate_visualization(
+                scope="chromosome_map",
+                gene_table=gene_table,
+                user_question="Tell me about ABC please",
+            )
+
+        assert result["status"] == "COMPLETED"
+        assert result["chart_data"] is not None
+        # Fallback heuristic should still have picked ABC out of the question
+        assert b"e8622c" in result["chart_data"] or b"ABC" in result["chart_data"]
 
     @pytest.mark.asyncio
     async def test_generate_visualization_protein_structure(self):
@@ -272,9 +323,9 @@ class TestGenerateVisualization:
         }
 
         with patch(
-            "backend.agents.genome_agent.subagents.visualization.resolve_visualization_references"
+            "genome_agent.subagents.visualization.resolve_visualization_references"
         ) as mock_resolver, patch(
-            "backend.agents.genome_agent.subagents.visualization.resolve_reference_species"
+            "genome_agent.subagents.visualization.resolve_reference_species"
         ) as mock_resolve_refs:
             # LLM picks references
             mock_resolver.return_value = MagicMock(
@@ -309,9 +360,9 @@ class TestGenerateVisualization:
     async def test_generate_visualization_size_comparison_no_refs(self):
         """Test size_comparison when no references are resolved."""
         with patch(
-            "backend.agents.genome_agent.subagents.visualization.resolve_visualization_references"
+            "genome_agent.subagents.visualization.resolve_visualization_references"
         ) as mock_resolver, patch(
-            "backend.agents.genome_agent.subagents.visualization.resolve_reference_species"
+            "genome_agent.subagents.visualization.resolve_reference_species"
         ) as mock_resolve_refs:
             mock_resolver.return_value = MagicMock(
                 reference_species=["fictional_species"],
