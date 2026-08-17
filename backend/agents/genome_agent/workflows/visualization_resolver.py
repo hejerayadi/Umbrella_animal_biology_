@@ -106,3 +106,122 @@ def resolve_visualization_references_fallback(
         reference_species=_DEFAULT_REFERENCES,
         reasoning="Fallback: using well-known model organisms",
     )
+
+
+class ChromosomeHighlightOutput(BaseModel):
+    """LLM's decision on which gene (if any) to highlight on a chromosome map."""
+    highlight_gene: str | None = Field(
+        default=None,
+        description="The exact gene_name from the candidate list that the user's question "
+        "is asking about, or None if the question doesn't clearly name/imply one.",
+    )
+    reasoning: str = Field(
+        description="One sentence explaining why this gene was (or wasn't) picked."
+    )
+
+
+_HIGHLIGHT_SYSTEM_PROMPT = (
+    "You are the chromosome-map highlight resolver for the Genome Agent. "
+    "Given a user's question and a list of candidate gene names already "
+    "present in the gene table, decide which single gene (if any) the user "
+    "wants highlighted on the chromosome map.\n\n"
+    "Rules:\n"
+    "- highlight_gene MUST be copied exactly from the candidate list, or be None.\n"
+    "- Never invent a gene name that isn't in the candidate list.\n"
+    "- If the question doesn't clearly name or imply one specific gene from the "
+    "list, return highlight_gene=None rather than guessing.\n"
+)
+
+
+def resolve_chromosome_highlight(
+    user_question: str,
+    candidate_gene_names: list[str],
+) -> ChromosomeHighlightOutput | None:
+    """Use the LLM to pick which gene (if any) to highlight on a chromosome map.
+
+    Returns:
+        ChromosomeHighlightOutput if successful, None if LLM unavailable.
+    """
+    if not candidate_gene_names:
+        return ChromosomeHighlightOutput(highlight_gene=None, reasoning="No genes to highlight.")
+
+    try:
+        client = get_llm_client()
+    except Exception as exc:
+        logger.warning("LLM client unavailable: %s", exc)
+        return None
+
+    bound = client.bind_tools(
+        [ChromosomeHighlightOutput],
+        tool_choice=ChromosomeHighlightOutput.__name__,
+    )
+
+    try:
+        response = invoke_with_retry(
+            lambda: bound.invoke([
+                SystemMessage(content=_HIGHLIGHT_SYSTEM_PROMPT),
+                HumanMessage(
+                    content=(
+                        f"Question: {user_question}\n"
+                        f"Candidate genes: {', '.join(candidate_gene_names)}"
+                    )
+                ),
+            ])
+        )
+        tool_calls = response.tool_calls or []
+        if tool_calls:
+            call = tool_calls[0]
+            result = ChromosomeHighlightOutput(**call["args"])
+            # Never trust an invented gene name, even from the LLM — but
+            # match case-insensitively first (the LLM may return different
+            # casing, e.g. "TRP53" vs "Trp53") and snap to the candidate
+            # list's canonical casing, the same way the fallback heuristic
+            # and the renderer already do. Only drop it if there's truly no
+            # match by name, ignoring case.
+            if result.highlight_gene:
+                canonical_by_lower = {name.lower(): name for name in candidate_gene_names}
+                canonical = canonical_by_lower.get(result.highlight_gene.lower())
+                if canonical is None:
+                    logger.warning(
+                        "LLM proposed highlight_gene %r not in candidate list (even "
+                        "case-insensitively) — dropping",
+                        result.highlight_gene,
+                    )
+                    result.highlight_gene = None
+                else:
+                    result.highlight_gene = canonical
+            return result
+    except Exception as exc:
+        logger.info(
+            "LLM chromosome highlight resolver unavailable (%s) — using fallback",
+            summarize_llm_error(exc),
+        )
+
+    return None
+
+
+def resolve_chromosome_highlight_fallback(
+    user_question: str,
+    candidate_gene_names: list[str],
+) -> ChromosomeHighlightOutput:
+    """Fallback when LLM unavailable: simple heuristic string match.
+
+    Looks for a capitalized, reasonably short token in the question that
+    matches one of the candidate gene names exactly (case-insensitive).
+    Never invents a gene name outside the candidate list.
+    """
+    highlight_gene = None
+    if user_question:
+        gene_lookup = {name.lower(): name for name in candidate_gene_names}
+        for word in user_question.split():
+            cleaned = word.strip(".,!?;:").rstrip("'s")
+            if len(cleaned) <= 10 and cleaned[:1].isupper():
+                match = gene_lookup.get(cleaned.lower())
+                if match:
+                    highlight_gene = match
+                    break
+
+    return ChromosomeHighlightOutput(
+        highlight_gene=highlight_gene,
+        reasoning="Fallback: heuristic keyword match against candidate genes.",
+    )
