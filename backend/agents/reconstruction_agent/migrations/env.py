@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from configuration.settings import get_settings  # noqa: E402
 from infrastructure.persistence.models import Base  # noqa: E402
+from infrastructure.persistence.repository import psycopg_url  # noqa: E402
 
 #: This agent's own migration bookkeeping, kept out of the backend's
 #: `alembic_version`. Renaming it would orphan every applied migration.
@@ -67,7 +68,10 @@ def _database_url() -> str:
     # it goes through `config.set_main_option`, which interpolates; this sets
     # the section dict directly, which does not. Escaping here turned the
     # percent-encoded username `%40` into `%%40` and authentication failed.
-    return url
+    #
+    # Normalised onto psycopg 3: Supabase hands out a bare `postgresql://`,
+    # which SQLAlchemy would route to psycopg2 - not installed here.
+    return psycopg_url(url)
 
 
 def _include_object(obj: object, name: str | None, type_: str, *_: object) -> bool:

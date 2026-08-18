@@ -21,17 +21,26 @@ from infrastructure.persistence.models import ReconstructionRun
 _log = get_logger(__name__)
 
 
-def _async_url(url: str) -> str:
-    """Normalise a connection URL onto SQLAlchemy's async psycopg driver.
+def psycopg_url(url: str) -> str:
+    """Normalise a connection URL onto SQLAlchemy's psycopg (v3) driver.
 
-    Operators write `postgresql://...` out of habit, and the sync driver would
-    block the event loop this agent runs on.
+    A bare `postgresql://` - which is what Supabase hands out, and what most
+    people write from habit - makes SQLAlchemy reach for psycopg2, which this
+    agent does not install. The failure is a bare `ModuleNotFoundError:
+    psycopg2` that says nothing about the URL.
+
+    The same `postgresql+psycopg` dialect serves both `create_engine` and
+    `create_async_engine`, so one rule covers the runtime engine and Alembic.
     """
     if url.startswith("postgresql+"):
         return url
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+psycopg://", 1)
     return url
+
+
+#: Kept as the historical name used inside this module.
+_async_url = psycopg_url
 
 
 class RunRepository:

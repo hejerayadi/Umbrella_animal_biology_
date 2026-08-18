@@ -14,7 +14,7 @@ import pytest
 from configuration.settings import DatabaseSettings
 from infrastructure.persistence.checkpoints import _libpq_url, build_checkpointer
 from infrastructure.persistence.models import ReconstructionRun
-from infrastructure.persistence.repository import RunRepository, _async_url
+from infrastructure.persistence.repository import RunRepository, psycopg_url
 
 
 class TestDatabaseSettings:
@@ -72,12 +72,22 @@ class TestUrlNormalisation:
     silently: the agent keeps running, just without durable checkpoints.
     """
 
-    def test_a_bare_postgres_url_gets_the_async_driver(self) -> None:
-        """The sync driver would block the event loop the agent runs on."""
-        assert _async_url("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
+    def test_a_bare_postgres_url_gets_the_psycopg3_driver(self) -> None:
+        """Supabase hands out a bare `postgresql://`, and SQLAlchemy would route
+        that to psycopg2 - not installed - failing with a bare
+        `ModuleNotFoundError` that says nothing about the URL."""
+        assert psycopg_url("postgresql://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
 
     def test_an_explicit_driver_is_left_alone(self) -> None:
-        assert _async_url("postgresql+psycopg://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
+        assert psycopg_url("postgresql+psycopg://u:p@h/db") == "postgresql+psycopg://u:p@h/db"
+
+    def test_a_supabase_pooler_url_normalises(self) -> None:
+        url = psycopg_url(
+            "postgresql://postgres.abc:pw@aws-0-eu-north-1.pooler.supabase.com:5432/postgres"
+        )
+
+        assert url.startswith("postgresql+psycopg://")
+        assert "pooler.supabase.com:5432/postgres" in url
 
     def test_libpq_strips_the_sqlalchemy_dialect_suffix(self) -> None:
         """libpq rejects `+psycopg` with a misleading `missing "=" after ...`."""
