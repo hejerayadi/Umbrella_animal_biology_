@@ -1,0 +1,240 @@
+"""Consensus building, ranking, and the stop policy."""
+from __future__ import annotations
+
+import pytest
+
+from reconstruction_agent.agent.planning.stop_policy import StopPolicy, StopReason
+from reconstruction_agent.agent.reasoning.evidence_synthesizer import EvidenceSynthesizer
+from reconstruction_agent.agent.reasoning.reasoner import Reasoner
+from reconstruction_agent.contracts.output import GapReconstruction, ReconstructionStatus
+from reconstruction_agent.domain.models import (
+    AlignedPair,
+    Alignment,
+    Gap,
+    GapContext,
+    Reference,
+    Sequence,
+)
+from reconstruction_agent.domain.policies import ConfidencePolicy
+from reconstruction_agent.domain.services import CandidateRanker, ReconstructionValidator
+
+
+def make_context(length: int = 4) -> GapContext:
+    return GapContext(
+        gap=Gap("gap_1", 4, 4 + length), left_flank="A" * 100, right_flank="C" * 100
+    )
+
+
+def make_alignment(*reference_rows: tuple[str, str]) -> Alignment:
+    """An alignment whose gap sits at columns 4..8."""
+    target = "AAAA----CCCC"
+    return Alignment(
+        gap_id="gap_1",
+        pairs=[
+            AlignedPair("target", accession, target, row) for accession, row in reference_rows
+        ],
+        gap_column_start=4,
+        gap_column_end=8,
+    )
+
+
+class TestCandidateRanker:
+    def test_unanimous_references_give_full_support(self) -> None:
+        alignment = make_alignment(("REF_1", "AAAAGGGGCCCC"), ("REF_2", "AAAAGGGGCCCC"))
+
+        candidate = CandidateRanker().build_consensus(make_context(), alignment, [])
+
+        assert candidate is not None
+        assert candidate.sequence == "GGGG"
+        assert candidate.support == pytest.approx(1.0)
+
+    def test_disagreement_is_carried_into_support(self) -> None:
+        """Three say G, one says T: the majority wins but support drops."""
+        alignment = make_alignment(
+            ("REF_1", "AAAAGGGGCCCC"),
+            ("REF_2", "AAAAGGGGCCCC"),
+            ("REF_3", "AAAAGGGGCCCC"),
+            ("REF_4", "AAAATTTTCCCC"),
+        )
+
+        candidate = CandidateRanker().build_consensus(make_context(), alignment, [])
+
+        assert candidate is not None
+        assert candidate.sequence == "GGGG"
+        assert candidate.support == pytest.approx(0.75)
+
+    def test_alignment_not_spanning_the_gap_yields_no_candidate(self) -> None:
+        """Inventing a filling from the flanks alone would be fabrication."""
+        alignment = Alignment(gap_id="gap_1", pairs=[], gap_column_start=None)
+
+        assert CandidateRanker().build_consensus(make_context(), alignment, []) is None
+
+    def test_records_which_references_contributed(self) -> None:
+        alignment = make_alignment(("REF_1", "AAAAGGGGCCCC"), ("REF_2", "AAAAGGGGCCCC"))
+        references = [Reference(accession="REF_1", organism="Testus organismus")]
+
+        candidate = CandidateRanker().build_consensus(make_context(), alignment, references)
+
+        assert candidate is not None
+        assert candidate.supporting_references == ["REF_1", "REF_2"]
+        assert candidate.evidence[0].organism == "Testus organismus"
+
+
+class TestReasoner:
+    @pytest.fixture
+    def reasoner(self) -> Reasoner:
+        return Reasoner(
+            ranker=CandidateRanker(),
+            validator=ReconstructionValidator(),
+            confidence=ConfidencePolicy(),
+        )
+
+    def test_produces_a_scored_reconstruction(self, reasoner: Reasoner) -> None:
+        alignment = make_alignment(
+            ("REF_1", "AAAAGGGGCCCC"),
+            ("REF_2", "AAAAGGGGCCCC"),
+            ("REF_3", "AAAAGGGGCCCC"),
+        )
+        context = make_context()
+
+        candidates = reasoner.build_candidates(context, alignment, [])
+        result = reasoner.finalise(context, candidates)
+
+        assert result.reconstructed_sequence == "GGGG"
+        assert result.confidence > 0.0
+        assert result.explanation is not None
+
+    def test_reports_unresolved_when_there_are_no_candidates(self, reasoner: Reasoner) -> None:
+        """An unresolvable gap is a result, not an absence."""
+        context = make_context()
+
+        result = reasoner.finalise(context, [])
+
+        assert result.status is ReconstructionStatus.UNRESOLVED
+        assert result.reconstructed_sequence is None
+        assert result.explanation is not None
+
+
+class TestStopPolicy:
+    def test_stops_when_there_is_nothing_to_do(self) -> None:
+        should_stop, reason = StopPolicy().should_stop({"gap_contexts": []})
+
+        assert should_stop
+        assert reason is StopReason.NOTHING_TO_DO
+
+    def test_stops_once_every_gap_is_resolved(self) -> None:
+        context = make_context()
+        state = {
+            "gap_contexts": [context],
+            "skipped": {},
+            "reconstructions": {"gap_1": object()},
+            "iteration": 1,
+            "max_iterations": 6,
+        }
+
+        should_stop, reason = StopPolicy().should_stop(state)
+
+        assert should_stop
+        assert reason is StopReason.ALL_RESOLVED
+
+    def test_stops_at_the_iteration_ceiling(self) -> None:
+        state = {
+            "gap_contexts": [make_context()],
+            "skipped": {},
+            "reconstructions": {},
+            "references": {"gap_1": [Reference(accession="A")]},
+            "iteration": 6,
+            "max_iterations": 6,
+        }
+
+        should_stop, reason = StopPolicy().should_stop(state)
+
+        assert should_stop
+        assert reason is StopReason.MAX_ITERATIONS
+
+    def test_stops_when_an_iteration_found_nothing(self) -> None:
+        state = {
+            "gap_contexts": [make_context()],
+            "skipped": {},
+            "reconstructions": {},
+            "references": {},
+            "candidates": {},
+            "iteration": 1,
+            "max_iterations": 6,
+        }
+
+        should_stop, reason = StopPolicy().should_stop(state)
+
+        assert should_stop
+        assert reason is StopReason.NO_PROGRESS
+
+    def test_continues_while_evidence_is_accumulating(self) -> None:
+        state = {
+            "gap_contexts": [make_context()],
+            "skipped": {},
+            "reconstructions": {},
+            "references": {"gap_1": [Reference(accession="A")]},
+            "iteration": 1,
+            "max_iterations": 6,
+        }
+
+        should_stop, _ = StopPolicy().should_stop(state)
+
+        assert not should_stop
+
+
+class TestEvidenceSynthesizer:
+    def test_splices_confident_reconstructions_into_the_sequence(self) -> None:
+        target = Sequence.parse("seq", "AAAA" + "N" * 4 + "CCCC")
+        reconstruction = GapReconstruction(
+            gap_id="gap_1",
+            start=4,
+            end=8,
+            length=4,
+            status=ReconstructionStatus.RECONSTRUCTED,
+            reconstructed_sequence="GGGG",
+            confidence=0.9,
+        )
+
+        applied = EvidenceSynthesizer().apply(target, [reconstruction])
+
+        assert applied.residues == "AAAAGGGGCCCC"
+
+    def test_leaves_unresolved_gaps_untouched(self) -> None:
+        target = Sequence.parse("seq", "AAAA" + "N" * 4 + "CCCC")
+        reconstruction = GapReconstruction(
+            gap_id="gap_1", start=4, end=8, length=4, status=ReconstructionStatus.UNRESOLVED
+        )
+
+        applied = EvidenceSynthesizer().apply(target, [reconstruction])
+
+        assert applied.residues == target.residues
+
+    def test_applies_multiple_gaps_without_corrupting_offsets(self) -> None:
+        """Right-to-left application keeps earlier offsets valid."""
+        target = Sequence.parse("seq", "AAAA" + "NN" + "TTTT" + "NN" + "CCCC")
+        reconstructions = [
+            GapReconstruction(
+                gap_id="gap_1",
+                start=4,
+                end=6,
+                length=2,
+                status=ReconstructionStatus.RECONSTRUCTED,
+                # Longer than the gap it fills - an indel.
+                reconstructed_sequence="GGGGGG",
+                confidence=0.9,
+            ),
+            GapReconstruction(
+                gap_id="gap_2",
+                start=10,
+                end=12,
+                length=2,
+                status=ReconstructionStatus.RECONSTRUCTED,
+                reconstructed_sequence="AA",
+                confidence=0.9,
+            ),
+        ]
+
+        applied = EvidenceSynthesizer().apply(target, reconstructions)
+
+        assert applied.residues == "AAAA" + "GGGGGG" + "TTTT" + "AA" + "CCCC"
