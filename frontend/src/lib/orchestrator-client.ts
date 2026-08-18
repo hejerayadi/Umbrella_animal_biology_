@@ -5,14 +5,13 @@ import type {
   ProteinSelection,
   ProteinViewerSpec,
 } from "./umbrella-types";
+import { apiRequest, apiUrl } from "./api-client";
 
 /**
  * Base URL of the Python orchestrator API (backend/api.py).
  * Override with VITE_ORCHESTRATOR_API_URL in a .env file if it's not running
  * on the default local port.
  */
-const ORCHESTRATOR_API_URL = import.meta.env.VITE_ORCHESTRATOR_API_URL ?? "http://localhost:8000";
-
 export interface ChatResponse {
   answer: string;
   execution_history: string[];
@@ -46,7 +45,7 @@ export const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
  * this one is fetched back from the server.
  */
 export function imageUrlFor(imageId: string): string {
-  return `${ORCHESTRATOR_API_URL}/api/upload/${imageId}`;
+  return apiUrl(`/api/v1/uploads/${imageId}`);
 }
 
 /**
@@ -61,23 +60,10 @@ export async function uploadImage(file: File): Promise<UploadedImage> {
   const body = new FormData();
   body.append("file", file);
 
-  const response = await fetch(`${ORCHESTRATOR_API_URL}/api/upload`, {
+  return apiRequest<UploadedImage>("/api/v1/uploads", {
     method: "POST",
     body, // no Content-Type header: the browser sets the multipart boundary
   });
-
-  if (!response.ok) {
-    // The backend's 400s carry a message written to be read by a user
-    // ("That file is not a JPEG, PNG or WebP image"), so surface it rather
-    // than replacing it with a status code.
-    const detail = await response
-      .json()
-      .then((payload: { detail?: string }) => payload.detail)
-      .catch(() => undefined);
-    throw new Error(detail ?? `Upload failed (${response.status})`);
-  }
-
-  return (await response.json()) as UploadedImage;
 }
 
 /**
@@ -93,17 +79,11 @@ export async function askOrchestrator(
 ): Promise<ChatResponse> {
   const context: Record<string, unknown> = image ? { [image.context_key]: image.image_id } : {};
 
-  const response = await fetch(`${ORCHESTRATOR_API_URL}/api/chat`, {
+  return apiRequest<ChatResponse>("/api/v1/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, context }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Orchestrator backend returned ${response.status}`);
-  }
-
-  return (await response.json()) as ChatResponse;
 }
 
 /**
@@ -117,7 +97,7 @@ export function generatedImageFrom(response: ChatResponse): string | undefined {
   const path = response.image_url;
   if (typeof path !== "string" || !path) return undefined;
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${ORCHESTRATOR_API_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+  return apiUrl(path);
 }
 
 /** The context key the Protein Visualization Agent publishes its Mol* scene under. */

@@ -60,6 +60,7 @@ class StoredImage:
     media_type: str
     filename: str
     data: bytes
+    owner_id: str | None = None
 
     def as_data_url(self) -> str:
         """The `data:image/png;base64,...` form the Recognition agent accepts."""
@@ -102,7 +103,9 @@ class ImageStore:
         self._images: OrderedDict[str, StoredImage] = OrderedDict()
         self._max_images = max_images
 
-    def add(self, data: bytes, filename: str | None = None) -> StoredImage:
+    def add(
+        self, data: bytes, filename: str | None = None, *, owner_id: str | None = None
+    ) -> StoredImage:
         """Validate and store raw image bytes. Raises `ImageRejected`."""
 
         if not data:
@@ -126,6 +129,7 @@ class ImageStore:
             media_type=media_type,
             filename=_safe_filename(filename),
             data=data,
+            owner_id=owner_id,
         )
         self._images[stored.image_id] = stored
 
@@ -134,14 +138,16 @@ class ImageStore:
 
         return stored
 
-    def add_data_url(self, data_url: str, filename: str | None = None) -> StoredImage:
+    def add_data_url(
+        self, data_url: str, filename: str | None = None, *, owner_id: str | None = None
+    ) -> StoredImage:
         """Store an image supplied as a `data:` URL rather than a file upload."""
 
         prefix, _, payload = data_url.partition(",")
         if not payload or not prefix.startswith("data:") or "base64" not in prefix:
             raise ImageRejected("Expected a base64 data URL of the form 'data:image/png;base64,...'.")
         try:
-            return self.add(base64.b64decode(payload, validate=True), filename)
+            return self.add(base64.b64decode(payload, validate=True), filename, owner_id=owner_id)
         except (binascii.Error, ValueError) as exc:
             if isinstance(exc, ImageRejected):
                 raise
@@ -150,6 +156,21 @@ class ImageStore:
     def get(self, image_id: str) -> StoredImage | None:
         """Return a stored image, or None if the id is unknown or evicted."""
         return self._images.get(image_id)
+
+    def get_for_owner(self, image_id: str, owner_id: str) -> StoredImage | None:
+        stored = self.get(image_id)
+        if stored is None or stored.owner_id != owner_id:
+            return None
+        return stored
+
+    def delete_for_owner(self, owner_id: str) -> int:
+        """Remove every transient image belonging to a deleted account."""
+        owned_ids = [
+            image_id for image_id, stored in self._images.items() if stored.owner_id == owner_id
+        ]
+        for image_id in owned_ids:
+            del self._images[image_id]
+        return len(owned_ids)
 
     def __len__(self) -> int:
         return len(self._images)
