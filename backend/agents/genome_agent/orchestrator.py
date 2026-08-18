@@ -22,12 +22,13 @@ Graph shape::
   get_genome_metadata → join_parallel
   get_gene_annotation → join_parallel
   join_parallel → (conditional)
-    ├─ viz needed → generate_visualization
-    └─ viz not needed → explanation_writer → END
+    ├─ gaps detected      → reconstruction_resolver → explanation_writer → END
+    ├─ viz needed         → generate_visualization
+    └─ viz not needed     → explanation_writer → END
   generate_visualization → (conditional)
-    ├─ NEEDS_AGENT → capability_resolver → generate_visualization
-    ├─ COMPLETED → explanation_writer → END
-    └─ FAILED → explanation_writer → END
+    ├─ NEEDS_AGENT → capability_resolver → explanation_writer → END
+    ├─ COMPLETED   → explanation_writer → END
+    └─ FAILED      → explanation_writer → END
   explanation_writer → END
   error_end → END
 """
@@ -43,6 +44,7 @@ from .workflows.nodes.capability_resolver_node import capability_resolver_node
 from .workflows.nodes.explanation_node import error_end_node, explanation_writer_node
 from .workflows.nodes.genome_data_nodes import get_gene_annotation_node, get_genome_metadata_node
 from .workflows.nodes.query_router_node import query_router_node
+from .workflows.nodes.reconstruction_resolver_node import reconstruction_resolver_node
 from .workflows.nodes.species_resolver_node import species_resolver_node
 from .workflows.nodes.visualization_node import generate_visualization_node
 from .workflows.state import GenomeAgentState
@@ -78,6 +80,9 @@ def _route_after_species_resolver(state: GenomeAgentState) -> str:
 
 
 def _route_after_join_parallel(state: GenomeAgentState) -> str:
+    need = state.reconstruction_need or {}
+    if need.get("status") == "NEEDS_AGENT":
+        return "reconstruction_resolver"
     if state.visualization_scope == "none":
         return "explanation_writer"
     return "generate_visualization"
@@ -110,6 +115,7 @@ def build_genome_graph() -> CompiledStateGraph:
     graph.add_node("get_gene_annotation", get_gene_annotation_node)
     graph.add_node("join_parallel", _join_parallel_node)
     graph.add_node("generate_visualization", generate_visualization_node)
+    graph.add_node("reconstruction_resolver", reconstruction_resolver_node)
     graph.add_node("capability_resolver", capability_resolver_node)
     graph.add_node("explanation_writer", explanation_writer_node)
     graph.add_node("error_end", error_end_node)
@@ -133,10 +139,12 @@ def build_genome_graph() -> CompiledStateGraph:
     graph.add_edge("get_genome_metadata", "join_parallel")
     graph.add_edge("get_gene_annotation", "join_parallel")
 
+    # Single conditional edge from join_parallel — covers all three branches.
     graph.add_conditional_edges(
         "join_parallel",
         _route_after_join_parallel,
         {
+            "reconstruction_resolver": "reconstruction_resolver",
             "generate_visualization": "generate_visualization",
             "explanation_writer": "explanation_writer",
         },
@@ -151,6 +159,7 @@ def build_genome_graph() -> CompiledStateGraph:
         },
     )
 
+    graph.add_edge("reconstruction_resolver", "explanation_writer")
     graph.add_edge("capability_resolver", "explanation_writer")
     graph.add_edge("explanation_writer", END)
     graph.add_edge("error_end", END)

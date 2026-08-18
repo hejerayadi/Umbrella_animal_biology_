@@ -7,7 +7,6 @@ from typing import Annotated, Any
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class GenomeAgentState:
     user_question: str = ""
@@ -20,6 +19,7 @@ class GenomeAgentState:
     metadata: dict | None = None
     annotation: dict | None = None
     visualization: dict | None = None
+    reconstruction_need: dict | None = None   # ← NEW
     explanation: str | None = None
     errors: Annotated[list[str], operator.add] = field(default_factory=list)
     waiting_stack: list[str] = field(default_factory=list)

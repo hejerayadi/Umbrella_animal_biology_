@@ -91,7 +91,6 @@ def _visualization_summary(visualization: dict[str, Any]) -> dict[str, Any]:
             summary[key] = visualization[key]
     return summary
 
-
 def to_result(state: GenomeAgentState) -> AgentResult:
     """Map the orchestrator's final state onto the platform's AgentResult."""
 
@@ -136,22 +135,32 @@ def to_result(state: GenomeAgentState) -> AgentResult:
     if visualization:
         output["visualization"] = _visualization_summary(visualization)
 
-        # The agent knows it cannot fold proteins, so it names the need and
-        # lets the Global Orchestrator's resolver pick who fills it. Passed
-        # through untouched - `target_agent` is deliberately None here, and
-        # the resolver routes on the prompt text rather than the name.
-        if visualization.get("status") == "NEEDS_AGENT":
-            _logger.info("[Genome] needs another agent for the requested visualization")
-            return AgentResult(
-                status=AgentStatus.NEEDS_AGENT,
-                target_agent=visualization.get("target_agent"),
-                prompt_to_target_agent=visualization.get("prompt_to_target_agent"),
-                output=output,
-            )
+    # ── NEW: hand off to Reconstruction Agent for gap-filled assemblies ──
+    need = state.reconstruction_need or {}
+    if need.get("status") == "NEEDS_AGENT":
+        _logger.info(
+            "[Genome] assembly %s is incomplete — needs reconstruction agent",
+            state.assembly_id,
+        )
+        return AgentResult(
+            status=AgentStatus.NEEDS_AGENT,
+            target_agent=need.get("target_agent"),
+            prompt_to_target_agent=need.get("prompt_to_target_agent"),
+            output=output,
+        )
+    # ─────────────────────────────────────────────────────────────────────
+
+    # Existing visualization NEEDS_AGENT check stays here.
+    if visualization and visualization.get("status") == "NEEDS_AGENT":
+        _logger.info("[Genome] needs another agent for the requested visualization")
+        return AgentResult(
+            status=AgentStatus.NEEDS_AGENT,
+            target_agent=visualization.get("target_agent"),
+            prompt_to_target_agent=visualization.get("prompt_to_target_agent"),
+            output=output,
+        )
 
     return AgentResult(status=AgentStatus.COMPLETED, output=output)
-
-
 class OrchestratorGenomeAgent:
     """Serves the real LangGraph orchestrator behind the agent's endpoint.
 

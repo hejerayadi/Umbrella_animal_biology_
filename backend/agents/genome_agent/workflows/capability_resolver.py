@@ -95,9 +95,13 @@ def resolve_capability_fallback(
         "structure": "Protein Structure Visualization Agent",
         "reconstruct": "Reconstruction Agent",
         "genome": "Reconstruction Agent",
+        "gap": "Reconstruction Agent",          # ← NEW
+        "incomplete": "Reconstruction Agent",   # ← NEW
+        "scaffold": "Reconstruction Agent",     # ← NEW
+        "contig": "Reconstruction Agent",       # ← NEW
         "literature": "Literature Agent",
         "paper": "Literature Agent",
-    }
+    }   
 
     for keyword, target in capability_keywords.items():
         if keyword in prompt_lower and target in known_targets:
