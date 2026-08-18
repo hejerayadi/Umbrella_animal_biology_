@@ -16,12 +16,7 @@ down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-SCHEMA = "reconstruction"
-
-
 def upgrade() -> None:
-    op.execute(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA}"')
-
     op.create_table(
         "reconstruction_runs",
         # The orchestrator's trace id, not the per-call run id: it is what
@@ -52,28 +47,19 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        schema=SCHEMA,
     )
 
     # The two questions actually asked of this table: "what ran recently?" and
     # "how often do we abstain or run out of budget?".
     op.create_index(
-        "ix_reconstruction_runs_created_at",
-        "reconstruction_runs",
-        ["created_at"],
-        schema=SCHEMA,
+        "ix_reconstruction_runs_created_at", "reconstruction_runs", ["created_at"]
     )
     op.create_index(
-        "ix_reconstruction_runs_status",
-        "reconstruction_runs",
-        ["status", "stop_reason"],
-        schema=SCHEMA,
+        "ix_reconstruction_runs_status", "reconstruction_runs", ["status", "stop_reason"]
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_reconstruction_runs_status", "reconstruction_runs", schema=SCHEMA)
-    op.drop_index("ix_reconstruction_runs_created_at", "reconstruction_runs", schema=SCHEMA)
-    op.drop_table("reconstruction_runs", schema=SCHEMA)
-    # The schema itself is left in place: LangGraph's checkpoint tables live
-    # there too, and dropping it would take them with it.
+    op.drop_index("ix_reconstruction_runs_status", "reconstruction_runs")
+    op.drop_index("ix_reconstruction_runs_created_at", "reconstruction_runs")
+    op.drop_table("reconstruction_runs")

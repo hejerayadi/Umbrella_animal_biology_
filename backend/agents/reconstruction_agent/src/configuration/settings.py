@@ -282,6 +282,15 @@ class ContinuationSettings(_Base):
 class DatabaseSettings(_Base):
     """Where LangGraph checkpoints and the run audit table live.
 
+    The same database and schema as the rest of Umbrella - one database, no
+    dedicated namespace. The agent's tables are told apart by name
+    (`reconstruction_runs`, LangGraph's `checkpoint*`), not by schema.
+
+    One thing must still stay separate: the Alembic version table. The backend
+    runs its own migration history in the default `alembic_version`, and two
+    histories sharing that row would each treat the other's revision as
+    unknown and try to "repair" it. See `migrations/env.py`.
+
     Empty URL means in-memory checkpointing and no audit rows - the supported
     mode for tests and for running the agent without infrastructure.
     """
@@ -296,10 +305,6 @@ class DatabaseSettings(_Base):
     connect_timeout_seconds: int = Field(
         default=5, alias="RECONSTRUCTION_DB_CONNECT_TIMEOUT", ge=1
     )
-    #: Keeps the agent's tables out of the backend's namespace in the shared
-    #: Postgres, so the two migrate independently.
-    schema_name: str = Field(default="reconstruction", alias="RECONSTRUCTION_DB_SCHEMA")
-
     @property
     def configured(self) -> bool:
         return bool(self.database_url)

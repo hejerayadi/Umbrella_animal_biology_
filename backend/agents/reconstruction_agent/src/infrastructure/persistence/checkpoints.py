@@ -12,7 +12,6 @@ a different worker - or arrives after a restart - starts from nothing.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import quote
 
 from configuration.logging import get_logger
 from configuration.settings import DatabaseSettings
@@ -41,8 +40,8 @@ class CheckpointerHandle:
             await self._closer.__aexit__(None, None, None)
 
 
-def _libpq_url(url: str, schema: str, connect_timeout: int = 5) -> str:
-    """The connection string LangGraph's saver needs, pinned to our schema.
+def _libpq_url(url: str, connect_timeout: int = 5) -> str:
+    """The connection string LangGraph's saver needs.
 
     Two corrections, both of which fail quietly rather than loudly:
 
@@ -51,27 +50,21 @@ def _libpq_url(url: str, schema: str, connect_timeout: int = 5) -> str:
        string straight to libpq, which rejects that with a misleading
        `missing "=" after ...` and falls back to in-memory checkpointing.
 
-    2. **Schema.** The saver creates its tables in whatever the search path
-       resolves to - `public` by default - so without this the checkpoint
-       tables end up outside the agent's schema, mixed in with the backend's.
-       libpq takes the setting through the `options` parameter.
+    2. **Connect timeout.** psycopg waits ~130 s by default, which outlives
+       the orchestrator's whole 120 s request budget - so an unreachable
+       database would blow the deadline rather than degrade to in-memory.
 
-    A connect timeout is also forced on: psycopg waits ~130 s by default,
-    which is longer than the orchestrator's whole 120 s request budget - so an
-    unreachable database would blow the deadline rather than degrade.
+    No search path is set: the agent shares one schema with the rest of
+    Umbrella, and its tables are told apart by name.
     """
     scheme, separator, rest = url.partition("://")
     base = url if not separator else f"{scheme.split('+', 1)[0]}://{rest}"
 
-    if "options=" in base:
+    if "connect_timeout=" in base:
         return base
 
-    parameters = [f"options={quote(f'-csearch_path={schema}')}"]
-    if "connect_timeout=" not in base:
-        parameters.append(f"connect_timeout={connect_timeout}")
-
     separator = "&" if "?" in base else "?"
-    return f"{base}{separator}{'&'.join(parameters)}"
+    return f"{base}{separator}connect_timeout={connect_timeout}"
 
 
 async def build_checkpointer(settings: DatabaseSettings) -> CheckpointerHandle:
@@ -92,11 +85,7 @@ async def build_checkpointer(settings: DatabaseSettings) -> CheckpointerHandle:
 
         assert settings.database_url is not None
         context = AsyncPostgresSaver.from_conn_string(
-            _libpq_url(
-                settings.database_url,
-                settings.schema_name,
-                settings.connect_timeout_seconds,
-            )
+            _libpq_url(settings.database_url, settings.connect_timeout_seconds)
         )
         saver = await context.__aenter__()
         # Creates LangGraph's own checkpoint tables if absent. Idempotent, so
@@ -104,7 +93,7 @@ async def build_checkpointer(settings: DatabaseSettings) -> CheckpointerHandle:
         # `reconstruction_runs` audit table alongside them.
         await saver.setup()
 
-        _log.info("checkpointer_postgres", schema=settings.schema_name)
+        _log.info("checkpointer_postgres")
         return CheckpointerHandle(saver, context, durable=True)
 
     except Exception as error:  # noqa: BLE001 - never block startup on this

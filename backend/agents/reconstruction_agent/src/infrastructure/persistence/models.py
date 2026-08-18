@@ -5,23 +5,24 @@ checkpoints do not give: a durable, queryable record of what each run did -
 how many slices it took, what it spent, why it stopped. That is what you read
 when someone asks why a reconstruction came back unresolved last Tuesday.
 
-Kept in a dedicated schema so the agent migrates independently of the backend,
-which is the same isolation the separate `.venv` buys at the Python level.
+Lives in the same schema as the rest of Umbrella - one database, no dedicated
+namespace. The table name carries the distinction instead, which is why it is
+`reconstruction_runs` rather than `runs`.
 """
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Integer, MetaData, String, Text
+from sqlalchemy import DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-#: Overridden at runtime from `RECONSTRUCTION_DB_SCHEMA`; the default is what
-#: the migration creates.
-DEFAULT_SCHEMA = "reconstruction"
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData(schema=DEFAULT_SCHEMA)
+    """Declarative base for the agent's tables.
+
+    No `MetaData(schema=...)`: the agent writes into the shared schema
+    alongside the backend's `users`, `invitations` and the rest.
+    """
 
 
 class ReconstructionRun(Base):
@@ -33,6 +34,14 @@ class ReconstructionRun(Base):
     """
 
     __tablename__ = "reconstruction_runs"
+
+    # The two questions actually asked of this table: "what ran recently?" and
+    # "how often do we abstain or run out of budget?". Declared here as well as
+    # in the migration so `alembic revision --autogenerate` sees no drift.
+    __table_args__ = (
+        Index("ix_reconstruction_runs_created_at", "created_at"),
+        Index("ix_reconstruction_runs_status", "status", "stop_reason"),
+    )
 
     trace_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     #: The id of the most recent slice. Changes per HTTP call, kept for

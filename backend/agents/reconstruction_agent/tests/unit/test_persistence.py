@@ -28,9 +28,9 @@ class TestDatabaseSettings:
 
         assert settings.configured is True
 
-    def test_the_schema_defaults_to_the_agent_namespace(self) -> None:
-        """Kept out of the backend's namespace so the two migrate separately."""
-        assert DatabaseSettings(_env_file=None).schema_name == "reconstruction"  # type: ignore[call-arg]
+    def test_the_connect_timeout_is_short_enough_to_degrade_in_time(self) -> None:
+        """psycopg waits ~130 s by default, outliving the orchestrator's 120 s."""
+        assert DatabaseSettings(_env_file=None).connect_timeout_seconds <= 30  # type: ignore[call-arg]
 
 
 class TestUrlNormalisation:
@@ -49,30 +49,28 @@ class TestUrlNormalisation:
 
     def test_libpq_strips_the_sqlalchemy_dialect_suffix(self) -> None:
         """libpq rejects `+psycopg` with a misleading `missing "=" after ...`."""
-        url = _libpq_url("postgresql+psycopg://u:p@h:5432/db", "reconstruction")
+        url = _libpq_url("postgresql+psycopg://u:p@h:5432/db")
 
         assert url.startswith("postgresql://u:p@h:5432/db")
         assert "+psycopg" not in url
 
-    def test_libpq_pins_the_search_path_to_the_agent_schema(self) -> None:
-        """Without this the saver creates its tables in `public`, mixed in with
-        the backend's."""
-        url = _libpq_url("postgresql://u:p@h/db", "reconstruction")
+    def test_libpq_bounds_the_connect_wait(self) -> None:
+        """The default outlives the orchestrator's whole request budget."""
+        assert "connect_timeout=" in _libpq_url("postgresql://u:p@h/db")
 
-        assert "options=" in url
-        assert "search_path" in unquote(url)
-        assert "reconstruction" in unquote(url)
+    def test_an_explicit_connect_timeout_is_respected(self) -> None:
+        url = _libpq_url("postgresql://u:p@h/db?connect_timeout=30")
 
-    def test_an_explicit_options_parameter_is_respected(self) -> None:
-        """An operator who set options deliberately should keep them."""
-        url = _libpq_url("postgresql://u:p@h/db?options=-cstatement_timeout%3D5000", "recon")
+        assert url.count("connect_timeout=") == 1
+        assert "connect_timeout=30" in url
 
-        assert url.count("options=") == 1
-        assert "statement_timeout" in unquote(url)
+    def test_no_search_path_is_forced(self) -> None:
+        """One database, one schema: the agent shares the backend's."""
+        assert "search_path" not in unquote(_libpq_url("postgresql://u:p@h/db"))
 
     def test_a_percent_encoded_username_survives(self) -> None:
         """The dev database's user is an email address, so `@` is encoded."""
-        url = _libpq_url("postgresql+psycopg://a%40b.com:pw@h/db", "recon")
+        url = _libpq_url("postgresql+psycopg://a%40b.com:pw@h/db")
 
         assert "a%40b.com" in url
 
@@ -165,8 +163,10 @@ class TestRunModel:
 
         assert primary == ["trace_id"]
 
-    def test_lives_in_the_agent_schema(self) -> None:
-        assert ReconstructionRun.__table__.schema == "reconstruction"
+    def test_shares_the_default_schema(self) -> None:
+        """One database, no dedicated namespace; the table name distinguishes it."""
+        assert ReconstructionRun.__table__.schema is None
+        assert ReconstructionRun.__tablename__ == "reconstruction_runs"
 
     @pytest.mark.parametrize(
         "column",

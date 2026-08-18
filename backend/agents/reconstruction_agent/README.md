@@ -94,16 +94,28 @@ truncated.
 
 ## Persistence
 
-- **Checkpoints** — `AsyncPostgresSaver`, in the `reconstruction` schema.
-  Without `RECONSTRUCTION_DATABASE_URL` the agent falls back to in-memory and
-  **CONTINUE cannot resume**; `/api/v1/health` reports which you have.
-- **Audit** — `reconstruction.reconstruction_runs`, one row per logical run
-  (keyed by trace id) recording slices, budgets and why it stopped. Owned by
-  Alembic; LangGraph manages its own checkpoint tables.
+The agent shares **one database and one schema** with the rest of Umbrella —
+point `RECONSTRUCTION_DATABASE_URL` at the same Postgres as the backend's
+`DATABASE_URL`. Its tables are told apart by name, not by namespace.
+
+- **Checkpoints** — `AsyncPostgresSaver` (`checkpoints`, `checkpoint_writes`,
+  `checkpoint_blobs`, `checkpoint_migrations`), created and managed by
+  LangGraph itself. Without a database URL the agent falls back to in-memory
+  and **CONTINUE cannot resume**; `/api/v1/health` reports which you have.
+- **Audit** — `reconstruction_runs`, one row per logical run (keyed by trace
+  id) recording slices, budgets and why it stopped. Owned by this agent's
+  Alembic history.
 
 ```bash
 uv run alembic upgrade head
 ```
+
+**The agent keeps its own Alembic version table**, `alembic_version_reconstruction`.
+The backend runs a separate history in the default `alembic_version`; sharing
+one row would make each treat the other's revision as unknown and try to repair
+it. Autogenerate is scoped to an allow-list drawn from this agent's own
+metadata, so it never proposes touching `users`, `invitations` or anything else
+the backend adds later.
 
 ## Layout
 

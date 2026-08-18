@@ -4,10 +4,22 @@ The database URL comes from the agent's own settings rather than `alembic.ini`,
 so the migration and the running agent can never point at different databases,
 and no credential is committed.
 
-This owns only `reconstruction_runs`. LangGraph creates and manages its own
-checkpoint tables through `AsyncPostgresSaver.setup()`, called at startup -
-version-controlling someone else's schema would break the moment they change
-it, and their setup is already idempotent.
+## Sharing one database with the backend
+
+The agent writes into the same database and schema as `backend/` - one
+database, no dedicated namespace. Two things make that safe:
+
+1. **A separate version table.** `backend/migrations` runs its own history in
+   the default `alembic_version`. If this one used it too, each would find the
+   other's revision id unrecognised and try to "repair" it - in practice
+   stamping over it, then failing every subsequent upgrade. `ALEMBIC_VERSION`
+   below keeps the two histories apart while the tables sit side by side.
+
+2. **Distinct table names.** `reconstruction_runs` and LangGraph's
+   `checkpoint*` tables cannot collide with `users`, `invitations` and the
+   rest. `include_object` below also stops autogenerate proposing to drop
+   anything this history does not own - as an allow-list of what *is* ours,
+   not a deny-list of what is not, so it cannot drift as the backend grows.
 """
 from __future__ import annotations
 
@@ -16,7 +28,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool, text
+from sqlalchemy import engine_from_config, pool
 
 # `prepend_sys_path = src` in alembic.ini covers the normal invocation; this
 # makes the module importable when alembic is driven programmatically too.
@@ -25,45 +37,51 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from configuration.settings import get_settings  # noqa: E402
 from infrastructure.persistence.models import Base  # noqa: E402
 
+#: This agent's own migration bookkeeping, kept out of the backend's
+#: `alembic_version`. Renaming it would orphan every applied migration.
+ALEMBIC_VERSION = "alembic_version_reconstruction"
+
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
-
 _settings = get_settings()
-_SCHEMA = _settings.database.schema_name
 
 
 def _database_url() -> str:
     """The agent's configured URL, as a synchronous driver.
 
-    Alembic runs its own migrations synchronously; the async driver the agent
-    uses at runtime would fail here with "greenlet_spawn has not been called".
+    Alembic runs its migrations synchronously; the async driver the agent uses
+    at runtime would fail here with "greenlet_spawn has not been called".
     """
     url = _settings.database.database_url
     if not url:
         raise RuntimeError(
-            "RECONSTRUCTION_DATABASE_URL is not set. Point it at the Postgres from "
-            "docker/compose.yml before running migrations."
+            "RECONSTRUCTION_DATABASE_URL is not set. Point it at the same Postgres "
+            "the backend uses (see backend/.env DATABASE_URL)."
         )
-    return url.replace("+asyncpg", "").replace("postgresql+psycopg", "postgresql+psycopg")
+    # Deliberately NOT `%`-escaped. `backend/migrations/env.py` escapes because
+    # it goes through `config.set_main_option`, which interpolates; this sets
+    # the section dict directly, which does not. Escaping here turned the
+    # percent-encoded username `%40` into `%%40` and authentication failed.
+    return url
 
 
 def _include_object(obj: object, name: str | None, type_: str, *_: object) -> bool:
-    """Keep autogenerate away from LangGraph's tables.
+    """Keep autogenerate to the tables this history owns.
 
-    They live in the same schema but are not ours; without this, `--autogenerate`
-    would propose dropping them on the first run.
+    An allow-list drawn from our own metadata, not a list of the backend's
+    tables: the agent shares a schema with `users`, `invitations`, LangGraph's
+    `checkpoint*` and whatever the backend adds next, and a deny-list would
+    silently go stale the day someone adds a table. Anything this history did
+    not declare is simply not ours to alter.
     """
-    langgraph_tables = {
-        "checkpoints",
-        "checkpoint_writes",
-        "checkpoint_blobs",
-        "checkpoint_migrations",
-    }
-    return not (type_ == "table" and name in langgraph_tables)
+    if type_ == "table":
+        return name in target_metadata.tables
+    # Columns, indexes and constraints belong to a table already filtered above.
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -73,8 +91,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        version_table_schema=_SCHEMA,
-        include_schemas=True,
+        version_table=ALEMBIC_VERSION,
         include_object=_include_object,
     )
     with context.begin_transaction():
@@ -89,15 +106,10 @@ def run_migrations_online() -> None:
     connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
-        # The schema has to exist before the version table can be created in it.
-        connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{_SCHEMA}"'))
-        connection.commit()
-
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            version_table_schema=_SCHEMA,
-            include_schemas=True,
+            version_table=ALEMBIC_VERSION,
             include_object=_include_object,
         )
         with context.begin_transaction():

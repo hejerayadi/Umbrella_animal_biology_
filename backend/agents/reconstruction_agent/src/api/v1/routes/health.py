@@ -72,7 +72,7 @@ def health(settings: Settings = Depends(get_app_settings)) -> Envelope[HealthDat
                 "checkpoints": ServiceStatus(
                     configured=_checkpoints_durable(),
                     detail=(
-                        f"Postgres, schema {settings.database.schema_name}"
+                        "Postgres (shared Umbrella database)"
                         if _checkpoints_durable()
                         else "In-memory only; CONTINUE cannot resume across calls."
                     ),
