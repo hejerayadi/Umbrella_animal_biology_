@@ -1,21 +1,11 @@
-export type UserRole =
-  | "Student"
-  | "Researcher"
-  | "Professor"
-  | "Conservation Scientist"
-  | "Bioinformatician"
-  | "Developer"
-  | "Other";
-
-export const USER_ROLES: UserRole[] = [
-  "Student",
-  "Researcher",
-  "Professor",
-  "Conservation Scientist",
-  "Bioinformatician",
-  "Developer",
-  "Other",
-];
+export type UserRole = "ADMIN" | "BIOLOGIST";
+export type UserStatus =
+  | "PENDING_EMAIL"
+  | "PENDING_APPROVAL"
+  | "INVITED"
+  | "ACTIVE"
+  | "REJECTED"
+  | "DISABLED";
 
 export const AI_CAPABILITIES = [
   "Genome Reconstruction",
@@ -31,14 +21,19 @@ export type AiCapability = (typeof AI_CAPABILITIES)[number];
 
 export interface User {
   id: string;
-  name: string;
   email: string;
   role: UserRole;
-  purpose: string;
-  mainInterest: string;
-  goals: string;
-  researchInterests: AiCapability[];
-  createdAt: string;
+  status: UserStatus;
+  full_name: string;
+  institution: string;
+  professional_title: string;
+  country: string;
+  orcid?: string | null;
+  motivation: string;
+  specialties: string[];
+  email_verified_at?: string | null;
+  last_login_at?: string | null;
+  created_at: string;
 }
 
 export interface Conversation {
