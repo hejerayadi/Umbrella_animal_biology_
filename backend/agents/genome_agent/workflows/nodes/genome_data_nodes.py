@@ -9,11 +9,11 @@ from ..state import GenomeAgentState
 
 logger = logging.getLogger(__name__)
 
+# Assembly levels that indicate gaps / unresolved regions requiring reconstruction.
+_INCOMPLETE_LEVELS = {"scaffold", "contig"}
+
 
 async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
-    if not state.needs_metadata:
-        return {"_metadata_done": True}
-
     assembly_id = state.assembly_id
     logger.info("[get_genome_metadata] fetching metadata for assembly=%r", assembly_id)
 
@@ -36,9 +36,38 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
             "_metadata_done": True,
         }
 
+    # ── Detect gaps / unresolved regions ──────────────────────────────
+    # This check runs unconditionally — even when needs_metadata is False —
+    # because assembly_level is the only signal that tells us whether the
+    # genome needs reconstruction.  needs_metadata only gates whether the
+    # full metadata dict is surfaced to the user; it must not gate the
+    # safety check that decides which path the graph takes.
+    reconstruction_need = None
+    level = (result.get("assembly_level") or "").lower()
+    if level in _INCOMPLETE_LEVELS:
+        reconstruction_need = {
+            "status": "NEEDS_AGENT",
+            "target_agent": None,
+            "prompt_to_target_agent": (
+                f"Genome assembly {assembly_id} is at '{result['assembly_level']}' level "
+                f"with gaps/unresolved regions. Reconstruct the complete genome sequence."
+            ),
+        }
+        logger.info(
+            "[get_genome_metadata] assembly %s is incomplete (%s) — flagging for reconstruction",
+            assembly_id,
+            result["assembly_level"],
+        )
+    # ──────────────────────────────────────────────────────────────────
+
+    # Only populate state.metadata when the caller explicitly asked for it.
+    # reconstruction_need is written regardless so the router can always act on it.
+    metadata_out = result if state.needs_metadata else None
+
     return {
-        "metadata": result,
+        "metadata": metadata_out,
         "_metadata_done": True,
+        "reconstruction_need": reconstruction_need,
     }
 
 
@@ -48,7 +77,11 @@ async def get_gene_annotation_node(state: GenomeAgentState) -> dict[str, Any]:
 
     assembly_id = state.assembly_id
     user_question = state.user_question
-    logger.info("[get_gene_annotation] fetching annotation for assembly=%r, question=%r", assembly_id, user_question)
+    logger.info(
+        "[get_gene_annotation] fetching annotation for assembly=%r, question=%r",
+        assembly_id,
+        user_question,
+    )
 
     try:
         result = await get_gene_annotation(assembly_id, user_question=user_question)

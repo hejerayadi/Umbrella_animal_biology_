@@ -14,6 +14,8 @@ services:
       - .env
     volumes:
       - .:/app/genome_agent
+      - ../../..:/app/project
+    working_dir: /app/project
     command: python -m genome_agent.scripts.run_orchestrator_scenarios
 
   # Optional: pytest suite (routing/capability-resolver unit tests +
