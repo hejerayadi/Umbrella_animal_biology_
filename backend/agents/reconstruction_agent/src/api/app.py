@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # restarts from nothing on every retry and then fails.
         _log.warning(
             "checkpoints_not_durable",
-            detail="RECONSTRUCTION_DATABASE_URL is unset; CONTINUE will not resume.",
+            detail="No DATABASE_URL in backend/.env; CONTINUE will not resume.",
         )
 
     _log.info(

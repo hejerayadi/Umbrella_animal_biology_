@@ -74,7 +74,7 @@ def health(settings: Settings = Depends(get_app_settings)) -> Envelope[HealthDat
                     detail=(
                         "Postgres (shared Umbrella database)"
                         if _checkpoints_durable()
-                        else "In-memory only; CONTINUE cannot resume across calls."
+                        else "In-memory only (no DATABASE_URL); CONTINUE cannot resume."
                     ),
                 ),
             },

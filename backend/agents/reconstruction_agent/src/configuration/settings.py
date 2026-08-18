@@ -13,13 +13,22 @@ from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The agent's own .env, three levels up from this file:
 # configuration/ -> src/ -> <agent root>
 _AGENT_ROOT = Path(__file__).resolve().parents[2]
 _ENV_FILE = _AGENT_ROOT / ".env"
+
+# The backend's .env, two levels up: agents/ -> backend/. The database URL is
+# declared there once, for the whole of Umbrella, and this agent reads it
+# rather than keeping a second copy that could drift.
+#
+# Reading a config file is not importing a package: the agent still has its own
+# `.venv` and never imports `backend`, so the isolation that lets it pin its
+# own dependencies is untouched.
+_BACKEND_ENV_FILE = _AGENT_ROOT.parents[1] / ".env"
 
 #: Where prompt markdown lives. Prompts are data, not code - see
 #: `agent/prompts/loader.py`.
@@ -286,18 +295,35 @@ class DatabaseSettings(_Base):
     dedicated namespace. The agent's tables are told apart by name
     (`reconstruction_runs`, LangGraph's `checkpoint*`), not by schema.
 
+    **The URL is declared once, in `backend/.env` as `DATABASE_URL`.** This
+    section reads that file directly so there is no second copy to drift out of
+    step when the password or port changes. `RECONSTRUCTION_DATABASE_URL` is
+    still honoured and wins when set, which is how a container or CI job points
+    the agent somewhere else without editing a file.
+
     One thing must still stay separate: the Alembic version table. The backend
     runs its own migration history in the default `alembic_version`, and two
     histories sharing that row would each treat the other's revision as
     unknown and try to "repair" it. See `migrations/env.py`.
 
-    Empty URL means in-memory checkpointing and no audit rows - the supported
-    mode for tests and for running the agent without infrastructure.
+    No URL at all means in-memory checkpointing and no audit rows - the
+    supported mode for tests and for running the agent without infrastructure.
     """
 
-    model_config = _config("RECONSTRUCTION_")
+    # Both files, agent last so it can override; a missing file is ignored.
+    # No `env_prefix`: the aliases below are explicit, and a prefix would stop
+    # `DATABASE_URL` from being seen at all.
+    model_config = SettingsConfigDict(
+        env_file=(_BACKEND_ENV_FILE, _ENV_FILE),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
-    database_url: str | None = Field(default=None, alias="RECONSTRUCTION_DATABASE_URL")
+    database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("RECONSTRUCTION_DATABASE_URL", "DATABASE_URL"),
+    )
     #: Bounded hard, and low. psycopg's default connect timeout is ~130 s -
     #: longer than the 120 s the orchestrator allows for the whole request, so
     #: an unreachable database would hang past the deadline instead of falling

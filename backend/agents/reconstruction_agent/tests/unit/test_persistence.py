@@ -6,6 +6,7 @@ audit write fail a reconstruction that otherwise succeeded.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import unquote
 
 import pytest
@@ -27,6 +28,37 @@ class TestDatabaseSettings:
         )
 
         assert settings.configured is True
+
+    def test_the_url_is_read_from_the_backend_env_file(self) -> None:
+        """One URL for all of Umbrella, declared in backend/.env as DATABASE_URL.
+
+        Skipped when that file is absent - a fresh checkout has no .env, and
+        this is about resolution order, not about the developer's machine.
+        """
+        backend_env = Path(__file__).resolve().parents[4] / ".env"
+        if not backend_env.is_file() or "DATABASE_URL=" not in backend_env.read_text(
+            encoding="utf-8"
+        ):
+            pytest.skip("backend/.env has no DATABASE_URL on this machine")
+
+        assert DatabaseSettings().configured is True
+
+    def test_an_explicit_override_wins_over_the_shared_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """How a container or CI job points the agent at another database."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://shared:pw@h/umbrella")
+        monkeypatch.setenv("RECONSTRUCTION_DATABASE_URL", "postgresql://own:pw@h/agent")
+
+        assert DatabaseSettings().database_url == "postgresql://own:pw@h/agent"
+
+    def test_the_shared_url_is_used_when_there_is_no_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("RECONSTRUCTION_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", "postgresql://shared:pw@h/umbrella")
+
+        assert DatabaseSettings().database_url == "postgresql://shared:pw@h/umbrella"
 
     def test_the_connect_timeout_is_short_enough_to_degrade_in_time(self) -> None:
         """psycopg waits ~130 s by default, outliving the orchestrator's 120 s."""

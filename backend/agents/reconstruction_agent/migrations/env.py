@@ -2,7 +2,8 @@
 
 The database URL comes from the agent's own settings rather than `alembic.ini`,
 so the migration and the running agent can never point at different databases,
-and no credential is committed.
+and no credential is committed. Those settings read `backend/.env`, where
+`DATABASE_URL` is declared once for the whole of Umbrella.
 
 ## Sharing one database with the backend
 
@@ -59,8 +60,8 @@ def _database_url() -> str:
     url = _settings.database.database_url
     if not url:
         raise RuntimeError(
-            "RECONSTRUCTION_DATABASE_URL is not set. Point it at the same Postgres "
-            "the backend uses (see backend/.env DATABASE_URL)."
+            "No database URL. It is normally read from backend/.env (DATABASE_URL); "
+            "set RECONSTRUCTION_DATABASE_URL to override that."
         )
     # Deliberately NOT `%`-escaped. `backend/migrations/env.py` escapes because
     # it goes through `config.set_main_option`, which interpolates; this sets

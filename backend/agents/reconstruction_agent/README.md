@@ -94,9 +94,14 @@ truncated.
 
 ## Persistence
 
-The agent shares **one database and one schema** with the rest of Umbrella —
-point `RECONSTRUCTION_DATABASE_URL` at the same Postgres as the backend's
-`DATABASE_URL`. Its tables are told apart by name, not by namespace.
+The agent shares **one database and one schema** with the rest of Umbrella.
+The URL is declared **once, in `backend/.env` as `DATABASE_URL`** — this agent
+reads that file directly, so there is no second copy to drift when the password
+or port changes. Its tables are told apart by name, not by namespace.
+
+Reading a config file is not importing a package: the agent still has its own
+`.venv` and never imports `backend`. Set `RECONSTRUCTION_DATABASE_URL` only to
+point it somewhere else (a container, a CI job); it wins when present.
 
 - **Checkpoints** — `AsyncPostgresSaver` (`checkpoints`, `checkpoint_writes`,
   `checkpoint_blobs`, `checkpoint_migrations`), created and managed by
@@ -222,6 +227,7 @@ special-casing it.
 | `AZURE_OPENAI_*` | Planning falls back to the deterministic pipeline. Not a degraded stub — it is the correct plan for the common case, and it is what the tests exercise. |
 | `NVIDIA_API_KEY` | The Evo 2 plausibility tool is not registered at all. An unusable tool in the catalogue is worse than an absent one. |
 | `NCBI_API_KEY` | Optional; raises the rate budget from 3/s to 10/s. |
+| `DATABASE_URL` (in `backend/.env`) | Checkpoints fall back to in-memory, so **CONTINUE cannot resume** and a slow run fails after three retries. |
 
 `APP_ENV` drives the defaults that should differ between a laptop and a
 server: `LOG_FORMAT` (pretty vs JSON) and whether `/docs` is exposed.
