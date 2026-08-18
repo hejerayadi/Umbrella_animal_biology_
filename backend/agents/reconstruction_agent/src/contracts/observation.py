@@ -37,6 +37,15 @@ class Observation(BaseModel):
     #: Which attempt this was for this tool/gap pair. A semantic failure is
     #: retried once with relaxed parameters; both attempts are recorded.
     attempt: int = 1
+    #: Which plan/act/critique round produced this, 0-based. The stop policy
+    #: needs "did the *last* round achieve anything?", and accumulated state
+    #: cannot answer that - once any round succeeds, a state-wide check stays
+    #: true for the rest of the run.
+    iteration: int = 0
+    #: True when this attempt ran with relaxed parameters after an earlier one
+    #: found nothing. Recorded so a retry is distinguishable from a first try
+    #: in the audit trail.
+    relaxed: bool = False
     duration_seconds: float = 0.0
     #: How much new evidence this produced - references found, rows aligned.
     evidence_added: int = 0

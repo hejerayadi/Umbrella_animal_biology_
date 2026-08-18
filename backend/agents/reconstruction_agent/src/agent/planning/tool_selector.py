@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agent.planning.planner import PlanStep
-from agent.state.state import ReconstructionState
+from agent.state.state import ReconstructionState, attempt_key
 from configuration.logging import get_logger
 from domain.models import GapContext, Reference
 from domain.services import ReferenceRanker
@@ -33,6 +33,20 @@ class ToolInvocation:
     tool: str
     payload: Any
     gap_id: str | None = None
+    #: True when this payload was widened after an earlier attempt found
+    #: nothing. Carried into the observation so a retry is visible as one.
+    relaxed: bool = False
+
+
+#: What a second attempt widens. The first pass is deliberately strict - a
+#: permissive e-value returns chance similarity, which costs an alignment round
+#: to discover. Only once strict has failed is it worth trading precision for
+#: reach.
+_RELAXED_EXPECT = 1e-3
+_RELAXED_MAX_HITS = 100
+#: A broader ENA division: the strict default is vertebrate coding sequence, so
+#: a gap in a non-coding or poorly-annotated region finds nothing there.
+_RELAXED_DATABASE = "em_rel_vrt"
 
 
 class ToolSelector:
@@ -49,13 +63,19 @@ class ToolSelector:
         be quietly dropped so the rest of the plan still executes.
         """
         context = self._context_for(step.gap_id, state)
+        # A second attempt at the same tool/gap pair widens its search rather
+        # than repeating the first byte for byte, which could only ever return
+        # the same answer.
+        relaxed = (state.get("attempts") or {}).get(
+            attempt_key(step.tool, step.gap_id), 0
+        ) > 0
 
         if step.tool == "blast_search":
-            return self._blast(step, context)
+            return self._blast(step, context, relaxed)
         if step.tool == "mafft_align":
-            return self._mafft(step, context, state)
+            return self._mafft(step, context, state, relaxed)
         if step.tool == "ncbi_search":
-            return self._ncbi(step, context, state)
+            return self._ncbi(step, context, state, relaxed)
         if step.tool == "evolutionary_context":
             return self._evo(step, state)
 
@@ -64,31 +84,59 @@ class ToolSelector:
 
     # --- per-tool builders --------------------------------------------------
 
-    def _blast(self, step: PlanStep, context: GapContext | None) -> ToolInvocation | None:
+    def _blast(
+        self, step: PlanStep, context: GapContext | None, relaxed: bool = False
+    ) -> ToolInvocation | None:
         if context is None or not context.has_usable_flanks:
             return None
+
+        arguments = _allowed(step.arguments, {"database", "program", "max_hits", "expect"})
+        if relaxed:
+            # An explicit argument from the planner still wins: it asked for
+            # something specific, and overriding it would make the plan a lie.
+            arguments.setdefault("expect", _RELAXED_EXPECT)
+            arguments.setdefault("max_hits", _RELAXED_MAX_HITS)
+            arguments.setdefault("database", _RELAXED_DATABASE)
+            _log.info(
+                "blast_retry_relaxed",
+                gap_id=context.identifier,
+                expect=arguments.get("expect"),
+                database=arguments.get("database"),
+            )
+
         return ToolInvocation(
             tool="blast_search",
             gap_id=context.identifier,
+            relaxed=relaxed,
             payload=BlastSearchInput(
                 sequence=context.query_sequence(),
                 gap_id=context.identifier,
-                **_allowed(step.arguments, {"database", "program", "max_hits", "expect"}),
+                **arguments,
             ),
         )
 
     def _mafft(
-        self, step: PlanStep, context: GapContext | None, state: ReconstructionState
+        self,
+        step: PlanStep,
+        context: GapContext | None,
+        state: ReconstructionState,
+        relaxed: bool = False,
     ) -> ToolInvocation | None:
         if context is None:
             return None
 
         available = (state.get("references") or {}).get(context.identifier, [])
+        ranked = self._ranker.rank(
+            # A retry admits the references the first pass filtered out as too
+            # divergent. They are weaker evidence, but a second identical
+            # alignment of the same rows cannot produce a different answer -
+            # the only thing left to change is which rows go in.
+            available if relaxed else self._ranker.filter_usable(available),
+            limit=_MAX_ALIGNMENT_REFERENCES,
+        )
         usable = [
             reference
-            for reference in self._ranker.rank(
-                self._ranker.filter_usable(available), limit=_MAX_ALIGNMENT_REFERENCES
-            )
+            for reference in ranked
             # A reference with no residues cannot be aligned, however well it
             # scored on the BLAST metadata alone.
             if reference.has_sequence
@@ -96,9 +144,18 @@ class ToolSelector:
         if not usable:
             return None
 
+        if relaxed:
+            _log.info(
+                "mafft_retry_relaxed",
+                gap_id=context.identifier,
+                references=len(usable),
+                detail="Including references below the usability floor.",
+            )
+
         return ToolInvocation(
             tool="mafft_align",
             gap_id=context.identifier,
+            relaxed=relaxed,
             payload=AlignmentInput(
                 gap_id=context.identifier,
                 target_sequence=context.query_sequence(),
@@ -110,12 +167,17 @@ class ToolSelector:
         )
 
     def _ncbi(
-        self, step: PlanStep, context: GapContext | None, state: ReconstructionState
+        self,
+        step: PlanStep,
+        context: GapContext | None,
+        state: ReconstructionState,
+        relaxed: bool = False,
     ) -> ToolInvocation:
         organisms = step.arguments.get("organisms") or state.get("requested_organisms") or []
         return ToolInvocation(
             tool="ncbi_search",
             gap_id=context.identifier if context else None,
+            relaxed=relaxed,
             payload=NCBISearchInput(
                 term=str(step.arguments.get("term") or state.get("organism") or ""),
                 organisms=[str(organism) for organism in organisms],

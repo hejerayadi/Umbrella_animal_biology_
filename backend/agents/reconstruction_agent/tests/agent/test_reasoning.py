@@ -6,6 +6,7 @@ import pytest
 from agent.planning.stop_policy import StopPolicy, StopReason
 from agent.reasoning.evidence_synthesizer import EvidenceSynthesizer
 from agent.reasoning.reasoner import Reasoner
+from contracts.observation import Observation, ObservationStatus
 from contracts.output import GapReconstruction, ReconstructionStatus
 from domain.models import (
     AlignedPair,
@@ -22,6 +23,19 @@ from domain.services import CandidateRanker, ReconstructionValidator
 def make_context(length: int = 4) -> GapContext:
     return GapContext(
         gap=Gap("gap_1", 4, 4 + length), left_flank="A" * 100, right_flank="C" * 100
+    )
+
+
+def solid(gap_id: str = "gap_1") -> GapReconstruction:
+    """A gap whose outcome is genuinely settled - reconstructed, not merely present."""
+    return GapReconstruction(
+        gap_id=gap_id,
+        start=4,
+        end=8,
+        length=4,
+        status=ReconstructionStatus.RECONSTRUCTED,
+        reconstructed_sequence="GGGG",
+        confidence=0.9,
     )
 
 
@@ -142,11 +156,11 @@ class TestStopPolicy:
         assert reason is StopReason.NOTHING_TO_DO
 
     def test_stops_once_every_gap_is_resolved(self) -> None:
-        context = make_context()
+        """ALL_RESOLVED means reconstructed, not merely 'has an entry'."""
         state = {
-            "gap_contexts": [context],
+            "gap_contexts": [make_context()],
             "skipped": {},
-            "reconstructions": {"gap_1": object()},
+            "reconstructions": {"gap_1": solid()},
             "iteration": 1,
             "max_iterations": 6,
         }
@@ -155,6 +169,34 @@ class TestStopPolicy:
 
         assert should_stop
         assert reason is StopReason.ALL_RESOLVED
+
+    def test_an_unresolved_entry_is_not_all_resolved(self) -> None:
+        """The old policy called this ALL_RESOLVED, which was a lie: the gap
+        has an entry, but that entry says it could not be reconstructed."""
+        unresolved = GapReconstruction(
+            gap_id="gap_1",
+            start=100,
+            end=140,
+            length=40,
+            status=ReconstructionStatus.UNRESOLVED,
+        )
+        state = {
+            "gap_contexts": [make_context()],
+            "skipped": {},
+            "reconstructions": {"gap_1": unresolved},
+            "verdicts": {},
+            "observations": [
+                Observation(tool="mafft_align", status=ObservationStatus.OK,
+                            iteration=0, evidence_added=2),
+            ],
+            "iteration": 1,
+            "max_iterations": 6,
+        }
+
+        should_stop, reason = StopPolicy().should_stop(state)
+
+        assert reason is not StopReason.ALL_RESOLVED
+        assert not should_stop, "an unresolved gap is still open work"
 
     def test_stops_at_the_iteration_ceiling(self) -> None:
         state = {
@@ -193,6 +235,13 @@ class TestStopPolicy:
             "skipped": {},
             "reconstructions": {},
             "references": {"gap_1": [Reference(accession="A")]},
+            # Progress is measured per round, from the observation trail - not
+            # from accumulated `references`, which stays truthy forever once
+            # any round succeeds.
+            "observations": [
+                Observation(tool="blast_search", gap_id="gap_1",
+                            status=ObservationStatus.OK, iteration=0, evidence_added=1),
+            ],
             "iteration": 1,
             "max_iterations": 6,
         }

@@ -103,6 +103,7 @@ def build_graph(
     events: EventEmitter | None = None,
     *,
     checkpointer: Any | None = None,
+    nodes: ReconstructionNodes | None = None,
 ) -> Any:
     """The compiled agent graph.
 
@@ -113,10 +114,16 @@ def build_graph(
     `checkpointer` is passed in rather than built here because it owns a
     database connection whose lifetime belongs to the application, not to a
     graph construction call.
+
+    `nodes` is passed in for the same reason. `AgentRunner` needs the same
+    instance for its no-LangGraph fallback path, and building a second set here
+    would give the process two LLM clients, two of every collaborator, and two
+    different objects a test could patch - only one of which the graph would
+    actually call.
     """
     from langgraph.graph import END, StateGraph
 
-    nodes = build_nodes(settings, registry, events)
+    nodes = nodes or build_nodes(settings, registry, events)
     graph: Any = StateGraph(ReconstructionState)
 
     for name, handler in (

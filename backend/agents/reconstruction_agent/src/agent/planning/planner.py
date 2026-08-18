@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent import prompts
-from agent.state.state import ReconstructionState
+from agent.state.state import ReconstructionState, has_usable_alignment
 from configuration.logging import get_logger
 from infrastructure.llm.client import LLMClient, Message
 
@@ -131,6 +131,11 @@ class Planner:
         candidate can be read out of it. Each gap advances one stage per
         iteration, so a gap that already has references goes straight to
         alignment on the next pass.
+
+        This path must be able to reach every outcome the LLM path can,
+        escalation included. An agent whose delegation only works when Azure is
+        reachable would silently lose that capability on the runs where the
+        model is down - exactly when a fallback matters.
         """
         steps: list[PlanStep] = []
         skipped = state.get("skipped") or {}
@@ -140,7 +145,7 @@ class Planner:
 
         for context in state.get("gap_contexts") or []:
             gap_id = context.identifier
-            if gap_id in skipped or gap_id in resolved:
+            if gap_id in skipped or _is_final(resolved.get(gap_id)):
                 continue
 
             if not references.get(gap_id):
@@ -151,7 +156,11 @@ class Planner:
                         reason="No references yet; find sequences homologous to the flanks.",
                     )
                 )
-            elif gap_id not in alignments:
+            elif not _has_usable_alignment(alignments.get(gap_id)):
+                # An alignment that does not span the gap is not a satisfied
+                # precondition - nothing can be read out of it. Treating its
+                # mere presence as "done" is what stopped the retry from ever
+                # being planned.
                 steps.append(
                     PlanStep(
                         tool="mafft_align",
@@ -160,7 +169,52 @@ class Planner:
                     )
                 )
 
+        if self._relatedness_unresolved(state):
+            # Deliberately last: it costs nothing, and its answer only matters
+            # once there are references to rank.
+            steps.append(
+                PlanStep(
+                    tool="evolutionary_context",
+                    gap_id=None,
+                    reason=(
+                        "References were found but none carry a relatedness score, so they "
+                        "cannot be ranked by phylogenetic proximity."
+                    ),
+                )
+            )
+
         return steps
+
+    @staticmethod
+    def _relatedness_unresolved(state: ReconstructionState) -> bool:
+        """Whether references exist that nothing has scored for relatedness yet.
+
+        The reference ranker weighs `relatedness` alongside alignment identity,
+        and an unscored reference contributes zero on that axis - so leaving it
+        unscored quietly biases ranking toward whatever aligned best, which is
+        the failure mode phylogenetic proximity exists to correct.
+        """
+        if not state.get("organism"):
+            return False
+
+        references = [
+            reference
+            for gap_references in (state.get("references") or {}).values()
+            for reference in gap_references
+        ]
+        if not references:
+            return False
+
+        # Already asked this run - the tool is deterministic, so asking twice
+        # cannot produce a different answer.
+        already_run = any(
+            observation.tool == "evolutionary_context"
+            for observation in state.get("observations") or []
+        )
+        if already_run:
+            return False
+
+        return any(reference.relatedness is None for reference in references)
 
     @staticmethod
     def _describe_gaps(state: ReconstructionState) -> list[dict[str, Any]]:
@@ -224,6 +278,25 @@ class Planner:
                 )
             )
         return steps
+
+
+def _is_final(reconstruction: object) -> bool:
+    """Whether a gap's outcome is settled enough to stop planning for it.
+
+    Only a RECONSTRUCTED entry is settled here. An UNRESOLVED or
+    LOW_CONFIDENCE one is this iteration's best answer, not a verdict, and more
+    evidence can still overturn it - so the planner keeps working on it.
+    """
+    from contracts.output import ReconstructionStatus
+
+    return (
+        reconstruction is not None
+        and getattr(reconstruction, "status", None) is ReconstructionStatus.RECONSTRUCTED
+    )
+
+
+def _has_usable_alignment(alignment: object) -> bool:
+    return has_usable_alignment(alignment)
 
 
 def _strip_code_fence(text: str) -> str:

@@ -66,6 +66,10 @@ class AgentRunner:
                 self._registry,
                 self._events,
                 checkpointer=self._checkpointer,
+                # The same instance the fallback path uses. Two sets would mean
+                # two LLM clients and two of every collaborator, and anything
+                # patched onto one would be invisible to the other.
+                nodes=self._nodes,
             )
         return self._graph
 

@@ -11,6 +11,7 @@ import time
 import pytest
 
 from agent.planning.stop_policy import StopPolicy, StopReason
+from contracts.observation import Observation, ObservationStatus
 from domain.models import Gap, GapContext
 from domain.policies.budget_policy import BudgetKind, BudgetPolicy, Budgets, BudgetUsage
 
@@ -28,6 +29,12 @@ def open_state(**overrides: object) -> dict:
         "skipped": {},
         "reconstructions": {},
         "references": {"gap_1": [object()]},
+        # The last round found something. Without this the policy would stop
+        # with NO_PROGRESS before reaching the branch each test is about.
+        "observations": [
+            Observation(tool="blast_search", gap_id="gap_1",
+                        status=ObservationStatus.OK, iteration=0, evidence_added=1),
+        ],
         "verdicts": {},
         "iteration": 1,
         "max_iterations": 6,

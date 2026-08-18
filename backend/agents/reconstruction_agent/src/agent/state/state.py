@@ -160,6 +160,91 @@ def attempt_key(tool: str, gap_id: str | None) -> str:
     return f"{tool}:{gap_id or '-'}"
 
 
+def has_usable_alignment(alignment: object) -> bool:
+    """Whether an alignment actually locates the gap's columns.
+
+    An alignment that aligned the flanks but inserted nothing across the gap is
+    a real answer about that gap, and it is stored - but it is *not* a
+    satisfied precondition for reasoning, because there is nothing to read a
+    candidate out of. Treating its presence as "alignment done" is what stops a
+    retry from ever being planned.
+    """
+    return bool(alignment is not None and getattr(alignment, "spans_gap", False))
+
+
+def final_gap_outcomes(state: ReconstructionState) -> dict[str, str]:
+    """Every gap whose outcome will not change again, and what that outcome is.
+
+    A gap is final when it has been skipped, reconstructed, or abandoned by the
+    critic. A gap merely *present* in `reconstructions` is not final: an
+    UNRESOLVED or LOW_CONFIDENCE entry is this iteration's best answer, and
+    another round of evidence can still overturn it.
+
+    Values are one of: ``skipped``, ``reconstructed``, ``abstained``.
+    """
+    from contracts.output import ReconstructionStatus
+
+    outcomes: dict[str, str] = {}
+    reconstructions = state.get("reconstructions") or {}
+    verdicts = state.get("verdicts") or {}
+
+    for gap_id in state.get("skipped") or {}:
+        outcomes[gap_id] = "skipped"
+
+    for gap_id, reconstruction in reconstructions.items():
+        if gap_id in outcomes:
+            continue
+        # `getattr` rather than attribute access: this reads state that may
+        # have come back through a checkpoint, and one malformed entry should
+        # not take down the halting decision for every other gap.
+        if getattr(reconstruction, "status", None) is ReconstructionStatus.RECONSTRUCTED:
+            outcomes[gap_id] = "reconstructed"
+
+    # The critic's verdict is the authority on abandonment, and it settles a
+    # gap whether or not a candidate was ever produced for it.
+    for gap_id, verdict in verdicts.items():
+        if verdict == "abstain" and gap_id not in outcomes:
+            outcomes[gap_id] = "abstained"
+
+    return outcomes
+
+
+def open_gap_ids(state: ReconstructionState) -> set[str]:
+    """Gaps still in play: neither skipped, nor reconstructed, nor abandoned.
+
+    This is what "is there work left?" means everywhere in the loop, and it is
+    deliberately not "absent from `reconstructions`" - see `final_gap_outcomes`.
+    """
+    final = set(final_gap_outcomes(state))
+    return {
+        context.identifier
+        for context in state.get("gap_contexts") or []
+        if context.identifier not in final
+    }
+
+
+def unreconstructed_gap_ids(state: ReconstructionState) -> set[str]:
+    """Gaps this agent was asked to fix and did not.
+
+    Broader than `open_gap_ids`: it also covers gaps the critic has already
+    abandoned. That is deliberate, and it is what escalation must ask about -
+    "I gave up on this one" is precisely the case where another agent's help
+    is worth requesting, and keying escalation on *open* gaps alone meant the
+    critic's abstain silently cancelled the request for help.
+
+    Skipped gaps are excluded: they were declined on their own shape (too
+    long, no usable flank), and no amount of phylogeny changes that.
+    """
+    skipped = set(state.get("skipped") or {})
+    outcomes = final_gap_outcomes(state)
+    return {
+        context.identifier
+        for context in state.get("gap_contexts") or []
+        if context.identifier not in skipped
+        and outcomes.get(context.identifier) != "reconstructed"
+    }
+
+
 def is_last_slice(state: ReconstructionState) -> bool:
     """Whether this is the final slice the orchestrator will grant.
 

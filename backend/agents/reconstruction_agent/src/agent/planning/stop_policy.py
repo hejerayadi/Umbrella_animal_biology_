@@ -15,7 +15,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from agent.state.state import ReconstructionState, is_last_slice
+from agent.state.state import (
+    ReconstructionState,
+    final_gap_outcomes,
+    is_last_slice,
+    open_gap_ids,
+)
+from contracts.observation import ObservationStatus
 from domain.policies.budget_policy import BudgetPolicy, BudgetUsage
 
 
@@ -72,17 +78,27 @@ class StopPolicy:
             if context.identifier not in (state.get("skipped") or {})
         }
         if not attemptable:
+            # Every gap the sequence has was declined by the validation policy
+            # before a single tool ran. Nothing was attempted, so nothing was
+            # resolved or abandoned - the honest word is "nothing to do".
             return True, StopReason.NOTHING_TO_DO
 
-        if attemptable <= set(state.get("reconstructions") or {}):
-            return True, StopReason.ALL_RESOLVED
+        # Which gaps still have a live question, and which are settled. A gap
+        # merely present in `reconstructions` is NOT settled: an UNRESOLVED
+        # entry is this round's best answer, not a verdict.
+        outcomes = final_gap_outcomes(state)
+        still_open = open_gap_ids(state)
 
-        # Every open gap has been abandoned by the critic: more tool calls
-        # cannot change the answer, so stopping is the honest move.
-        verdicts = state.get("verdicts") or {}
-        open_gaps = attemptable - set(state.get("skipped") or {})
-        if open_gaps and all(verdicts.get(gap) == "abstain" for gap in open_gaps):
-            return True, StopReason.ABSTAINED
+        if not still_open:
+            # Everything has a final outcome. Which reason that is depends on
+            # what those outcomes are, and conflating them is what made the
+            # agent report "all_gaps_resolved" for a run that resolved nothing.
+            attempted = {gap: outcome for gap, outcome in outcomes.items() if gap in attemptable}
+            if attempted and all(outcome == "reconstructed" for outcome in attempted.values()):
+                return True, StopReason.ALL_RESOLVED
+            if any(outcome == "abstained" for outcome in attempted.values()):
+                return True, StopReason.ABSTAINED
+            return True, StopReason.ALL_RESOLVED
 
         if budgets is not None and usage is not None:
             if budgets.exhausted(usage) is not None:
@@ -99,8 +115,8 @@ class StopPolicy:
         if iteration >= state.get("max_iterations", 6):
             return True, StopReason.MAX_ITERATIONS
 
-        # An iteration that ran tools and produced no new evidence will not
-        # produce any on a replay of the same plan either.
+        # An iteration that ran and produced no new evidence will not produce
+        # any on a replay of the same plan either.
         if iteration > 0 and not self._made_progress(state):
             return True, StopReason.NO_PROGRESS
 
@@ -108,9 +124,50 @@ class StopPolicy:
 
     @staticmethod
     def _made_progress(state: ReconstructionState) -> bool:
-        """Whether the last iteration added anything usable.
+        """Whether the loop is still getting somewhere.
 
-        Evidence counts as progress even when it did not yield a
-        reconstruction: references found this round can align next round.
+        Measured per round from the observation trail, not from accumulated
+        state. Reading `bool(state["references"])` instead would answer "has
+        this run ever found a reference?", which stays True for the rest of the
+        run after the first success - so a run stuck on one unresolvable gap
+        would burn every remaining iteration before MAX_ITERATIONS noticed, and
+        NO_PROGRESS could only ever fire for a run that found nothing at all.
+
+        **Two** barren rounds are required, not one. A tool that finds nothing
+        is entitled to a second attempt with relaxed parameters, and that retry
+        is planned on the round *after* the barren one - so stopping at the
+        first empty round would cancel the retry before it ever ran, and the
+        relaxed search this agent promises would be dead code.
         """
-        return bool(state.get("references")) or bool(state.get("candidates"))
+        observations = state.get("observations") or []
+        if not observations:
+            return False
+
+        # `decide` increments `iteration` before probing the policy, so the
+        # round whose observations we want is one behind the state's counter.
+        current_round = max(0, state.get("iteration", 0) - 1)
+
+        def productive(round_index: int) -> bool | None:
+            """True/False for a round that ran; None for one that did not."""
+            recent = [o for o in observations if o.iteration == round_index]
+            if not recent:
+                return None
+            # A tool that ran cleanly counts, even when it added no
+            # *references*: `evolutionary_context` returns relatedness rather
+            # than evidence, and that genuinely moves the run forward. EMPTY,
+            # FAILED and SKIPPED do not.
+            return any(o.status is ObservationStatus.OK for o in recent)
+
+        latest = productive(current_round)
+        if latest is None:
+            # Nothing ran this round at all - the plan produced no runnable
+            # calls. There is no retry pending, so this is a true stall.
+            return False
+        if latest:
+            return True
+
+        # This round was barren. Allow one more only if the previous round was
+        # not - that is the retry window.
+        if current_round == 0:
+            return True
+        return productive(current_round - 1) is not False

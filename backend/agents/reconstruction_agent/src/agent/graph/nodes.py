@@ -16,13 +16,18 @@ import time
 from dataclasses import dataclass
 from typing import Any, cast
 
+from agent.graph.conditions import has_work
 from agent.planning.planner import Planner, PlanStep
 from agent.planning.stop_policy import StopPolicy, StopReason
 from agent.planning.tool_selector import ToolInvocation, ToolSelector
 from agent.reasoning.critic import Critic, Verdict
 from agent.reasoning.reasoner import Reasoner
 from agent.state import transitions
-from agent.state.state import ReconstructionState, attempt_key, is_last_slice
+from agent.state.state import (
+    ReconstructionState,
+    attempt_key,
+    unreconstructed_gap_ids,
+)
 from configuration.logging import get_logger
 from contracts.events import EventType
 from contracts.observation import Observation, ObservationStatus
@@ -32,6 +37,7 @@ from domain.policies.budget_policy import BudgetPolicy, BudgetUsage
 from domain.policies.validation_policy import ValidationPolicy
 from domain.services import ContextExtractor, GapDetector, ReconstructionValidator
 from observability.events import EventEmitter
+from tools.contracts import ToolOutput
 from tools.registry import ToolRegistry
 
 _log = get_logger(__name__)
@@ -171,6 +177,7 @@ class ReconstructionNodes:
                         tool=step.tool,
                         gap_id=step.gap_id,
                         status=ObservationStatus.SKIPPED,
+                        iteration=state.get("iteration", 0),
                         detail=f"Budget exhausted: {kind.value if kind else 'unknown'}.",
                     )
                 )
@@ -183,6 +190,7 @@ class ReconstructionNodes:
                         tool=step.tool,
                         gap_id=step.gap_id,
                         status=ObservationStatus.SKIPPED,
+                        iteration=state.get("iteration", 0),
                         detail="Already attempted twice; not retried again.",
                     )
                 )
@@ -197,7 +205,7 @@ class ReconstructionNodes:
                     "tool": invocation.tool,
                     "gap_id": invocation.gap_id,
                     "payload": invocation.payload,
-                    "relaxed": attempts.get(attempt_key(step.tool, step.gap_id), 0) > 0,
+                    "relaxed": invocation.relaxed,
                 }
             )
 
@@ -223,7 +231,12 @@ class ReconstructionNodes:
             *(
                 self._run_one(
                     ToolInvocation(
-                        tool=item["tool"], payload=item["payload"], gap_id=item["gap_id"]
+                        tool=item["tool"],
+                        payload=item["payload"],
+                        gap_id=item["gap_id"],
+                        # Carried through so the observation records that this
+                        # was a widened retry, not a first attempt.
+                        relaxed=bool(item.get("relaxed")),
                     ),
                     state,
                 )
@@ -264,6 +277,10 @@ class ReconstructionNodes:
         started = time.monotonic()
         key = attempt_key(invocation.tool, invocation.gap_id)
         attempt = (state.get("attempts") or {}).get(key, 0) + 1
+        # The round this observation belongs to. `decide` increments the
+        # counter at the end of the round, so during execution it still names
+        # the round now running.
+        iteration = state.get("iteration", 0)
 
         self.events.emit(
             EventType.TOOL_STARTED,
@@ -281,48 +298,69 @@ class ReconstructionNodes:
             "observations": [],
         }
 
-        try:
-            output = await self.registry.run(invocation.tool, invocation.payload)
-        except Exception as error:  # noqa: BLE001 - recorded, never fatal
+        def failure(detail: str, diagnostics: dict[str, Any] | None = None) -> dict[str, Any]:
+            """One failed attempt, recorded identically however it failed."""
             self.events.emit(
-                EventType.TOOL_FAILED, run_id, str(error), {"tool": invocation.tool}
+                EventType.TOOL_FAILED, run_id, detail, {"tool": invocation.tool}
             )
             update["tool_calls"] = [
                 {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": False}
             ]
-            update["errors"] = [f"{invocation.tool}: {error}"]
+            update["errors"] = [f"{invocation.tool}: {detail}"]
             update["observations"] = [
                 Observation(
                     tool=invocation.tool,
                     gap_id=invocation.gap_id,
                     status=ObservationStatus.FAILED,
                     attempt=attempt,
+                    iteration=iteration,
+                    relaxed=invocation.relaxed,
                     duration_seconds=round(time.monotonic() - started, 3),
-                    detail=str(error),
+                    detail=detail,
+                    diagnostics=diagnostics or {},
                 )
             ]
             return update
 
-        succeeded = bool(getattr(output, "succeeded", True))
+        try:
+            output = await self.registry.run(invocation.tool, invocation.payload)
+        except Exception as error:  # noqa: BLE001 - recorded, never fatal
+            return failure(str(error))
+
+        # A tool that answers with the wrong type is a bug in that tool, and it
+        # must not be indistinguishable from a legitimate empty result. Reading
+        # it with `getattr(..., default)` would silently record "ran cleanly,
+        # found nothing" for what is really a broken contract.
+        if not isinstance(output, ToolOutput):
+            return failure(
+                f"returned {type(output).__name__}, which is not a ToolOutput",
+                {
+                    "contract_violation": "tool_output_type",
+                    "returned_type": type(output).__name__,
+                },
+            )
+
         references: list[Reference] = list(getattr(output, "references", []) or [])
         alignment = getattr(output, "alignment", None)
+        relatedness: dict[str, float] = dict(getattr(output, "relatedness", {}) or {})
 
         evidence_added = len(references)
         if isinstance(alignment, Alignment) and alignment.spans_gap:
             evidence_added += alignment.reference_count
+        # Relatedness is evidence too - it changes how references rank, even
+        # though it adds none. Counting only references would record a
+        # successful `evolutionary_context` call as EMPTY.
+        evidence_added += len(getattr(output, "relatedness", {}) or {})
+        evidence_added += len(getattr(output, "scores", {}) or {})
 
-        if not succeeded:
-            detail = str(getattr(output, "error", "failed"))
-            update["tool_calls"] = [
-                {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": False}
-            ]
-            update["errors"] = [f"{invocation.tool}: {detail}"]
-            status = ObservationStatus.FAILED
-        elif evidence_added == 0:
+        if not output.succeeded:
+            return failure(str(output.error or "failed"), dict(output.diagnostics or {}))
+
+        if evidence_added == 0:
             # Ran cleanly, found nothing. Not an error - a real answer about
             # this gap - but it must be visible so the critic can weigh it.
             status = ObservationStatus.EMPTY
-            detail = "Completed without producing usable evidence."
+            detail: str | None = "Completed without producing usable evidence."
         else:
             status = ObservationStatus.OK
             detail = None
@@ -332,16 +370,30 @@ class ReconstructionNodes:
         if isinstance(alignment, Alignment) and invocation.gap_id:
             update["alignments"] = {invocation.gap_id: alignment}
 
+        if relatedness:
+            # Scores are applied to every gap's references, not just this
+            # call's: relatedness is a property of the organism, and the same
+            # organism can back several gaps. Without writing them back, the
+            # planner would see unscored references again next round and ask
+            # for the same answer forever.
+            existing = state.get("references") or {}
+            update["references"] = {
+                gap_id: ToolSelector.apply_relatedness(gap_references, relatedness)
+                for gap_id, gap_references in existing.items()
+            }
+
         update["observations"] = [
             Observation(
                 tool=invocation.tool,
                 gap_id=invocation.gap_id,
                 status=status,
                 attempt=attempt,
+                iteration=iteration,
+                relaxed=invocation.relaxed,
                 duration_seconds=round(time.monotonic() - started, 3),
                 evidence_added=evidence_added,
                 detail=detail,
-                diagnostics=dict(getattr(output, "diagnostics", {}) or {}),
+                diagnostics=dict(output.diagnostics or {}),
             )
         ]
 
@@ -543,15 +595,30 @@ class ReconstructionNodes:
         """
         update: dict[str, Any] = {}
 
-        if not state.get("stop_reason"):
-            update["stop_reason"] = StopReason.ALL_RESOLVED.value
-
         escalation = self._evolution_escalation(state)
-        if escalation is not None and not is_last_slice(state):
+        if escalation is not None:
+            # Deliberately NOT suppressed on the last slice. NEEDS_AGENT is
+            # routed by the orchestrator's capability resolver and does not
+            # consume a CONTINUE retry - only status="continue" does
+            # (worker_node.route_after_worker). Gating it on the slice budget
+            # conflated two unrelated budgets and withheld the request for help
+            # from exactly the runs that had exhausted everything else.
             target, prompt = escalation
             update["needs_agent"] = target
             update["prompt_to_target_agent"] = prompt
             update["stop_reason"] = StopReason.DELEGATED.value
+            _log.info("escalating", target=target, slice_index=state.get("slice_index", 0))
+            return cast(ReconstructionState, update)
+
+        if not state.get("stop_reason"):
+            # Reached only when the graph skipped `decide` entirely - the
+            # gapless path, where detect_gaps routes straight here. Anything
+            # that ran the loop has already recorded why it stopped.
+            update["stop_reason"] = (
+                StopReason.NOTHING_TO_DO.value
+                if not has_work(state)
+                else StopReason.ALL_RESOLVED.value
+            )
 
         return cast(ReconstructionState, update)
 
@@ -559,9 +626,16 @@ class ReconstructionNodes:
     def _evolution_escalation(state: ReconstructionState) -> tuple[str, str] | None:
         """Whether phylogeny is the blocker, and what to ask for.
 
-        `EvolutionaryContextTool` already reports when its genus-level
-        heuristic cannot separate candidates. Acting on it is what turns that
-        note into the NEEDS_AGENT the orchestrator knows how to route.
+        `EvolutionaryContextTool` reports when its genus-level heuristic cannot
+        separate candidates. Acting on that is what turns the note into the
+        NEEDS_AGENT the orchestrator knows how to route.
+
+        The blocked gaps are every gap this agent failed to reconstruct -
+        including ones the critic has already abandoned. Two earlier versions
+        of this were wrong in opposite directions: keying on
+        `reconstructions` missed gaps that never produced a candidate at all,
+        and keying on *open* gaps let the critic's abstain silently cancel the
+        request for help on exactly the gaps that needed it.
         """
         recommended = any(
             observation.diagnostics.get("delegation_recommended")
@@ -570,19 +644,21 @@ class ReconstructionNodes:
         if not recommended:
             return None
 
-        unresolved = [
-            gap_id
-            for gap_id, reconstruction in (state.get("reconstructions") or {}).items()
-            if reconstruction.status is not ReconstructionStatus.RECONSTRUCTED
-        ]
-        if not unresolved:
+        # Already asked on an earlier slice; the orchestrator either routed it
+        # or could not. Asking again with nothing new is what
+        # `escalation_signatures` force-fails as a loop.
+        if state.get("needs_agent"):
+            return None
+
+        blocked = sorted(unreconstructed_gap_ids(state))
+        if not blocked:
             return None
 
         organism = state.get("organism") or "the target organism"
         return (
             "Evolution",
             f"Rank these reference organisms by phylogenetic proximity to {organism}. "
-            f"The reconstruction of {', '.join(unresolved)} is blocked because a "
+            f"The reconstruction of {', '.join(blocked)} is blocked because a "
             "genus-level name heuristic cannot tell which relatives are informative.",
         )
 
