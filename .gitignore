@@ -1,1 +1,4 @@
 .env
+.claude/
+docker/.env
+.venv/

@@ -7,6 +7,7 @@ from backend.agents.Protein_visualization.app.api.v1.dependencies import get_kno
 from backend.agents.Protein_visualization.app.configuration.settings import get_settings
 from backend.agents.Protein_visualization.app.contracts.envelope import ApiResponse, success
 from backend.agents.Protein_visualization.app.observability.metrics import metrics
+from backend.agents.Protein_visualization.app.observability.tracing import get_tracing_status
 
 router = APIRouter(tags=["health"])
 
@@ -73,7 +74,15 @@ async def ready() -> ApiResponse[ReadinessResponse]:
         configured=settings.persistence_enabled,
         detail=None if settings.persistence_enabled else "PostgreSQL is out of scope for this sprint",
     )
-    dependencies = [qdrant, llm, persistence]
+    # Reported, never graded: tracing is an observability aid, so a run whose
+    # trace is not exported is still a complete analysis.
+    status = get_tracing_status()
+    tracing = DependencyStatus(
+        name="langsmith",
+        configured=settings.langsmith_tracing,
+        detail=f"project {status.project}" if status.enabled else status.reason,
+    )
+    dependencies = [qdrant, llm, persistence, tracing]
     degraded = qdrant.configured and qdrant.reachable is False
     return success(
         ReadinessResponse(

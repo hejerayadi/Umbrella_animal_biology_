@@ -1252,35 +1252,55 @@ L’agent de code ne doit pas :
 
 ## Commandes attendues
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+**Toutes les commandes se lancent depuis la RACINE DU DÉPÔT.** Les modules sous
+`app/` s'importent comme `backend.agents.Protein_visualization.app.*` : c'est la
+racine du dépôt qui rend ce chemin résoluble. Lancer `uvicorn app.main:app`
+échoue donc avec `ModuleNotFoundError: No module named 'app'`, quel que soit le
+répertoire courant — il n'existe aucun paquet `app` de premier niveau.
 
-docker compose up -d postgres qdrant
-
-alembic upgrade head
-
-uvicorn app.main:app --reload
-
-python scripts/seed_qdrant.py
-python -m scripts.run_orchestrator
-
-pytest -q
-```
-
-Sous Windows PowerShell :
+Les dépendances sont déclarées dans `pyproject.toml` et figées dans `uv.lock`,
+gérés avec [uv](https://docs.astral.sh/uv/). Il n'y a ni `requirements.txt` ni
+`requirements-dev.txt`.
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-docker compose up -d postgres qdrant
-alembic upgrade head
-uvicorn app.main:app --reload
+$agent = "backend\agents\Protein_visualization"
+
+# crée $agent\.venv à partir du lock file
+uv sync --project $agent
+
+Copy-Item $agent\.env.example $agent\.env
+# puis renseigner QDRANT_* et AZURE_*
+
+# le service seul, sur le APP_PORT du .env
+uv run --project $agent python -m backend.agents.Protein_visualization.scripts.serve
+
+# indexer la base de connaissances dans le cluster Qdrant managé
+uv run --project $agent python -m backend.agents.Protein_visualization.scripts.seed_qdrant documents.json
+
+# le workflow en direct, sans passer par HTTP
+uv run --project $agent python -m backend.agents.Protein_visualization.scripts.run_orchestrator --accession P04637 --gene TP53 --residue 273
+
+# la barrière hors-ligne déterministe, telle que la CI l'exécute
+uv run --project $agent pytest $agent\tests -q -m "not live and not bge and not qdrant"
 ```
+
+Sous Linux ou macOS, les mêmes commandes avec `/` à la place de `\`.
+
+Pour tester avec le frontend, c'est le lanceur global qu'il faut : il démarre
+les neuf agents, chacun dans son propre `.venv`, et place celui-ci sur le port
+8008 attendu par `backend/registry.py` — alors que `scripts.serve` lit
+`APP_PORT` dans son `.env`.
+
+```powershell
+python -m backend.run_agents --setup   # une seule fois : crée les neuf environnements
+python -m backend.run_agents           # démarre les neuf services
+uvicorn backend.api:app --reload --port 8000   # l'orchestrateur, dans un autre terminal
+```
+
+Hors périmètre de ce sprint, et donc absents de cette liste : `docker compose`
+(Qdrant est un cluster managé, rien n'est provisionné localement) et
+`alembic upgrade head` (`PERSISTENCE_ENABLED=false` garde la couche de
+persistance dormante ; l'API répond sans base de données).
 
 ---
 

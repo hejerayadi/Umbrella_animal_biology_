@@ -33,7 +33,7 @@ def test_ready_reports_dependencies() -> None:
 
     assert response.status_code == 200
     names = {item["name"] for item in response.json()["data"]["dependencies"]}
-    assert names == {"qdrant", "azure_llm", "persistence"}
+    assert names == {"qdrant", "azure_llm", "persistence", "langsmith"}
 
 
 def test_metrics_are_wrapped_in_the_envelope() -> None:

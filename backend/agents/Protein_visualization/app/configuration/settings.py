@@ -78,6 +78,19 @@ class Settings(BaseSettings):
     azure_input_price_per_1k_usd: float | None = Field(default=None, ge=0)
     azure_output_price_per_1k_usd: float | None = Field(default=None, ge=0)
 
+    # LangSmith tracing of the LangGraph workflow. Off by default and never
+    # required: app.observability.tracing turns it on only when the API key is
+    # there too, since LangChain reads these from the process environment and
+    # pydantic-settings does not export what it loads from .env.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str | None = None
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_project: str = "umbrella-protein-agent"
+    # Fraction of runs exported, for deployments where every analysis is more
+    # trace volume than the LangSmith plan is worth. Unset means export all.
+    # Named after LangSmith's own variable so the two never drift apart.
+    langsmith_tracing_sampling_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+
     @property
     def local_base_url(self) -> str:
         return f"http://{self.app_host}:{self.app_port}"
