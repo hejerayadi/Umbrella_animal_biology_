@@ -17,19 +17,17 @@ import {
   proteinViewerFrom,
   type UploadedImage,
 } from "./orchestrator-client";
-import type { AgentActivity, Conversation, Message, User } from "./umbrella-types";
+import type { AgentActivity, Conversation, Message } from "./umbrella-types";
 
 const STORAGE_KEY = "umbrella.mock.state.v1";
 
 interface PersistedState {
-  user: User | null;
   conversations: Conversation[];
   messages: Message[];
   activities: AgentActivity[];
 }
 
 const initialState: PersistedState = {
-  user: null,
   conversations: MOCK_CONVERSATIONS,
   messages: MOCK_MESSAGES,
   activities: MOCK_AGENT_ACTIVITY,
@@ -42,7 +40,6 @@ function readPersisted(): PersistedState {
     if (!raw) return initialState;
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     return {
-      user: parsed.user ?? null,
       conversations: parsed.conversations ?? MOCK_CONVERSATIONS,
       messages: parsed.messages ?? MOCK_MESSAGES,
       activities: parsed.activities ?? MOCK_AGENT_ACTIVITY,
@@ -59,9 +56,6 @@ interface UmbrellaContextValue extends PersistedState {
   hydrated: boolean;
   isThinking: boolean;
   streamingMessageId: string | null;
-  signIn: (email: string) => void;
-  signUp: (payload: Omit<User, "id" | "createdAt">) => void;
-  signOut: () => void;
   createConversation: (title?: string) => Conversation;
   renameConversation: (id: string, title: string) => void;
   deleteConversation: (id: string) => void;
@@ -87,36 +81,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state, hydrated]);
-
-  const signIn = useCallback((email: string) => {
-    setState((prev) => ({
-      ...prev,
-      user:
-        prev.user ??
-        ({
-          id: uid("usr"),
-          name: email.split("@")[0] || "Researcher",
-          email,
-          role: "Researcher",
-          purpose: "",
-          mainInterest: "",
-          goals: "",
-          researchInterests: [],
-          createdAt: new Date().toISOString(),
-        } satisfies User),
-    }));
-  }, []);
-
-  const signUp = useCallback((payload: Omit<User, "id" | "createdAt">) => {
-    setState((prev) => ({
-      ...prev,
-      user: { ...payload, id: uid("usr"), createdAt: new Date().toISOString() },
-    }));
-  }, []);
-
-  const signOut = useCallback(() => {
-    setState((prev) => ({ ...prev, user: null }));
-  }, []);
 
   const createConversation = useCallback((title = "New conversation") => {
     const now = new Date().toISOString();
@@ -254,9 +218,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
       hydrated,
       isThinking,
       streamingMessageId,
-      signIn,
-      signUp,
-      signOut,
       createConversation,
       renameConversation,
       deleteConversation,
@@ -269,9 +230,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
       hydrated,
       isThinking,
       streamingMessageId,
-      signIn,
-      signUp,
-      signOut,
       createConversation,
       renameConversation,
       deleteConversation,
