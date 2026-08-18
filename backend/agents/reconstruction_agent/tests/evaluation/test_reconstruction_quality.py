@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from reconstruction_agent.agent.reasoning.reasoner import Reasoner
-from reconstruction_agent.domain.models import AlignedPair, Alignment, Sequence
-from reconstruction_agent.domain.policies import ConfidencePolicy
-from reconstruction_agent.domain.services import (
+from agent.reasoning.reasoner import Reasoner
+from domain.models import AlignedPair, Alignment, Sequence
+from domain.policies import ConfidencePolicy
+from domain.services import (
     CandidateRanker,
     ContextExtractor,
     GapDetector,
@@ -113,8 +113,9 @@ class TestReconstructionAccuracy:
         result = reasoner.finalise(context, candidates)
 
         assert result.reconstructed_sequence == truth
-        # Support records the disagreement rather than hiding it.
-        assert candidates[0].support == pytest.approx(0.75)
+        # Support is the winner's margin over the runner-up - (3-1)/4 - so the
+        # disagreement is recorded rather than hidden behind a 0.75 share.
+        assert candidates[0].support == pytest.approx(0.5)
 
     def test_confidence_tracks_disagreement(self, reasoner: Reasoner) -> None:
         """Scores must fall as the references stop agreeing, or they mislead."""

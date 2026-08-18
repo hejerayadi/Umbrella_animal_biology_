@@ -11,14 +11,20 @@ import os
 
 import pytest
 
-from reconstruction_agent.configuration.settings import (
+from configuration.runtime import use_selector_event_loop
+from configuration.settings import (
     EMBLEBISettings,
     LLMSettings,
     NCBISettings,
     Settings,
 )
-from reconstruction_agent.domain.models import Reference, Sequence
-from reconstruction_agent.observability.events import CollectingEmitter
+from domain.models import Reference, Sequence
+from observability.events import CollectingEmitter
+
+# Must run before pytest-asyncio creates a loop, or any test touching psycopg
+# fails on Windows with a ProactorEventLoop error. Import-time on purpose:
+# a fixture would run too late, after the loop already exists.
+use_selector_event_loop()
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

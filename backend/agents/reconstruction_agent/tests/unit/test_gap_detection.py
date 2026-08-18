@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from reconstruction_agent.domain.exceptions import InvalidSequenceError
-from reconstruction_agent.domain.models import Sequence
-from reconstruction_agent.domain.services import ContextExtractor, GapDetector
+from domain.exceptions import InvalidSequenceError
+from domain.models import Sequence
+from domain.services import ContextExtractor, GapDetector
 
 
 class TestGapDetector:

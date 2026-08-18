@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from reconstruction_agent.agent.planning.stop_policy import StopPolicy, StopReason
-from reconstruction_agent.agent.reasoning.evidence_synthesizer import EvidenceSynthesizer
-from reconstruction_agent.agent.reasoning.reasoner import Reasoner
-from reconstruction_agent.contracts.output import GapReconstruction, ReconstructionStatus
-from reconstruction_agent.domain.models import (
+from agent.planning.stop_policy import StopPolicy, StopReason
+from agent.reasoning.evidence_synthesizer import EvidenceSynthesizer
+from agent.reasoning.reasoner import Reasoner
+from contracts.output import GapReconstruction, ReconstructionStatus
+from domain.models import (
     AlignedPair,
     Alignment,
     Gap,
@@ -15,8 +15,8 @@ from reconstruction_agent.domain.models import (
     Reference,
     Sequence,
 )
-from reconstruction_agent.domain.policies import ConfidencePolicy
-from reconstruction_agent.domain.services import CandidateRanker, ReconstructionValidator
+from domain.policies import ConfidencePolicy
+from domain.services import CandidateRanker, ReconstructionValidator
 
 
 def make_context(length: int = 4) -> GapContext:
@@ -49,7 +49,8 @@ class TestCandidateRanker:
         assert candidate.support == pytest.approx(1.0)
 
     def test_disagreement_is_carried_into_support(self) -> None:
-        """Three say G, one says T: the majority wins but support drops."""
+        """Three say G, one says T: the majority wins, and support is the
+        margin over the runner-up - (3-1)/4 - not the winner's 0.75 share."""
         alignment = make_alignment(
             ("REF_1", "AAAAGGGGCCCC"),
             ("REF_2", "AAAAGGGGCCCC"),
@@ -61,7 +62,25 @@ class TestCandidateRanker:
 
         assert candidate is not None
         assert candidate.sequence == "GGGG"
-        assert candidate.support == pytest.approx(0.75)
+        assert candidate.support == pytest.approx(0.5)
+
+    def test_a_near_tie_scores_close_to_zero_support(self) -> None:
+        """Three vs two is nearly a coin flip and must not read as 0.6.
+
+        Every confidently-wrong case in the tuning sweep had this shape.
+        """
+        alignment = make_alignment(
+            ("REF_1", "AAAAGGGGCCCC"),
+            ("REF_2", "AAAAGGGGCCCC"),
+            ("REF_3", "AAAAGGGGCCCC"),
+            ("REF_4", "AAAATTTTCCCC"),
+            ("REF_5", "AAAATTTTCCCC"),
+        )
+
+        candidate = CandidateRanker().build_consensus(make_context(), alignment, [])
+
+        assert candidate is not None
+        assert candidate.support == pytest.approx(0.2)
 
     def test_alignment_not_spanning_the_gap_yields_no_candidate(self) -> None:
         """Inventing a filling from the flanks alone would be fabrication."""

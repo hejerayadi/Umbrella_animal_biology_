@@ -5,5 +5,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# Coverage output from pytest-cov.
+.coverage
+coverage.xml
+htmlcov/
 # Cached external-service payloads written by scripts/ and integration tests.
 .cache/

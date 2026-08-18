@@ -5,13 +5,13 @@ import json
 
 import pytest
 
-from reconstruction_agent.tools.blast.mapper import to_references as blast_references
-from reconstruction_agent.tools.evo.mapper import (
+from tools.blast.mapper import to_references as blast_references
+from tools.evo.mapper import (
     heuristic_relatedness,
     parse_evolution_agent_reply,
 )
-from reconstruction_agent.tools.mafft.mapper import build_fasta, to_alignment
-from reconstruction_agent.tools.ncbi.mapper import parse_fasta, to_references
+from tools.mafft.mapper import build_fasta, to_alignment
+from tools.ncbi.mapper import parse_fasta, to_references
 
 FASTA = """\
 >NC_007596.2 Mammuthus primigenius mitochondrion, complete genome

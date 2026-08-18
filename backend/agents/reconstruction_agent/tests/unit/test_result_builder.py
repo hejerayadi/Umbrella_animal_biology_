@@ -1,9 +1,9 @@
 """Assembling final state into the result the orchestrator receives."""
 from __future__ import annotations
 
-from reconstruction_agent.application.result_builder import ResultBuilder
-from reconstruction_agent.contracts.output import GapReconstruction, ReconstructionStatus
-from reconstruction_agent.domain.models import Gap, GapContext, Sequence
+from application.result_builder import ResultBuilder
+from contracts.output import GapReconstruction, ReconstructionStatus
+from domain.models import Gap, GapContext, Sequence
 
 
 def make_state(**overrides: object) -> dict:
@@ -122,5 +122,32 @@ class TestResultBuilder:
     def test_output_payload_is_json_serialisable(self) -> None:
         payload = ResultBuilder.to_output_payload(ResultBuilder().build(make_state()))
 
-        assert isinstance(payload["completed_at"], str)
-        assert payload["gaps"][0]["status"] == "unresolved"
+        assert isinstance(payload["reconstruction"]["completed_at"], str)
+        assert payload["reconstruction"]["gaps"][0]["status"] == "unresolved"
+
+    def test_output_payload_is_namespaced(self) -> None:
+        """The orchestrator merges this flat into the context every agent
+        reads, so bare keys like `summary` would collide with another agent's."""
+        payload = ResultBuilder.to_output_payload(ResultBuilder().build(make_state()))
+
+        assert set(payload) == {
+            "reconstruction",
+            "reconstruction_summary",
+            "reconstruction_sequence",
+        }
+
+    def test_budget_and_stop_reason_are_reported(self) -> None:
+        """A partial answer has to explain itself rather than look truncated."""
+        result = ResultBuilder().build(
+            make_state(
+                stop_reason="budget_exhausted",
+                budget_tool_calls=12,
+                budget_llm_tokens=4200,
+                slice_index=2,
+            )
+        )
+
+        assert result.stop_reason == "budget_exhausted"
+        assert result.budget["tool_calls"] == 12
+        assert result.budget["llm_tokens"] == 4200
+        assert result.slices == 3

@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import pytest
 
-from reconstruction_agent.contracts.output import ReconstructionStatus
-from reconstruction_agent.domain.models import Candidate, Gap, GapContext
-from reconstruction_agent.domain.policies import ConfidencePolicy, ValidationPolicy
-from reconstruction_agent.domain.services import ReconstructionValidator
+from contracts.output import ReconstructionStatus
+from domain.models import Candidate, Gap, GapContext
+from domain.policies import ConfidencePolicy, ValidationPolicy
+from domain.services import ReconstructionValidator
 
 
 def make_context(length: int = 100, *, left: int = 200, right: int = 200) -> GapContext:
