@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import logging
 
-from .orchestrator.langgraph import GlobalOrchestrator
-from .orchestrator.state import WorkflowState
+from backend.orchestrator.langgraph import GlobalOrchestrator
+from backend.orchestrator.state import WorkflowState
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 logging.getLogger("httpx").setLevel(logging.WARNING)
