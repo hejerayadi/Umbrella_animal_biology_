@@ -74,7 +74,9 @@ services:
     command: []
 
 
-  full_genome_metadata_demo:
+
+# senarios for subagent demos (gene annotation, visualization, species resolver). 
+  full_annotation_demo:
     build: .
     env_file:
       - .env
@@ -83,15 +85,7 @@ services:
     working_dir: /app
     command: python -m genome_agent.scripts.run_gene_annotation_independent_tests
 
-  # Visualization agent — executes each of the design spec's §4.10
-  # "Test independently" cases as a plain script (not pytest): LLM-proposed
-  # reference species actually used for size_comparison, partial reference
-  # failure still renders, chromosome_map highlight driven by the question,
-  # protein_structure never touches the LLM, and both rendering scopes fall
-  # back deterministically when the LLM is unavailable. No network access
-  # or API key needed — everything at the NCBI/LLM boundary is mocked.
-  # Exits non-zero if any case fails.
-  visualization-independent-tests:
+  full_visualization_demo:
     build: .
     env_file:
       - .env
@@ -112,4 +106,15 @@ services:
       - .:/app/genome_agent
     working_dir: /app
     entrypoint: ["python", "-m", "genome_agent.scripts.run_species_resolver_scenarios"]
+    command: []
+
+# genome metadata demo with subagent orchestration (visualization calling other subagents live, and capability_resolver escalating to an agent picked from agent_cards/) +
+  full_genome_metadata_demo:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    entrypoint: ["python", "-m", "genome_agent.scripts.run_genome_metadata_scenarios"]
     command: []
