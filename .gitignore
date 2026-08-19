@@ -4,7 +4,10 @@
 !.env.example
 
 # Local tool configuration
-.claude/settings.local.json
+# `.claude/` in full, as main has it - narrowing this to
+# settings.local.json would start tracking the rest of the directory.
+.claude/
+docker/.env
 
 # Python
 __pycache__/
