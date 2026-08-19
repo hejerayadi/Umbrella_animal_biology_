@@ -15,7 +15,7 @@ from ..subagents.sequence_window import (
 
 def test_window_too_large_raises_without_http_call():
     """Confirm MAX_WINDOW_BP guard raises before any network request."""
-    with patch("genome_agent.subagents._ncbi_client.requests.get") as mock_get:
+    with patch("backend.agents.genome_agent.subagents._ncbi_client.requests.get") as mock_get:
         with pytest.raises(WindowTooLargeError):
             asyncio.run(
                 fetch_sequence_window("GCF_000464555.1", 0, MAX_WINDOW_BP + 1)
@@ -25,7 +25,7 @@ def test_window_too_large_raises_without_http_call():
 
 def test_window_at_max_size_plus_one_raises():
     """Confirm exactly MAX_WINDOW_BP + 1 raises, still with no HTTP call."""
-    with patch("genome_agent.subagents._ncbi_client.requests.get") as mock_get:
+    with patch("backend.agents.genome_agent.subagents._ncbi_client.requests.get") as mock_get:
         with pytest.raises(WindowTooLargeError):
             asyncio.run(
                 fetch_sequence_window("GCF_000464555.1", 0, MAX_WINDOW_BP + 1)
@@ -62,7 +62,7 @@ def test_window_just_under_max_resolves_and_fetches():
     )
     efetch_resp = _mock_response(text=">test\nACGT")
 
-    with patch("genome_agent.subagents._ncbi_client.requests.get") as mock_get:
+    with patch("backend.agents.genome_agent.subagents._ncbi_client.requests.get") as mock_get:
         mock_get.side_effect = [esearch_resp, elink_resp, efetch_resp]
 
         result = asyncio.run(
@@ -83,7 +83,7 @@ def test_assembly_not_found_raises_no_linked_sequence_error():
     clearly instead of attempting elink/efetch with nothing to link from."""
     esearch_resp = _mock_response(json_data={"esearchresult": {"idlist": []}})
 
-    with patch("genome_agent.subagents._ncbi_client.requests.get") as mock_get:
+    with patch("backend.agents.genome_agent.subagents._ncbi_client.requests.get") as mock_get:
         mock_get.side_effect = [esearch_resp]
 
         with pytest.raises(NoLinkedSequenceError):
@@ -98,7 +98,7 @@ def test_no_nuccore_link_raises_no_linked_sequence_error():
     esearch_resp = _mock_response(json_data={"esearchresult": {"idlist": ["999"]}})
     empty_elink_resp = _mock_response(json_data={"linksets": [{"linksetdbs": []}]})
 
-    with patch("genome_agent.subagents._ncbi_client.requests.get") as mock_get:
+    with patch("backend.agents.genome_agent.subagents._ncbi_client.requests.get") as mock_get:
         # Both linkname attempts (refseq, then insdc) come back empty.
         mock_get.side_effect = [esearch_resp, empty_elink_resp, empty_elink_resp]
 
