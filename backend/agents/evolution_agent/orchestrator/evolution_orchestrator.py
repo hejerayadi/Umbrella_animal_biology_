@@ -55,7 +55,7 @@ from ..schema import (
     PhylogeneticResult,
 )
 from ..workers.molecular_comparison.mock import MolecularComparisonMock
-from ..workers.phylogenetic_tree.mock import PhylogeneticTreeMock
+from ..workers.phylogenetic_tree.worker import PhylogeneticTreeWorker
 from .services.species_resolver import SpeciesResolverService
 
 
@@ -115,7 +115,7 @@ class EvolutionOrchestrator:
         resolver:     SpeciesResolverService | None = None,
     ) -> None:
         self._mc_worker    = mc_worker    or MolecularComparisonMock()
-        self._phylo_worker = phylo_worker or PhylogeneticTreeMock()
+        self._phylo_worker = phylo_worker or PhylogeneticTreeWorker()
         self._resolver     = resolver     or SpeciesResolverService.from_env()
         self._graph        = self._build_graph()
 
