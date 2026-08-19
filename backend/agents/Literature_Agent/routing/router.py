@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from ..llm.client import call_llm
+from ..llm.client import ROUTER, call_llm
 from ..llm.prompts import ROUTING_SYSTEM_PROMPT
 
 VALID_ROUTES = {"discovery", "writing", "both_sequential", "both_parallel"}
@@ -54,8 +54,16 @@ def classify_route_llm(instruction: str) -> str | None:
                 {"role": "system", "content": ROUTING_SYSTEM_PROMPT},
                 {"role": "user", "content": instruction},
             ],
-            max_completion_tokens=50,
+            # Generous for a one-word answer on purpose: on a reasoning
+            # deployment max_completion_tokens covers reasoning tokens too, and
+            # a gpt-5 deployment intermittently spends 50+ of them even at the
+            # lowest effort. When that exhausts the budget the call returns
+            # finish_reason="length" with empty content, which would look like
+            # an uncertain classifier rather than a truncated one and silently
+            # drop every request to the "discovery" default.
+            max_completion_tokens=256,
             reasoning_effort="none",
+            role=ROUTER,
         )
         route = (route or "").strip().lower()
         return route if route in VALID_ROUTES else None

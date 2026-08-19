@@ -1,7 +1,7 @@
 """Example test to demonstrate Literature Agent functionality end-to-end."""
 
-from .api import execute
-from .schema import AgentRequest
+from ..api import execute
+from ..schema import AgentRequest
 
 
 def test_discovery_only():
