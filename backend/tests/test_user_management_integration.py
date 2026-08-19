@@ -18,6 +18,7 @@ from backend.app.models import User, UserRole, UserStatus
 class RecordingEmail:
     verification_token: str | None = None
     invitation_password: str | None = None
+    application_recipient: str | None = None
 
     def verification(self, recipient: str, token: str) -> None:
         self.verification_token = token
@@ -27,6 +28,9 @@ class RecordingEmail:
 
     def password_reset(self, recipient: str, token: str) -> None:
         pass
+
+    def new_biologist_application(self, recipient: str, **_: object) -> None:
+        self.application_recipient = recipient
 
     def send(self, recipient: str, subject: str, text: str, html: str | None = None) -> None:
         pass
@@ -120,6 +124,7 @@ def test_registration_approval_mfa_and_invitation_flow() -> None:
             json={"token": email.verification_token},
         ))
         assert verified["status"] == "PENDING_APPROVAL"
+        assert email.application_recipient == admin_email
         rows = _data(admin_client.get("/api/v1/admin/applications"))
         candidate = next(item for item in rows if item["email"] == candidate_email)
         approved = admin_client.post(
