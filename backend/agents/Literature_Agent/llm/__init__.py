@@ -1,3 +1,17 @@
-from .client import call_llm
+from .client import (
+    DISCOVERY,
+    ROUTER,
+    WRITING,
+    call_llm,
+    describe_config,
+    is_configured,
+)
 
-__all__ = ["call_llm"]
+__all__ = [
+    "ROUTER",
+    "WRITING",
+    "DISCOVERY",
+    "call_llm",
+    "describe_config",
+    "is_configured",
+]

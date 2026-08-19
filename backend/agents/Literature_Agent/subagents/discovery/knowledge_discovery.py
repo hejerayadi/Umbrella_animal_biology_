@@ -4,8 +4,8 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from ...mock import LiteratureMock
 from ...schema import AgentRequest, AgentResult, AgentStatus
+from .sources import search_papers
 
 
 class DiscoveryState(TypedDict):
@@ -22,7 +22,6 @@ class KnowledgeDiscoveryOrchestrator:
     """
 
     def __init__(self) -> None:
-        self._agent = LiteratureMock()
         self._graph = self._build_graph()
 
     # ------------------------------------------------------------------
@@ -46,24 +45,29 @@ class KnowledgeDiscoveryOrchestrator:
     # ------------------------------------------------------------------
 
     def _search(self, state: DiscoveryState) -> dict:
-        """Call the literature source (mock for now) to retrieve papers."""
-        result = self._agent.run(state["request"])
-        return {"raw_results": result.output}
+        """Ask the literature source for papers matching the instruction."""
+        return {"raw_results": search_papers(state["request"].instruction)}
 
     def _format_results(self, state: DiscoveryState) -> dict:
-        """Enrich and normalise the raw search output."""
+        """Normalise the raw search output into the agent's discovery payload.
+
+        `is_placeholder` and `notice` are carried through untouched when the
+        source sets them: whoever reads this output has to be able to tell
+        retrieved literature from a stand-in.
+        """
         raw = state.get("raw_results") or {}
         papers = raw.get("papers", [])
-        return {
-            "final_result": AgentResult(
-                status=AgentStatus.COMPLETED,
-                output={
-                    "papers": papers,
-                    "total_found": len(papers),
-                    "source": "literature_search",
-                },
-            )
+
+        output = {
+            "papers": papers,
+            "total_found": raw.get("total_found", len(papers)),
+            "source": raw.get("source", "literature_search"),
         }
+        if raw.get("is_placeholder"):
+            output["is_placeholder"] = True
+            output["notice"] = raw.get("notice")
+
+        return {"final_result": AgentResult(status=AgentStatus.COMPLETED, output=output)}
 
     # ------------------------------------------------------------------
     # Public interface (called by the parent LiteratureOrchestrator)
