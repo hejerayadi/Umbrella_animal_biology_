@@ -17,6 +17,15 @@ class NCBISearchInput(ToolInput):
     )
     database: str = "nuccore"
     limit: int = Field(default=10, ge=1, le=100)
+    #: Longest record worth retrieving, in bases.
+    #:
+    #: A relevance search for a gene name matches whole chromosomes as readily
+    #: as the gene itself - "MT-CO1 Homo sapiens" returns 125 Mbp *Cervus*
+    #: chromosomes above the 393 bp human record. Fetching five of those is
+    #: 254 MB of FASTA, which outlives the orchestrator's whole 120 s budget
+    #: and would then be written into the checkpoint. A reference used to span
+    #: a gap is gene-scale by nature, so this bound costs nothing real.
+    max_reference_length: int = Field(default=50_000, ge=1)
     # Fetching residues costs a second round trip; the planner skips it when it
     # only needs to know what exists.
     fetch_sequences: bool = True

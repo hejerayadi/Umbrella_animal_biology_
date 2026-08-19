@@ -10,6 +10,24 @@ from domain.exceptions import InvalidSequenceError
 IUPAC_NUCLEOTIDES = frozenset("ACGTUNRYSWKMBDHV")
 UNKNOWN_BASE = "N"
 
+#: Watson-Crick complements across the whole IUPAC alphabet, so a minus-strand
+#: hit can be brought onto the target's strand without losing ambiguity codes.
+_COMPLEMENTS = str.maketrans(
+    "ACGTUNRYSWKMBDHVacgtunryswkmbdhv",
+    "TGCAANYRSWMKVHDBtgcaanyrswmkvhdb",
+)
+
+
+def reverse_complement(residues: str) -> str:
+    """The reverse complement of a nucleotide string.
+
+    BLAST reports hits on either strand. A minus-strand hit describes the same
+    homology but written backwards relative to the target, so aligning it as-is
+    produces noise rather than evidence - it has to be brought onto the
+    target's strand first.
+    """
+    return residues.translate(_COMPLEMENTS)[::-1]
+
 
 @dataclass(frozen=True, slots=True)
 class Sequence:

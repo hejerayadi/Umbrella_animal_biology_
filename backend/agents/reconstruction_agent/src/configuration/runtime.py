@@ -41,3 +41,23 @@ def use_selector_event_loop() -> bool:
 
     asyncio.set_event_loop_policy(policy())
     return True
+
+
+def on_proactor_loop() -> bool:
+    """Whether the loop now running is one psycopg's async driver cannot use.
+
+    The policy above is not always reachable. uvicorn builds its loop from a
+    *factory* (`uvicorn/loops/asyncio.py`, passed to `asyncio.run` as
+    `loop_factory=`), which bypasses the event-loop policy entirely - so the
+    agent launched by `backend/run_agents.py` gets a proactor loop on Windows
+    no matter what was set beforehand.
+
+    Everything that talks to Postgres asynchronously therefore has to be able
+    to ask, at startup, whether it is on such a loop and take the synchronous
+    path in a worker thread instead. Always False off Windows.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return type(loop).__name__ == "ProactorEventLoop"

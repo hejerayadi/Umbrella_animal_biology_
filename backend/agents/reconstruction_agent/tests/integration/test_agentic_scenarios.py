@@ -166,14 +166,23 @@ class ScriptedMafft(Tool[AlignmentInput, AlignmentOutput]):
     description = "Scripted MAFFT."
     estimated_seconds = 0.0
 
-    def __init__(self, mode: str = "good", gap_len: int = GAP_LEN, truth: str = TRUTH) -> None:
+    def __init__(
+        self,
+        mode: str = "good",
+        gap_len: int = GAP_LEN,
+        truth: str = TRUTH,
+        delay: float = 0.0,
+    ) -> None:
         self.mode = mode
         self.gap_len = gap_len
         self.truth = truth
+        self.delay = delay
         self.calls: list[AlignmentInput] = []
 
     async def run(self, payload: AlignmentInput) -> AlignmentOutput:
         self.calls.append(payload)
+        if self.delay:
+            await asyncio.sleep(self.delay)
         if self.mode == "outage":
             raise ExternalServiceError("mafft", "simulated outage")
         if self.mode == "no_span":
@@ -580,11 +589,14 @@ class TestContinuation:
     async def test_resume_does_not_repeat_completed_tool_calls(self) -> None:
         from langgraph.checkpoint.memory import InMemorySaver
 
+        # BLAST answers instantly, so its result is genuinely paid for. MAFFT
+        # is what exhausts the slice - and being aborted, it is *not* paid for,
+        # which is why only BLAST is expected to be spared on resume.
         checkpointer = InMemorySaver()
-        blast = ScriptedBlast("hits", delay=0.05)
-        tools = ToolRegistry([blast, ScriptedMafft("good")])
+        blast = ScriptedBlast("hits", delay=0.0)
+        tools = ToolRegistry([blast, ScriptedMafft("good", delay=30.0)])
         settings = settings_for(
-            continuation=ContinuationSettings(_env_file=None, yield_after_seconds=0.01)
+            continuation=ContinuationSettings(_env_file=None, yield_after_seconds=0.5)
         )
 
         first, _ = await run_agent(

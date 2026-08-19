@@ -13,6 +13,9 @@ class BlastSearchInput(ToolInput):
 
     sequence: str = Field(description="Query residues - normally a gap's joined flanks.")
     gap_id: str | None = Field(default=None, description="Gap this search is on behalf of.")
+    # Widens the subject region fetched for a hit: the missing segment sits
+    # between the flanks, so it is absent from every HSP by definition.
+    gap_length: int = Field(default=0, ge=0, description="Width of the gap being filled.")
     # EMBL-EBI partitions ENA by division and molecule type - there is no
     # single "em_rel" catch-all, and passing one is rejected as an invalid
     # parameter. Vertebrate coding sequence is the right default for an animal

@@ -45,6 +45,29 @@ class StopReason(str, Enum):
 TERMINAL_REASONS = frozenset(StopReason) - {StopReason.YIELDED}
 
 
+def _deadline_cut_last_round(state: ReconstructionState) -> bool:
+    """Whether the most recent round had a tool aborted by the slice deadline.
+
+    Scoped to the last round rather than the whole run: the abort is recorded
+    permanently in the observation trail, and reading the whole trail would
+    make every later slice yield on the strength of an old one.
+
+    "Last round" is the highest iteration any observation carries, rather than
+    `state["iteration"]`, because `decide` has already incremented the counter
+    by the time it asks this question.
+    """
+    observations = state.get("observations") or []
+    if not observations:
+        return False
+
+    last_round = max(observation.iteration for observation in observations)
+    return any(
+        observation.iteration == last_round
+        and (observation.diagnostics or {}).get("slice_deadline")
+        for observation in observations
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class StopPolicy:
     """Decides whether to run another plan/act/critique cycle.
@@ -62,6 +85,16 @@ class StopPolicy:
     ) -> tuple[bool, StopReason | None]:
         if state.get("needs_agent"):
             return True, StopReason.DELEGATED
+
+        # Checked before every terminal reason below, because a round the slice
+        # deadline cut short says nothing about whether the work can succeed.
+        # Its aborted tool leaves an error and no evidence, which would
+        # otherwise read as FATAL_ERROR - or, once the critic has seen the
+        # empty round, as ABSTAINED. Both would throw away a run that only
+        # needed the next slice. Not available on the last slice, where a
+        # further CONTINUE is converted to FAILED by the orchestrator.
+        if _deadline_cut_last_round(state) and not is_last_slice(state):
+            return True, StopReason.YIELDED
 
         if state.get("errors") and not state.get("reconstructions"):
             # Errors alone are not fatal - partial results still ship - but

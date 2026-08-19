@@ -81,6 +81,55 @@ class NCBIClient:
             },
         )
 
+    async def fetch_region(
+        self,
+        identifier: str,
+        start: int,
+        stop: int,
+        *,
+        database: str = "nuccore",
+        strand: int = 1,
+    ) -> str:
+        """FASTA for one subject's coordinate range.
+
+        A BLAST hit names a region of a record, not the whole record - and the
+        whole record can be a chromosome. Asking for just the range keeps the
+        response in kilobytes and, since everything gathered is checkpointed,
+        keeps the checkpoint small too.
+
+        `strand=2` asks NCBI for the minus strand, which is cheaper and less
+        error-prone than reverse-complementing the result here.
+        """
+        params: dict[str, Any] = {
+            **self._identity_params(),
+            "db": database,
+            "id": identifier,
+            "rettype": "fasta",
+            "retmode": "text",
+            "seq_start": max(1, start),
+            "seq_stop": max(1, stop),
+        }
+        if strand < 0:
+            params["strand"] = 2
+
+        return await self._client.get_text("/efetch.fcgi", params=params)
+
+    async def fetch_taxonomy(self, identifier: str) -> str:
+        """The taxonomy record for one taxid, as XML.
+
+        XML rather than JSON because `esummary` on the taxonomy database does
+        not return the lineage, and `efetch` only speaks XML for it.
+        """
+        return await self._client.get_text(
+            "/efetch.fcgi",
+            params={
+                **self._identity_params(),
+                "db": "taxonomy",
+                "id": identifier,
+                "retmode": "xml",
+            },
+        )
+
     async def fetch_summary(
         self, identifiers: list[str], *, database: str = "nuccore"
     ) -> dict[str, Any]:

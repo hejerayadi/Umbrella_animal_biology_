@@ -9,12 +9,16 @@ back to the orchestrator, and the loss is logged.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
 from configuration.logging import get_logger
+from configuration.runtime import on_proactor_loop
 from configuration.settings import DatabaseSettings
 from infrastructure.persistence.models import ReconstructionRun
 
@@ -51,20 +55,37 @@ class RunRepository:
         self._engine: AsyncEngine | None = None
         self._sessions: async_sessionmaker[Any] | None = None
 
-        if settings.configured:
-            assert settings.database_url is not None
-            self._engine = create_async_engine(
-                _async_url(settings.database_url),
-                pool_pre_ping=True,
-                # Same reason as the checkpointer: the default wait is longer
-                # than the orchestrator's whole request budget.
-                connect_args={"connect_timeout": settings.connect_timeout_seconds},
+        self._sync_engine: Engine | None = None
+        self._sync_sessions: sessionmaker[Any] | None = None
+
+        if not settings.configured:
+            return
+
+        assert settings.database_url is not None
+        url = _async_url(settings.database_url)
+        # Same reason as the checkpointer: the default wait is longer than the
+        # orchestrator's whole request budget.
+        connect_args = {"connect_timeout": settings.connect_timeout_seconds}
+
+        if on_proactor_loop():
+            # psycopg's async driver cannot run on the loop uvicorn built for
+            # us on Windows. The synchronous engine has no such constraint, and
+            # `record` drives it from a worker thread. Without this the audit
+            # trail was silently empty on every developer machine - the write
+            # failed, and failing quietly is what this repository is for.
+            self._sync_engine = create_engine(
+                url, pool_pre_ping=True, connect_args=connect_args
             )
-            self._sessions = async_sessionmaker(self._engine, expire_on_commit=False)
+            self._sync_sessions = sessionmaker(self._sync_engine, expire_on_commit=False)
+            _log.info("run_audit_engine", mode="sync", detail="Windows proactor loop detected.")
+            return
+
+        self._engine = create_async_engine(url, pool_pre_ping=True, connect_args=connect_args)
+        self._sessions = async_sessionmaker(self._engine, expire_on_commit=False)
 
     @property
     def enabled(self) -> bool:
-        return self._sessions is not None
+        return self._sessions is not None or self._sync_sessions is not None
 
     async def record(
         self,
@@ -84,7 +105,7 @@ class RunRepository:
         summary: str | None,
     ) -> None:
         """Insert or update the row for one logical run."""
-        if self._sessions is None:
+        if not self.enabled:
             return
 
         values: dict[str, Any] = {
@@ -112,13 +133,25 @@ class RunRepository:
                 index_elements=[ReconstructionRun.trace_id],
                 set_={key: value for key, value in values.items() if key != "trace_id"},
             )
-            async with self._sessions() as session:
-                await session.execute(statement)
-                await session.commit()
+            if self._sync_sessions is not None:
+                await asyncio.to_thread(self._execute_sync, statement)
+            elif self._sessions is not None:
+                async with self._sessions() as session:
+                    await session.execute(statement)
+                    await session.commit()
 
         except Exception as error:  # noqa: BLE001 - auditing must not fail a run
             _log.warning("run_audit_failed", trace_id=trace_id, error=str(error))
 
+    def _execute_sync(self, statement: Any) -> None:
+        """One upsert on the synchronous engine, run off the event loop."""
+        assert self._sync_sessions is not None
+        with self._sync_sessions() as session:
+            session.execute(statement)
+            session.commit()
+
     async def aclose(self) -> None:
         if self._engine is not None:
             await self._engine.dispose()
+        if self._sync_engine is not None:
+            await asyncio.to_thread(self._sync_engine.dispose)

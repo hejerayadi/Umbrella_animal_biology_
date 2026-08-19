@@ -42,6 +42,13 @@ class TestNCBIMapper:
 
 
 class TestBlastMapper:
+    """Parsing hits, and the residues that make them alignable.
+
+    A BLAST hit used to arrive as metadata only, which the alignment step then
+    filtered out for having no sequence - so the default plan could never align
+    anything. These tests pin the retrieval path as much as the parsing.
+    """
+
     def test_converts_percentages_to_fractions(self) -> None:
         raw = json.dumps(
             {
@@ -55,22 +62,136 @@ class TestBlastMapper:
             }
         )
 
-        references = blast_references(raw)
+        references, _ = blast_references(raw)
 
         assert references[0].identity == pytest.approx(0.925)
 
-    def test_derives_coverage_from_alignment_length(self) -> None:
+    def test_derives_coverage_from_every_hsp_not_just_the_first(self) -> None:
+        """A hit matching both flanks separately covers both of them."""
         raw = json.dumps(
-            {"hits": [{"hit_acc": "REF_1", "hit_hsps": [{"hsp_align_len": 80}]}]}
+            {
+                "hits": [
+                    {
+                        "hit_acc": "REF_1",
+                        "hit_hsps": [
+                            {"hsp_align_len": 40, "hsp_hit_from": 1, "hsp_hit_to": 40},
+                            {"hsp_align_len": 40, "hsp_hit_from": 90, "hsp_hit_to": 130},
+                        ],
+                    }
+                ]
+            }
         )
 
-        references = blast_references(raw, query_length=100)
+        references, _ = blast_references(raw, query_length=100)
 
         assert references[0].coverage == pytest.approx(0.8)
 
     def test_malformed_json_yields_no_hits(self) -> None:
         """A search that produced nothing usable is a normal outcome."""
-        assert blast_references("<html>Service Unavailable</html>") == []
+        assert blast_references("<html>Service Unavailable</html>") == ([], [])
+
+    def test_single_hsp_carries_its_residues(self) -> None:
+        """No fetch is needed when one HSP already holds the subject."""
+        raw = json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "REF_1",
+                        "hit_hsps": [
+                            {
+                                "hsp_hseq": "ACGT-ACGT",
+                                "hsp_hit_from": 1,
+                                "hsp_hit_to": 8,
+                                "hsp_strand": "plus/plus",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        references, pending = blast_references(raw)
+
+        # Alignment gaps are stripped: MAFFT reintroduces whatever it needs.
+        assert references[0].residues == "ACGTACGT"
+        assert pending == []
+
+    def test_minus_strand_hit_is_brought_onto_the_target_strand(self) -> None:
+        """Aligned as reported, a minus-strand hit is noise rather than evidence."""
+        raw = json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "REF_1",
+                        "hit_hsps": [
+                            {
+                                "hsp_hseq": "AAAACGT",
+                                "hsp_hit_from": 1,
+                                "hsp_hit_to": 7,
+                                "hsp_strand": "plus/minus",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        references, _ = blast_references(raw)
+
+        assert references[0].strand == -1
+        assert references[0].residues == "ACGTTTT"
+
+    def test_bracketing_hsps_request_the_region_between_them(self) -> None:
+        """The whole point: for a real gap the missing segment is in no HSP.
+
+        Two HSPs, one per flank, mean the subject carries something the query
+        does not. That something is what the reconstruction needs, and it can
+        only be had by fetching the subject range the HSPs bracket.
+        """
+        raw = json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "REF_1",
+                        "hit_hsps": [
+                            {"hsp_hseq": "ACGT", "hsp_hit_from": 100, "hsp_hit_to": 140},
+                            {"hsp_hseq": "TTTT", "hsp_hit_from": 200, "hsp_hit_to": 240},
+                        ],
+                    }
+                ]
+            }
+        )
+
+        references, pending = blast_references(raw, gap_length=30)
+
+        # Neither HSP's residues are used: they are the flanks, not the fill.
+        assert references[0].residues is None
+        assert len(pending) == 1
+        span = pending[0]
+        assert span.accession == "REF_1"
+        # Widened by the gap length on both sides, so the fetched region
+        # actually contains the segment sitting between the flanks.
+        assert span.start == 70
+        assert span.stop == 270
+
+    def test_span_never_starts_before_the_first_base(self) -> None:
+        raw = json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "REF_1",
+                        "hit_hsps": [
+                            {"hsp_hit_from": 5, "hsp_hit_to": 20},
+                            {"hsp_hit_from": 60, "hsp_hit_to": 80},
+                        ],
+                    }
+                ]
+            }
+        )
+
+        _, pending = blast_references(raw, gap_length=400)
+
+        assert pending[0].start == 1
 
 
 class TestMafftMapper:

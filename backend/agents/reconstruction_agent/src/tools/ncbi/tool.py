@@ -4,6 +4,7 @@ from __future__ import annotations
 from configuration.logging import get_logger
 from contracts.output import EvidenceItem
 from domain.exceptions import ReconstructionError
+from domain.models import Reference
 from infrastructure.ncbi.client import NCBIClient
 from tools.contracts import Tool
 from tools.ncbi.mapper import to_references
@@ -53,7 +54,9 @@ class NCBISearchTool(Tool[NCBISearchInput, NCBISearchOutput]):
                 )
 
             raw_fasta = await self._client.fetch_fasta(identifiers, database=payload.database)
-            references = to_references(raw_fasta)
+            references, oversized = self._within_length(
+                to_references(raw_fasta), payload.max_reference_length
+            )
 
             return NCBISearchOutput(
                 succeeded=True,
@@ -68,7 +71,7 @@ class NCBISearchTool(Tool[NCBISearchInput, NCBISearchOutput]):
                     )
                     for reference in references
                 ],
-                diagnostics={"identifiers": identifiers},
+                diagnostics={"identifiers": identifiers, "oversized_dropped": oversized},
             )
 
         except ReconstructionError as error:
@@ -79,9 +82,48 @@ class NCBISearchTool(Tool[NCBISearchInput, NCBISearchOutput]):
 
     @staticmethod
     def _build_term(payload: NCBISearchInput) -> str:
-        """Combine the free-text term with any organism restriction."""
-        if not payload.organisms:
-            return payload.term
+        """Combine the free-text term, organism restriction and length bound.
 
-        organisms = " OR ".join(f'"{organism}"[Organism]' for organism in payload.organisms)
-        return f"({payload.term}) AND ({organisms})" if payload.term else f"({organisms})"
+        The `[SLEN]` clause is what keeps whole-genome records out. Entrez
+        sorts by relevance, not by size, so without it a gene name matches the
+        chromosome carrying the gene just as well as the gene - and the
+        chromosome wins on relevance often enough to fill the whole result set.
+        Excluding them in the query is the only cheap place: by the time
+        `efetch` has answered, the megabytes have already been paid for.
+        """
+        clauses: list[str] = []
+
+        if payload.term:
+            clauses.append(f"({payload.term})")
+
+        if payload.organisms:
+            organisms = " OR ".join(f'"{organism}"[Organism]' for organism in payload.organisms)
+            clauses.append(f"({organisms})")
+
+        clauses.append(f"1:{payload.max_reference_length}[SLEN]")
+        return " AND ".join(clauses)
+
+    @staticmethod
+    def _within_length(
+        references: list[Reference], limit: int
+    ) -> tuple[list[Reference], list[str]]:
+        """Drop references longer than the bound, naming what was dropped.
+
+        The `[SLEN]` clause should already have excluded these. This is the
+        second line: `[SLEN]` is not honoured identically by every Entrez
+        database, and a caller may pass its own `term`. Nothing oversized may
+        reach the state, because everything in the state is checkpointed.
+        """
+        kept: list[Reference] = []
+        dropped: list[str] = []
+
+        for reference in references:
+            if len(reference.residues or "") > limit:
+                dropped.append(reference.accession)
+            else:
+                kept.append(reference)
+
+        if dropped:
+            _log.warning("ncbi_oversized_references_dropped", accessions=dropped, limit=limit)
+
+        return kept, dropped

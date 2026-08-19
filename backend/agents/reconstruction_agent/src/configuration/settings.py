@@ -276,9 +276,13 @@ class ContinuationSettings(_Base):
     agent has to stay inside them without importing `backend`.
     """
 
-    #: Yield before the orchestrator's 120 s read timeout, with margin for the
-    #: in-flight tool call to finish and the result to be serialised.
-    yield_after_seconds: float = Field(default=90.0, alias="AGENT_YIELD_AFTER_SECONDS", gt=0)
+    #: Yield before the orchestrator's 120 s read timeout. This doubles as the
+    #: deadline for each individual tool call - see `BudgetPolicy.
+    #: remaining_seconds` - because the yield check only runs between graph
+    #: nodes and so cannot interrupt a submit-and-poll tool on its own. The
+    #: remaining margin covers the critic's LLM call, which runs after the
+    #: tools, and serialising the result.
+    yield_after_seconds: float = Field(default=75.0, alias="AGENT_YIELD_AFTER_SECONDS", gt=0)
     #: Slices the orchestrator will grant: the first call plus three retries.
     #: On the last one the agent must return COMPLETED with whatever it has,
     #: because another CONTINUE would be turned into FAILED.

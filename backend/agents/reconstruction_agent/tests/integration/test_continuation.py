@@ -10,6 +10,7 @@ LangGraph wiring and checkpointer rather than a mock of them.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -63,6 +64,39 @@ class SlowBlast(Tool[_SearchInput, _SearchOutput]):
             succeeded=True,
             references=[Reference(accession=f"REF_{self.calls}", residues="ACGT" * 20)],
         )
+
+
+class _AlignInput(ToolInput):
+    gap_id: str | None = None
+    sequence: str = ""
+    references: list = []
+
+
+class _AlignOutput(ToolOutput):
+    alignment: object | None = None
+    aligned_count: int = 0
+
+
+class StalledMafft(Tool[_AlignInput, _AlignOutput]):
+    """An alignment that outlives any slice, so the deadline always aborts it.
+
+    Distinct from a *slow* tool that still finishes: this is the case the
+    orchestrator used to see as an unreachable agent, because the yield check
+    only runs between nodes and could not interrupt the call.
+    """
+
+    name = "mafft_align"
+    description = "Stub MAFFT that never returns in time."
+    estimated_seconds = 1.0
+
+    def __init__(self, delay: float = 30.0) -> None:
+        self._delay = delay
+        self.calls = 0
+
+    async def run(self, payload: _AlignInput) -> _AlignOutput:
+        self.calls += 1
+        await asyncio.sleep(self._delay)
+        return _AlignOutput(succeeded=True)
 
 
 def build_settings(**continuation: object) -> Settings:
@@ -126,15 +160,52 @@ class TestSlicing:
         assert outcome.continuation_reason is not None
         assert "gap" in outcome.continuation_reason.lower()
 
+    async def test_a_tool_that_outlives_the_slice_is_aborted_not_waited_on(
+        self, checkpointer: object, target: Sequence
+    ) -> None:
+        """The regression that made the orchestrator call the agent unreachable.
+
+        MAFFT at EMBL-EBI polls for up to 600 s. The yield check runs between
+        graph nodes, so before the call itself was bounded, one such job held
+        the slice open past the orchestrator's 120 s read timeout - and every
+        finding in that slice was discarded as a transport failure.
+        """
+        from tools.registry import ToolRegistry
+
+        window = 0.4
+        mafft = StalledMafft(delay=30.0)
+        settings = build_settings(yield_after_seconds=window)
+        runner = make_runner(settings, ToolRegistry([SlowBlast(delay=0.0), mafft]), checkpointer)
+
+        started = time.monotonic()
+        outcome = await runner.run_slice(
+            run_id="run-1",
+            trace_id="trace-deadline",
+            instruction="Reconstruct.",
+            target=target,
+            organism="Testus organismus",
+            requested_organisms=[],
+        )
+        elapsed = time.monotonic() - started
+
+        assert mafft.calls, "the alignment was never attempted"
+        # Bounded by the slice, not by the tool: nowhere near its 30 s delay.
+        assert elapsed < 5.0, f"the slice ran for {elapsed:.1f}s"
+        # And it asks for another slice rather than reporting a failure.
+        assert not outcome.finished
+        assert outcome.continuation_reason
+
     async def test_the_next_slice_resumes_rather_than_restarting(
         self, checkpointer: object, target: Sequence
     ) -> None:
         """The whole point: work already paid for must not be redone."""
         from tools.registry import ToolRegistry
 
-        settings = build_settings(yield_after_seconds=0.01)
-        blast = SlowBlast(delay=0.05)
-        registry = ToolRegistry([blast])
+        # BLAST answers instantly - that result is genuinely paid for, and is
+        # what must survive. MAFFT is what exhausts the slice.
+        settings = build_settings(yield_after_seconds=0.5)
+        blast = SlowBlast(delay=0.0)
+        registry = ToolRegistry([blast, StalledMafft()])
         runner = make_runner(settings, registry, checkpointer)
 
         first = await runner.run_slice(

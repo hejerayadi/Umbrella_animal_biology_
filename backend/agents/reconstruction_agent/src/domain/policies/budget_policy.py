@@ -113,5 +113,17 @@ class BudgetPolicy:
         """
         return usage.elapsed_seconds >= self.budgets.yield_after_seconds
 
+    def remaining_seconds(self, usage: BudgetUsage) -> float:
+        """Wall clock left in this slice, never below zero.
+
+        This is what one tool call may be allowed to take. The yield check
+        happens between graph nodes, so without bounding the call itself a
+        single submit-and-poll tool - MAFFT at EMBL-EBI polls for up to 600 s -
+        holds the slice open long past the orchestrator's 120 s read timeout.
+        The orchestrator then records the agent as unreachable and every
+        finding in the slice is lost, which is strictly worse than yielding.
+        """
+        return max(0.0, self.budgets.yield_after_seconds - usage.elapsed_seconds)
+
     def remaining_tool_calls(self, usage: BudgetUsage) -> int:
         return max(0, self.budgets.max_tool_calls - usage.tool_calls)

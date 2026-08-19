@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TypeVar
 
+from domain.models import Reference
+
 K = TypeVar("K")
 V = TypeVar("V")
 T = TypeVar("T")
@@ -50,6 +52,46 @@ def extend_by_gap(
     for key, value in (incoming or {}).items():
         merged.setdefault(key, []).extend(value)
     return merged
+
+
+def accumulate_references(
+    current: dict[str, list[Reference]] | None,
+    incoming: dict[str, list[Reference]] | None,
+) -> dict[str, list[Reference]]:
+    """Merge reference lists per gap, keeping the best version of each accession.
+
+    Evidence has to *deepen* across iterations and slices, not be replaced by
+    the latest round. With a plain overwrite, a second search that happened to
+    return fewer hits shrank the pool - and since confidence scales with how
+    many references support a fill, a round that added evidence could lower the
+    score.
+
+    Deduplication is by accession, because the same record legitimately arrives
+    from several tools: BLAST finds it and measures its homology, NCBI fetches
+    it and knows only its name. `Reference.quality` decides which copy wins, and
+    residues always beat no residues - a reference that cannot be aligned is not
+    evidence, whatever its metadata says.
+    """
+    merged: dict[str, list[Reference]] = {
+        gap: list(references) for gap, references in (current or {}).items()
+    }
+
+    for gap, references in (incoming or {}).items():
+        by_accession: dict[str, Reference] = {}
+        for reference in [*merged.get(gap, []), *references]:
+            existing = by_accession.get(reference.accession)
+            if existing is None or _prefer(reference, existing):
+                by_accession[reference.accession] = reference
+        merged[gap] = list(by_accession.values())
+
+    return merged
+
+
+def _prefer(candidate: Reference, existing: Reference) -> bool:
+    """Whether `candidate` is the better copy of an accession already held."""
+    if candidate.has_sequence != existing.has_sequence:
+        return candidate.has_sequence
+    return candidate.quality > existing.quality
 
 
 def unique_extend(current: list[T] | None, incoming: list[T] | None) -> list[T]:

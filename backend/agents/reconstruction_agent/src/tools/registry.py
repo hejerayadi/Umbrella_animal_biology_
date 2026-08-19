@@ -70,6 +70,7 @@ def build_default_registry(settings: Settings) -> ToolRegistry:
     from infrastructure.embl_ebi.blast_client import BlastClient
     from infrastructure.embl_ebi.mafft_client import MafftClient
     from infrastructure.ncbi.client import NCBIClient
+    from infrastructure.ncbi.taxonomy import TaxonomyService
     from infrastructure.nvidia.client import Evo2Client
     from tools.blast.tool import BlastSearchTool
     from tools.evo.tool import Evo2PlausibilityTool, EvolutionaryContextTool
@@ -78,12 +79,16 @@ def build_default_registry(settings: Settings) -> ToolRegistry:
 
     timeout = settings.http.timeout_seconds
 
+    # One NCBI client, shared: it owns the connection pool and the rate
+    # limiter, and BLAST needs it to retrieve the sequence behind each hit.
+    ncbi = NCBIClient(settings.ncbi, timeout=timeout)
+
     registry = ToolRegistry(
         [
-            NCBISearchTool(NCBIClient(settings.ncbi, timeout=timeout)),
-            BlastSearchTool(BlastClient(settings.embl_ebi, timeout=timeout)),
+            NCBISearchTool(ncbi),
+            BlastSearchTool(BlastClient(settings.embl_ebi, timeout=timeout), ncbi),
             MafftAlignmentTool(MafftClient(settings.embl_ebi, timeout=timeout)),
-            EvolutionaryContextTool(),
+            EvolutionaryContextTool(TaxonomyService(ncbi)),
         ]
     )
 
