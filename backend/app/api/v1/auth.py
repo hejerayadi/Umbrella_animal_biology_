@@ -128,6 +128,7 @@ async def confirm_email(
         User.role == UserRole.ADMIN, User.status == UserStatus.ACTIVE
     ))).all())
     for admin in admins:
+        profile = user.profile
         db.add(AdminNotification(
             recipient_admin_id=admin.id,
             subject_user_id=user.id,
@@ -136,9 +137,16 @@ async def confirm_email(
             message=f"{user.profile.full_name if user.profile else user.email} is awaiting approval.",
         ))
         background.add_task(
-            request.app.state.email_service.send, admin.email,
-            "New Umbrella biologist application",
-            f"A verified application from {user.email} is waiting in the admin dashboard.",
+            request.app.state.email_service.new_biologist_application,
+            admin.email,
+            applicant_email=user.email,
+            full_name=profile.full_name if profile else "",
+            institution=profile.institution if profile else "",
+            professional_title=profile.professional_title if profile else "",
+            country=profile.country if profile else "",
+            orcid=profile.orcid if profile else None,
+            motivation=profile.motivation if profile else "",
+            specialties=profile.specialties if profile else [],
         )
     audit(db, request, "auth.email.verified", "SUCCESS", target_id=user.id)
     await db.commit()

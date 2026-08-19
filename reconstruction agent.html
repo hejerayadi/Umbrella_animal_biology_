@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reconstruction Agent — test console</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['ui-sans-serif', 'system-ui', 'Segoe UI', 'sans-serif'],
+          mono: ['ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
+        },
+        colors: {
+          ink: '#0d1418',
+          panel: '#131c22',
+          line: '#22303a',
+          marine: '#5fa8d3',
+        },
+      },
+    },
+  };
+</script>
+<style>
+  /* A gap is a run of N. Showing it as a coloured band is the one visual
+     device this page really needs - everything else is text. */
+  .seq { word-break: break-all; line-height: 1.5rem; }
+  .gap { background: #7c2d12; color: #fed7aa; border-radius: 2px; }
+  .fill { background: #14532d; color: #bbf7d0; border-radius: 2px; }
+  .node.active { box-shadow: 0 0 0 2px #5fa8d3 inset; }
+  .node.done { border-color: #2e7d4f; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #22303a; border-radius: 5px; }
+</style>
+</head>
+<body class="h-full bg-ink text-slate-200 font-sans antialiased">
+
+<div class="mx-auto max-w-[1400px] px-6 py-8">
+
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header class="flex flex-wrap items-start justify-between gap-6 border-b border-line pb-6">
+    <div>
+      <p class="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-500">
+        Umbrella · agent test console
+      </p>
+      <h1 class="mt-2 text-3xl font-semibold tracking-tight text-white">Reconstruction Agent</h1>
+      <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+        Fills unresolved regions — runs of <span class="font-mono text-slate-300">N</span> — in a
+        DNA sequence using homologous references. Every scenario below is a real
+        <span class="font-mono text-slate-300">POST /execute</span>, shaped exactly as the
+        orchestrator sends it when the Genome Agent escalates.
+      </p>
+    </div>
+
+    <div class="w-full max-w-sm rounded-lg border border-line bg-panel p-4">
+      <div class="flex items-center justify-between">
+        <span class="font-mono text-[11px] uppercase tracking-widest text-slate-500">Agent</span>
+        <span id="health-pill"
+              class="rounded px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider
+                     bg-slate-700 text-slate-300">checking…</span>
+      </div>
+      <div class="mt-3 flex items-center gap-2">
+        <input id="base-url" value="http://127.0.0.1:8006"
+               class="flex-1 rounded border border-line bg-ink px-2 py-1.5 font-mono text-xs
+                      text-slate-200 focus:border-marine focus:outline-none">
+        <button id="reconnect"
+                class="rounded border border-line px-2.5 py-1.5 text-xs text-slate-300
+                       hover:border-marine hover:text-white">Connect</button>
+      </div>
+      <dl id="health-detail" class="mt-3 space-y-1 font-mono text-[11px] text-slate-400"></dl>
+    </div>
+  </header>
+
+  <!-- ── Pipeline ───────────────────────────────────────────────────── -->
+  <section class="mt-10">
+    <div class="flex items-baseline gap-3">
+      <h2 class="text-lg font-semibold text-white">The agentic pipeline</h2>
+      <p class="text-sm text-slate-500">
+        Eleven nodes. Three of the transitions are conditional — those three are what make it
+        a loop rather than a pipeline.
+      </p>
+    </div>
+
+    <div id="pipeline" class="mt-5 grid gap-2
+                              grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"></div>
+
+    <div class="mt-4 grid gap-3 text-xs text-slate-400 sm:grid-cols-3">
+      <div class="rounded border border-line bg-panel p-3">
+        <p class="font-mono text-[11px] text-marine">detect_gaps → ?</p>
+        <p class="mt-1 leading-relaxed">Straight to <span class="font-mono">finalize</span> when
+          nothing has a live question — including a replayed run that already finished.</p>
+      </div>
+      <div class="rounded border border-line bg-panel p-3">
+        <p class="font-mono text-[11px] text-marine">select_tools → ?</p>
+        <p class="mt-1 leading-relaxed">Every step filtered out goes to
+          <span class="font-mono">critique</span>, so the critic records why instead of a no-op
+          tool round.</p>
+      </div>
+      <div class="rounded border border-line bg-panel p-3">
+        <p class="font-mono text-[11px] text-marine">decide → ?</p>
+        <p class="mt-1 leading-relaxed">The loop-back. REVISE returns to
+          <span class="font-mono">plan</span> carrying a structured reason; everything else
+          finalizes.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Scenarios + result ─────────────────────────────────────────── -->
+  <section class="mt-10 grid gap-6 lg:grid-cols-[380px_1fr]">
+
+    <div>
+      <h2 class="text-lg font-semibold text-white">Scenarios</h2>
+      <p class="mt-1 text-sm text-slate-500">
+        Each sends the context the Genome Agent would have produced.
+      </p>
+      <div class="mt-4 flex items-center gap-2">
+        <button id="run-all"
+                class="rounded bg-marine px-3 py-1.5 text-sm font-medium text-ink
+                       hover:bg-sky-300">Run all</button>
+        <button id="clear"
+                class="rounded border border-line px-3 py-1.5 text-sm text-slate-300
+                       hover:border-marine hover:text-white">Clear</button>
+      </div>
+      <div id="scenarios" class="mt-4 space-y-2"></div>
+    </div>
+
+    <div class="min-w-0">
+      <h2 class="text-lg font-semibold text-white">Result</h2>
+      <p class="mt-1 text-sm text-slate-500">
+        The bare <span class="font-mono text-slate-400">AgentResult</span> the orchestrator
+        parses, plus where its router would send it next.
+      </p>
+      <div id="result" class="mt-4 rounded-lg border border-line bg-panel p-6
+                              text-sm text-slate-500">
+        Pick a scenario to run.
+      </div>
+    </div>
+  </section>
+
+  <footer class="mt-12 border-t border-line pt-5 font-mono text-[11px] text-slate-600">
+    Slicing, retry delays and routing below mirror
+    <span class="text-slate-500">backend/orchestrator/langgraph/nodes/worker_node.py</span>
+    and <span class="text-slate-500">router.py</span>.
+  </footer>
+</div>
+
+<script>
+// ── Real data ────────────────────────────────────────────────────────
+// 600 bp of human mitochondrial MT-CO1 (NC_012920.1:5904-6503), so the
+// homology searches below run against a sequence that genuinely exists.
+const MTCO1 =
+  "ATGTTCGCCGACCGTTGACTATTCTCTACAAACCACAAAGACATTGGAACACTATACCTA" +
+  "TTATTCGGCGCATGAGCTGGAGTCCTAGGCACAGCTCTAAGCCTCCTTATTCGAGCCGAG" +
+  "CTGGGCCAGCCAGGCAACCTTCTAGGTAACGACCACATCTACAACGTTATCGTCACAGCC" +
+  "CATGCATTTGTAATAATCTTCTTCATAGTAATACCCATCATAATCGGAGGCTTTGGCAAC" +
+  "TGACTAGTTCCCCTAATAATCGGTGCCCCCGATATGGCGTTTCCCCGCATAAACAACATA" +
+  "AGCTTCTGACTCTTACCTCCCTCTCTCCTACTCCTGCTCGCATCTGCTATAGTGGAGGCC" +
+  "GGAGCAGGAACAGGTTGAACAGTCTACCCTCCCTTAGCAGGGAACTACTCCCACCCTGGA" +
+  "GCCTCCGTAGACCTAACCATCTTCTCCTTACACCTAGCAGGTGTCTCCTCTATCTTAGGG" +
+  "GCCATCAATTTCATCACAACAATTATCAATATAAAACCCCCTGCCATAACCCAATACCAA" +
+  "ACGCCCCTCTTCGTCTGATCCGTCCTAATCACAGCAGTCCTACTTCTCCTATCTCTCCCA";
+
+/** Replace `length` bases from `at` with N, the way an assembly gap looks. */
+const punch = (seq, at, length) =>
+  seq.slice(0, at) + "N".repeat(length) + seq.slice(at + length);
+
+/** The context the Genome Agent leaves behind when it escalates. */
+const genomeContext = (extra = {}) => ({
+  species: "Homo sapiens",
+  genome: "Genome of Homo sapiens, assembly GCF_000001405.40 (source: NCBI)",
+  assembly_id: "GCF_000001405.40",
+  genome_metadata: { genome_size_bp: 3099441038, chromosome_count: 24 },
+  ...extra,
+});
+
+const sequenceContext = (residues, extra = {}) =>
+  genomeContext({
+    sequence: {
+      identifier: "NC_012920.1:5904-6503",
+      residues,
+      organism: "Homo sapiens",
+      description: "MT-CO1 region",
+    },
+    ...extra,
+  });
+
+const ESCALATION =
+  "The assembly has an unresolved run inside the MT-CO1 region. Reconstruct the " +
+  "missing residues from homologous sequences so the gene can be annotated.";
+
+const SCENARIOS = [
+  {
+    id: "escalation",
+    name: "Genome escalation, real gap",
+    note: "30 bp unresolved inside MT-CO1. The ordinary case.",
+    expect: "COMPLETED, or CONTINUE then COMPLETED · routes back to Genome",
+    instruction: ESCALATION,
+    context: () => sequenceContext(punch(MTCO1, 300, 30)),
+  },
+  {
+    id: "short-gap",
+    name: "Short gap, well anchored",
+    note: "8 bp with 300 bp of flank either side — the easiest real case.",
+    expect: "COMPLETED with a reported fill",
+    instruction: ESCALATION,
+    context: () => sequenceContext(punch(MTCO1, 300, 8)),
+  },
+  {
+    id: "multi-gap",
+    name: "Two gaps in one sequence",
+    note: "Each gap is planned, searched and scored independently.",
+    expect: "COMPLETED · two entries in the payload",
+    instruction: ESCALATION,
+    context: () => sequenceContext(punch(punch(MTCO1, 120, 12), 400, 20)),
+  },
+  {
+    id: "long-gap",
+    name: "Gap longer than the cap",
+    note: "6000 bp — past RECONSTRUCTION_MAX_GAP_LENGTH.",
+    expect: "COMPLETED, gap reported SKIPPED — declined, not failed",
+    instruction: ESCALATION,
+    context: () => sequenceContext(MTCO1.slice(0, 200) + "N".repeat(6000) + MTCO1.slice(200)),
+  },
+  {
+    id: "no-flank",
+    name: "Gap with no usable flank",
+    note: "12 bases either side. An alignment needs 50 to anchor on.",
+    expect: "COMPLETED, gap reported SKIPPED",
+    instruction: ESCALATION,
+    context: () => sequenceContext("ACGTTGCAACGT" + "N".repeat(40) + "TTACGGCATTAC"),
+  },
+  {
+    id: "no-gaps",
+    name: "Sequence with no gaps",
+    note: "Nothing to do is an answer, not an error.",
+    expect: "COMPLETED · “no unresolved regions”",
+    instruction: "Reconstruct any unresolved regions in this sequence.",
+    context: () => sequenceContext(MTCO1),
+  },
+  {
+    id: "accession",
+    name: "Accession instead of residues",
+    note: "context.accession — the agent fetches the sequence itself.",
+    expect: "COMPLETED · fetched from NCBI, then no gaps",
+    instruction: ESCALATION,
+    context: () => genomeContext({ accession: "NC_012920.1" }),
+  },
+  {
+    id: "replay",
+    name: "Replayed X-Trace-Id",
+    note: "Reuses the previous run's trace id — a duplicate delivery.",
+    expect: "COMPLETED from the checkpoint, no work redone",
+    instruction: ESCALATION,
+    context: () => sequenceContext(punch(MTCO1, 300, 30)),
+    reuseTrace: true,
+  },
+  {
+    id: "invalid",
+    name: "Invalid FASTA residues",
+    note: "Characters that are not nucleotides.",
+    expect: "FAILED with the offending characters named · routes to responder",
+    instruction: ESCALATION,
+    context: () => sequenceContext("XZ!!!123 not a sequence"),
+  },
+  {
+    id: "no-sequence",
+    name: "Genome context, no sequence",
+    note: "The Genome Agent escalated without attaching anything to repair.",
+    expect: "FAILED asking for context.sequence · routes to responder",
+    instruction: "Reconstruct the unresolved regions.",
+    context: () => genomeContext(),
+  },
+];
+
+const NODES = [
+  ["load_or_init", "Open a slice; restart the wall clock"],
+  ["detect_gaps", "Locate gaps, decline the hopeless ones"],
+  ["plan", "Choose this round's tool calls"],
+  ["select_tools", "Resolve steps into calls, within budget"],
+  ["execute_tools", "Run them, each bounded by the slice deadline"],
+  ["observe", "Fold outputs into typed observations"],
+  ["reason", "Build and score candidate fills"],
+  ["validate", "Hard biological checks"],
+  ["critique", "ACCEPT · REVISE · ABSTAIN"],
+  ["decide", "Round again, or stop"],
+  ["finalize", "Build the result the orchestrator receives"],
+];
+
+// ── Orchestrator behaviour, mirrored ─────────────────────────────────
+// worker_node.py: 120 s per call, CONTINUE_RETRY_DELAYS = (1, 2, 4) — so four
+// slices, and the fifth is converted to FAILED.
+const RETRY_DELAYS = [1000, 2000, 4000];
+const CALL_TIMEOUT_MS = 120000;
+
+/** router.py: where the orchestrator sends each status. */
+function routeAfter(status) {
+  switch (status) {
+    case "needs_agent": return { next: "capability_resolver", tone: "sky" };
+    case "continue":    return { next: "Reconstruction (retry)", tone: "amber" };
+    case "failed":      return { next: "responder", tone: "rose" };
+    case "completed":   return { next: "Genome (the waiting agent)", tone: "emerald" };
+    default:            return { next: "unknown", tone: "slate" };
+  }
+}
+
+const TONES = {
+  emerald: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  amber:   "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  rose:    "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  sky:     "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  slate:   "bg-slate-500/15 text-slate-300 border-slate-500/30",
+};
+
+// ── Elements ─────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const baseUrl = () => $("base-url").value.replace(/\/+$/, "");
+const escapeHtml = (value) =>
+  String(value).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+let lastTraceId = null;
+
+// ── Health ───────────────────────────────────────────────────────────
+async function refreshHealth() {
+  const pill = $("health-pill");
+  const detail = $("health-detail");
+  pill.className = "rounded px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider " +
+                   "bg-slate-700 text-slate-300";
+  pill.textContent = "checking…";
+  detail.innerHTML = "";
+
+  try {
+    const response = await fetch(`${baseUrl()}/api/v1/health`, { signal: AbortSignal.timeout(8000) });
+    const data = (await response.json()).data;
+
+    pill.className = "rounded px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider " +
+                     "bg-emerald-500/20 text-emerald-300";
+    pill.textContent = data.status;
+
+    const services = data.services || {};
+    const rows = [
+      ["environment", data.environment],
+      ["planner", data.llm_provider],
+      ["tools", `${(data.tools || []).length} · ${(data.tools || []).join(", ")}`],
+      ["checkpoints", services.checkpoints?.configured ? "durable (Postgres)" : "in-memory — CONTINUE cannot resume"],
+      ["embl-ebi", services.embl_ebi?.configured ? "configured" : "unset — BLAST and MAFFT will refuse"],
+      ["azure", services.azure?.configured ? services.azure.detail : "unset — deterministic planning"],
+    ];
+    detail.innerHTML = rows.map(([key, value]) => `
+      <div class="flex gap-2">
+        <dt class="w-24 shrink-0 text-slate-600">${escapeHtml(key)}</dt>
+        <dd class="min-w-0 flex-1 break-words text-slate-400">${escapeHtml(value ?? "—")}</dd>
+      </div>`).join("");
+  } catch (error) {
+    pill.className = "rounded px-2 py-0.5 font-mono text-[11px] uppercase tracking-wider " +
+                     "bg-rose-500/20 text-rose-300";
+    pill.textContent = "unreachable";
+    detail.innerHTML = `
+      <p class="leading-relaxed text-slate-500">
+        Start it with
+        <span class="text-slate-300">python -m uvicorn backend.agents.reconstruction_agent.api:app
+        --port 8006</span> from the repository root.
+      </p>`;
+  }
+}
+
+// ── Pipeline rendering ───────────────────────────────────────────────
+function renderPipeline() {
+  $("pipeline").innerHTML = NODES.map(([name, what], index) => `
+    <div id="node-${name}"
+         class="node rounded border border-line bg-panel p-3 transition-colors">
+      <div class="flex items-baseline gap-2">
+        <span class="font-mono text-[10px] text-slate-600">${String(index + 1).padStart(2, "0")}</span>
+        <span class="font-mono text-xs text-slate-200">${name}</span>
+      </div>
+      <p class="mt-1 text-[11px] leading-snug text-slate-500">${what}</p>
+    </div>`).join("");
+}
+
+function markPipeline(state) {
+  NODES.forEach(([name]) => {
+    const node = $(`node-${name}`);
+    node.classList.remove("active", "done");
+    if (state === "running") node.classList.add("active");
+    if (state === "done") node.classList.add("done");
+  });
+}
+
+// ── Scenario rendering ───────────────────────────────────────────────
+function renderScenarios() {
+  $("scenarios").innerHTML = SCENARIOS.map((scenario) => `
+    <button data-scenario="${scenario.id}"
+            class="w-full rounded-lg border border-line bg-panel p-3 text-left
+                   transition-colors hover:border-marine">
+      <div class="flex items-start justify-between gap-2">
+        <span class="text-sm font-medium text-slate-100">${scenario.name}</span>
+        <span id="badge-${scenario.id}"
+              class="shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px]
+                     uppercase ${TONES.slate}">idle</span>
+      </div>
+      <p class="mt-1 text-[11px] leading-snug text-slate-500">${scenario.note}</p>
+      <p class="mt-1.5 font-mono text-[10px] leading-snug text-slate-600">${scenario.expect}</p>
+    </button>`).join("");
+
+  document.querySelectorAll("[data-scenario]").forEach((button) => {
+    button.addEventListener("click", () =>
+      runScenario(SCENARIOS.find((s) => s.id === button.dataset.scenario)));
+  });
+}
+
+function setBadge(id, text, tone) {
+  const badge = $(`badge-${id}`);
+  if (badge) {
+    badge.textContent = text;
+    badge.className = "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] " +
+                      `uppercase ${TONES[tone]}`;
+  }
+}
+
+// ── Running a scenario the way the orchestrator would ────────────────
+async function callAgent(instruction, context, traceId) {
+  const started = performance.now();
+  const response = await fetch(`${baseUrl()}/execute`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Trace-Id": traceId,
+      "X-Request-Id": crypto.randomUUID(),
+    },
+    body: JSON.stringify({ instruction, context }),
+    signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+  });
+  return {
+    payload: await response.json(),
+    elapsed: (performance.now() - started) / 1000,
+  };
+}
+
+async function runScenario(scenario) {
+  const traceId = scenario.reuseTrace && lastTraceId ? lastTraceId : crypto.randomUUID();
+  if (!scenario.reuseTrace) lastTraceId = traceId;
+
+  const context = scenario.context();
+  setBadge(scenario.id, "running", "sky");
+  markPipeline("running");
+  renderRunning(scenario, traceId, context);
+
+  const slices = [];
+  let result = null;
+
+  // The orchestrator retries a CONTINUE three times, so four slices in all,
+  // and converts a fifth into FAILED.
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt += 1) {
+    if (attempt > 0) {
+      const delay = RETRY_DELAYS[attempt - 1];
+      renderRunning(scenario, traceId, context, slices, `retry ${attempt}/3 after ${delay / 1000}s…`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    try {
+      const { payload, elapsed } = await callAgent(scenario.instruction, context, traceId);
+      result = payload;
+      slices.push({ status: payload.status, elapsed, reason: payload.continuation_reason });
+    } catch (error) {
+      // A timeout here is exactly what the orchestrator sees as "unreachable".
+      result = {
+        status: "failed",
+        output: `Reconstruction agent unreachable: ${error.message}`,
+        error: String(error.message),
+      };
+      slices.push({ status: "failed", elapsed: CALL_TIMEOUT_MS / 1000, reason: null });
+      break;
+    }
+
+    if (result.status !== "continue") break;
+
+    if (attempt === RETRY_DELAYS.length) {
+      // worker_node.py force-fails the fifth.
+      result = {
+        status: "failed",
+        output: `Reconstruction remained incomplete after 3 retries. Last reason: ${result.continuation_reason}`,
+        error: result.continuation_reason,
+      };
+      slices[slices.length - 1].status = "failed (forced)";
+    }
+  }
+
+  markPipeline("done");
+  const tone = routeAfter(result.status).tone;
+  setBadge(scenario.id, result.status.replace("_", " "), tone);
+  renderResult(scenario, traceId, context, result, slices);
+}
+
+// ── Result rendering ─────────────────────────────────────────────────
+function renderRunning(scenario, traceId, context, slices = [], note = "calling the agent…") {
+  $("result").innerHTML = `
+    <div class="animate-pulse">
+      <p class="text-sm text-slate-300">${escapeHtml(scenario.name)}</p>
+      <p class="mt-1 font-mono text-xs text-slate-500">${escapeHtml(note)}</p>
+      ${slices.length ? `<p class="mt-2 font-mono text-[11px] text-slate-600">
+        slices so far: ${slices.map((s) => s.status).join(" → ")}</p>` : ""}
+    </div>`;
+}
+
+/** The sequence with its gaps, or its fills, highlighted. */
+function renderSequence(residues, label) {
+  if (!residues) return "";
+  const marked = escapeHtml(residues)
+    .replace(/N{2,}/g, (run) => `<span class="gap">${run}</span>`);
+  return `
+    <div>
+      <p class="font-mono text-[11px] uppercase tracking-widest text-slate-600">${label}</p>
+      <p class="seq mt-1 max-h-40 overflow-y-auto rounded border border-line bg-ink p-3
+                font-mono text-[11px] text-slate-400">${marked}</p>
+    </div>`;
+}
+
+function renderResult(scenario, traceId, context, result, slices) {
+  const route = routeAfter(result.status);
+  const output = result.output;
+  const payload = (output && typeof output === "object") ? output : null;
+  const reconstruction = payload?.reconstruction || null;
+  const gaps = reconstruction?.gaps || [];
+
+  const contractKeys = ["status", "target_agent", "prompt_to_target_agent", "output",
+                        "continuation_reason", "retryable", "error"];
+  const extra = Object.keys(result).filter((key) => !contractKeys.includes(key));
+  const missing = contractKeys.filter((key) => !(key in result));
+
+  $("result").innerHTML = `
+    <div class="space-y-5">
+
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="rounded border px-2 py-1 font-mono text-xs uppercase tracking-wider
+                     ${TONES[route.tone]}">${escapeHtml(result.status)}</span>
+        <span class="text-sm text-slate-400">→ routes to
+          <span class="font-mono text-slate-200">${escapeHtml(route.next)}</span></span>
+        ${result.target_agent ? `<span class="font-mono text-xs text-sky-300">
+          target: ${escapeHtml(result.target_agent)}</span>` : ""}
+        <span class="ml-auto font-mono text-[11px] text-slate-600">
+          ${slices.length} slice${slices.length === 1 ? "" : "s"} ·
+          ${slices.reduce((total, s) => total + s.elapsed, 0).toFixed(1)}s</span>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="rounded border border-line bg-ink p-3">
+          <p class="font-mono text-[11px] uppercase tracking-widest text-slate-600">Slices</p>
+          <ol class="mt-2 space-y-1 font-mono text-[11px] text-slate-400">
+            ${slices.map((slice, index) => `
+              <li>${index + 1}. <span class="text-slate-200">${escapeHtml(slice.status)}</span>
+                · ${slice.elapsed.toFixed(1)}s
+                ${slice.reason ? `<span class="text-slate-600">— ${escapeHtml(slice.reason)}</span>` : ""}
+              </li>`).join("")}
+          </ol>
+        </div>
+        <div class="rounded border border-line bg-ink p-3">
+          <p class="font-mono text-[11px] uppercase tracking-widest text-slate-600">Contract</p>
+          <p class="mt-2 font-mono text-[11px] leading-relaxed text-slate-400">
+            keys: ${Object.keys(result).length}<br>
+            ${extra.length ? `<span class="text-rose-300">unexpected: ${extra.join(", ")}</span>`
+                           : `<span class="text-emerald-300">no unexpected keys</span>`}<br>
+            ${missing.length ? `<span class="text-amber-300">absent: ${missing.join(", ")}</span>`
+                             : `<span class="text-emerald-300">bare AgentResult, not the envelope</span>`}
+          </p>
+        </div>
+      </div>
+
+      ${reconstruction?.summary ? `
+        <div class="rounded border border-line bg-ink p-3">
+          <p class="font-mono text-[11px] uppercase tracking-widest text-slate-600">Summary</p>
+          <p class="mt-1.5 text-sm leading-relaxed text-slate-300">
+            ${escapeHtml(reconstruction.summary)}</p>
+        </div>` : ""}
+
+      ${typeof output === "string" ? `
+        <div class="rounded border border-rose-500/30 bg-rose-500/5 p-3">
+          <p class="font-mono text-[11px] uppercase tracking-widest text-rose-300">Error</p>
+          <p class="mt-1.5 font-mono text-xs leading-relaxed text-rose-200">
+            ${escapeHtml(output)}</p>
+        </div>` : ""}
+
+      ${gaps.length ? `
+        <div>
+          <p class="font-mono text-[11px] uppercase tracking-widest text-slate-600">
+            Gaps (${gaps.length})</p>
+          <div class="mt-2 space-y-2">
+            ${gaps.map((gap) => `
+              <div class="rounded border border-line bg-ink p-3">
+                <div class="flex flex-wrap items-baseline gap-3">
+                  <span class="font-mono text-xs text-slate-200">${escapeHtml(gap.gap_id)}</span>
+                  <span class="rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase
+                        ${gap.status === "reconstructed" ? TONES.emerald
+                          : gap.status === "skipped" ? TONES.slate : TONES.amber}">
+                    ${escapeHtml(gap.status)}</span>
+                  <span class="font-mono text-[11px] text-slate-500">
+                    ${gap.length} bp at ${gap.start}–${gap.end}</span>
+                  <span class="ml-auto font-mono text-[11px] text-slate-400">
+                    confidence ${(gap.confidence ?? 0).toFixed(3)}</span>
+                </div>
+                ${gap.reconstructed_sequence ? `
+                  <p class="seq mt-2 rounded bg-panel p-2 font-mono text-[11px]">
+                    <span class="fill">${escapeHtml(gap.reconstructed_sequence)}</span></p>` : ""}
+                ${gap.explanation ? `<p class="mt-2 text-[11px] leading-relaxed text-slate-500">
+                  ${escapeHtml(gap.explanation)}</p>` : ""}
+                ${(gap.evidence || []).length ? `
+                  <p class="mt-2 font-mono text-[10px] text-slate-600">
+                    evidence: ${gap.evidence.slice(0, 6).map((item) =>
+                      escapeHtml(item.reference_id +
+                        (item.identity != null ? ` (${(item.identity * 100).toFixed(0)}%)` : "")))
+                      .join(" · ")}${gap.evidence.length > 6 ? " …" : ""}</p>` : ""}
+              </div>`).join("")}
+          </div>
+        </div>` : ""}
+
+      <div class="grid gap-4 md:grid-cols-2">
+        ${renderSequence(context.sequence?.residues, "Sent (gaps highlighted)")}
+        ${renderSequence(payload?.reconstruction_sequence, "Returned")}
+      </div>
+
+      <details class="rounded border border-line bg-ink">
+        <summary class="cursor-pointer px-3 py-2 font-mono text-[11px] uppercase
+                        tracking-widest text-slate-500 hover:text-slate-300">
+          Request and response</summary>
+        <div class="space-y-3 border-t border-line p-3">
+          <div>
+            <p class="font-mono text-[10px] uppercase tracking-widest text-slate-600">
+              POST /execute · X-Trace-Id ${escapeHtml(traceId)}</p>
+            <pre class="mt-1 max-h-52 overflow-auto rounded bg-panel p-2 font-mono text-[10px]
+                        text-slate-400">${escapeHtml(JSON.stringify(
+                          { instruction: scenario.instruction, context }, null, 2))}</pre>
+          </div>
+          <div>
+            <p class="font-mono text-[10px] uppercase tracking-widest text-slate-600">Response</p>
+            <pre class="mt-1 max-h-52 overflow-auto rounded bg-panel p-2 font-mono text-[10px]
+                        text-slate-400">${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+          </div>
+        </div>
+      </details>
+    </div>`;
+}
+
+// ── Wiring ───────────────────────────────────────────────────────────
+renderPipeline();
+renderScenarios();
+refreshHealth();
+
+$("reconnect").addEventListener("click", refreshHealth);
+$("clear").addEventListener("click", () => {
+  SCENARIOS.forEach((scenario) => setBadge(scenario.id, "idle", "slate"));
+  markPipeline("idle");
+  $("result").innerHTML = `<p class="text-sm text-slate-500">Pick a scenario to run.</p>`;
+});
+$("run-all").addEventListener("click", async () => {
+  for (const scenario of SCENARIOS) await runScenario(scenario);
+});
+</script>
+</body>
+</html>
