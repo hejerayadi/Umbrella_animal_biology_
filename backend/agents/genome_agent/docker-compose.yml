@@ -70,3 +70,24 @@ services:
     working_dir: /app
     entrypoint: ["python", "-m", "genome_agent.scripts.run_full_integration_demo"]
     command: []
+
+  full_genome_metadata_demo:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/gene_agent
+    working_dir: /app
+    entrypoint: ["python", "-m", "gene_agent.scripts.run_genome_metadata_scenarios"]
+    command: []
+  full_species_resolver_demo:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/gene_agent
+    working_dir: /app
+    entrypoint: ["python", "-m", "gene_agent.scripts.run_species_resolver_scenarios"]
+    command: []
+
+  
