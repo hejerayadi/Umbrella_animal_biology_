@@ -110,9 +110,30 @@ class AppSettings(_Base):
     port: int = 8006
     reload: bool = False
 
+    #: Browser origins allowed to call this agent directly. Empty in
+    #: production, where the only client is the orchestrator and a browser has
+    #: no business reaching the agent at all. `*` in development so the local
+    #: test page - opened from disk, which sends `Origin: null` - can drive it.
+    cors_origins: str = Field(default="", alias="APP_CORS_ORIGINS")
+
     @property
     def is_production(self) -> bool:
         return self.env is AppEnv.PRODUCTION
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Origins to send CORS headers for.
+
+        Explicit entries always win. Outside production an unset value means
+        `*`, so the local test page works with no configuration; in production
+        an unset value means no CORS at all.
+        """
+        configured = [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
+        if configured or self.is_production:
+            return configured
+        return ["*"]
 
     @property
     def docs_enabled(self) -> bool:

@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from asgi_correlation_id import CorrelationIdMiddleware, correlation_id
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.dependencies import shutdown as close_dependencies
@@ -127,6 +128,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         header_name=settings.observability.correlation_id_header,
         validator=_is_safe_correlation_id,
     )
+
+    # The orchestrator is a server-to-server caller and needs no CORS. A
+    # browser does: `reconstruction agent.html` at the repository root drives
+    # this agent directly, and opened from disk it sends `Origin: null`.
+    # Off by default in production, where a browser should not be reaching the
+    # agent at all.
+    origins = settings.app.allowed_origins
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["*"],
+            # No cookies are involved, and credentialed requests cannot use the
+            # `*` origin the development default relies on.
+            allow_credentials=False,
+        )
 
     app.include_router(orchestrator_router)
     app.include_router(api_router)

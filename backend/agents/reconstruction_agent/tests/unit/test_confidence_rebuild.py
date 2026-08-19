@@ -290,3 +290,33 @@ class TestReferenceQuality:
 
         assert policy.describe(reference("REF_1", description="a pseudogene")) is not None
         assert policy.describe(reference("REF_2", description="complete cds")) is None
+
+
+class TestSummaryCountsEachGapOnce:
+    """A skipped gap was reported twice - visible on the test console."""
+
+    def test_a_single_skipped_gap_is_not_counted_twice(self) -> None:
+        from agent.reasoning.evidence_synthesizer import EvidenceSynthesizer
+        from contracts.output import GapReconstruction, ReconstructionStatus
+        from domain.models import Sequence
+
+        target = Sequence.parse("x", "ACGTTGCAACGT" + "N" * 40 + "TTACGGCATTAC")
+        # `ResultBuilder` synthesises this entry from the skipped map, then
+        # passes the map alongside it.
+        skipped_entry = GapReconstruction(
+            gap_id="gap_1",
+            start=12,
+            end=52,
+            length=40,
+            status=ReconstructionStatus.SKIPPED,
+        )
+
+        summary = EvidenceSynthesizer().summarise(
+            target,
+            [skipped_entry],
+            skipped={"gap_1": "no usable flank"},
+            iterations=0,
+        )
+
+        assert "1 unresolved region(s)" in summary
+        assert "2 unresolved region(s)" not in summary

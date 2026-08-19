@@ -63,7 +63,10 @@ class EvidenceSynthesizer:
 
         attempted = len(reconstructions)
         resolved = by_status[ReconstructionStatus.RECONSTRUCTED]
-        total_gaps = attempted + len(skipped)
+        # Not `attempted + len(skipped)`: `ResultBuilder` already synthesises a
+        # SKIPPED entry into `reconstructions` for every declined gap, so adding
+        # the map again reported one skipped gap as two.
+        total_gaps = attempted
 
         if total_gaps == 0:
             return (
