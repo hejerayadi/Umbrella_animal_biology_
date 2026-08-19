@@ -14,6 +14,8 @@ services:
       - .env
     volumes:
       - .:/app/genome_agent
+      - ../../..:/app/project
+    working_dir: /app/project
     command: python -m genome_agent.scripts.run_orchestrator_scenarios
 
   # Optional: pytest suite (routing/capability-resolver unit tests +
@@ -71,23 +73,48 @@ services:
     entrypoint: ["python", "-m", "genome_agent.scripts.run_full_integration_demo"]
     command: []
 
-  full_genome_metadata_demo:
+
+
+# senarios for subagent demos (gene annotation, visualization, species resolver). 
+  full_annotation_demo:
     build: .
     env_file:
       - .env
     volumes:
-      - .:/app/gene_agent
+      - .:/app/genome_agent
     working_dir: /app
-    entrypoint: ["python", "-m", "gene_agent.scripts.run_genome_metadata_scenarios"]
-    command: []
+    command: python -m genome_agent.scripts.run_gene_annotation_independent_tests
+
+  full_visualization_demo:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    command: python -m genome_agent.scripts.run_visualization_independent_tests
+
+  # Full genome metadata demo.
+
+
+  # Full species resolver demo.
   full_species_resolver_demo:
     build: .
     env_file:
       - .env
     volumes:
-      - .:/app/gene_agent
+      - .:/app/genome_agent
     working_dir: /app
-    entrypoint: ["python", "-m", "gene_agent.scripts.run_species_resolver_scenarios"]
+    entrypoint: ["python", "-m", "genome_agent.scripts.run_species_resolver_scenarios"]
     command: []
 
-  
+# genome metadata demo with subagent orchestration (visualization calling other subagents live, and capability_resolver escalating to an agent picked from agent_cards/) +
+  full_genome_metadata_demo:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+    working_dir: /app
+    entrypoint: ["python", "-m", "genome_agent.scripts.run_genome_metadata_scenarios"]
+    command: []
