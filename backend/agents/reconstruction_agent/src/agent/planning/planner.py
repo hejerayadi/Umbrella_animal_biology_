@@ -148,6 +148,17 @@ class Planner:
             if gap_id in skipped or _is_final(resolved.get(gap_id)):
                 continue
 
+            # A gap the critic sent back carries a diagnosis of which link in
+            # its evidence chain broke. Acting on that is what makes a second
+            # iteration worth its cost: without it the planner reissues the
+            # same call and receives the same objection.
+            revision = (state.get("revision_reasons") or {}).get(gap_id)
+            if revision:
+                repair = _repair_step(revision, gap_id)
+                if repair is not None:
+                    steps.append(repair)
+                    continue
+
             if not references.get(gap_id):
                 steps.append(
                     PlanStep(
@@ -169,6 +180,22 @@ class Planner:
                     )
                 )
 
+        # A contested gap has two live hypotheses and no way to choose between
+        # them from homology alone. That is precisely what the genome model is
+        # for, and it is the only situation worth spending a generation on.
+        for gap_id in self._contested_gaps(state):
+            steps.append(
+                PlanStep(
+                    tool="evo2_plausibility",
+                    gap_id=gap_id,
+                    reason=(
+                        "The references split evenly, leaving two candidate fills the "
+                        "alignment cannot separate; ask Evo 2 which one the sequence "
+                        "context actually predicts."
+                    ),
+                )
+            )
+
         if self._relatedness_unresolved(state):
             # Deliberately last: it costs nothing, and its answer only matters
             # once there are references to rank.
@@ -184,6 +211,25 @@ class Planner:
             )
 
         return steps
+
+
+    @staticmethod
+    def _contested_gaps(state: ReconstructionState) -> list[str]:
+        """Gaps holding more than one candidate that nothing has arbitrated yet.
+
+        Keyed on the presence of a second candidate rather than on a support
+        threshold: the ranker already decided the column was contested when it
+        built the alternative, and re-deriving that here would let the two
+        definitions drift apart.
+        """
+        arbitrated = state.get("plausibility") or {}
+        contested: list[str] = []
+
+        for gap_id, candidates in (state.get("candidates") or {}).items():
+            if len(candidates) > 1 and gap_id not in arbitrated:
+                contested.append(gap_id)
+
+        return sorted(contested)
 
     @staticmethod
     def _relatedness_unresolved(state: ReconstructionState) -> bool:
@@ -312,3 +358,51 @@ def _strip_code_fence(text: str) -> str:
     if body and body[-1].strip().startswith("```"):
         body = body[:-1]
     return "\n".join(body)
+
+
+#: How each diagnosis changes the next move. The point is that every branch
+#: does something *different* from the call that produced the diagnosis - a
+#: repair that reissues the same request is indistinguishable from a retry.
+_REPAIRS: dict[str, tuple[str, str]] = {
+    "no_blast_hits": (
+        "blast_search",
+        "The previous search found nothing; widen it rather than repeat it.",
+    ),
+    "bad_references": (
+        "ncbi_search",
+        "Hits were found but none could be aligned; fetch reference sequences "
+        "by name instead of relying on homology search metadata.",
+    ),
+    "weak_alignment": (
+        "mafft_align",
+        "References are present but the alignment does not locate the gap's "
+        "columns; realign with the widened reference set.",
+    ),
+    "ambiguous_consensus": (
+        "blast_search",
+        "The references disagree evenly, so no base wins on merit; gather more "
+        "independent evidence to break the tie.",
+    ),
+    "insufficient_phylogenetic_support": (
+        "evolutionary_context",
+        "Every reference is a distant relative; rank by phylogenetic proximity "
+        "before reading a fill out of them.",
+    ),
+}
+
+
+def _repair_step(reason: str, gap_id: str) -> PlanStep | None:
+    """The move that addresses one diagnosis, or None if it is not actionable."""
+    repair = _REPAIRS.get(reason)
+    if repair is None:
+        return None
+
+    tool, why = repair
+    # `relaxed` is not set here: the selector decides that from the attempt
+    # count, so a repair that happens to reuse a tool still widens its
+    # parameters on the second attempt rather than repeating the first.
+    return PlanStep(
+        tool=tool,
+        gap_id=gap_id if tool != "evolutionary_context" else None,
+        reason=why,
+    )

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from agent.graph.conditions import has_work
@@ -22,10 +22,13 @@ from agent.planning.stop_policy import StopPolicy, StopReason
 from agent.planning.tool_selector import ToolInvocation, ToolSelector
 from agent.reasoning.critic import Critic, Verdict
 from agent.reasoning.reasoner import Reasoner
+from agent.reasoning.revision import diagnose
 from agent.state import transitions
+from agent.state.reducers import accumulate_references
 from agent.state.state import (
     ReconstructionState,
     attempt_key,
+    final_gap_outcomes,
     unreconstructed_gap_ids,
 )
 from configuration.logging import get_logger
@@ -258,7 +261,12 @@ class ReconstructionNodes:
                 merged["errors"].append(str(result))
                 continue
             for key, value in result.items():
-                if key in ("references", "alignments", "attempts"):
+                if key == "references":
+                    # Two tools in the same round can answer for one gap -
+                    # BLAST measuring homology, NCBI supplying residues. A
+                    # plain overwrite kept whichever finished last.
+                    merged[key] = accumulate_references(merged[key], value)
+                elif key in ("alignments", "attempts"):
                     merged[key].update(value)
                 elif key in ("tool_calls", "errors", "observations"):
                     merged[key].extend(value)
@@ -322,8 +330,47 @@ class ReconstructionNodes:
             ]
             return update
 
+        def deadline_abort(remaining: float) -> dict[str, Any]:
+            """The slice ran out of wall clock while this tool was still going.
+
+            Recorded as its own kind of failure, not as a semantic one: the
+            tool did not answer "nothing found", it never answered at all. So
+            `attempts` is deliberately left untouched - the next slice must be
+            free to make the same call again as a first attempt, rather than
+            inheriting a relaxed retry it never earned.
+            """
+            detail = f"aborted after {remaining:.0f}s: the slice ran out of wall clock"
+            self.events.emit(EventType.TOOL_FAILED, run_id, detail, {"tool": invocation.tool})
+            return {
+                "tool_calls": [
+                    {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": False}
+                ],
+                "errors": [f"{invocation.tool}: {detail}"],
+                "observations": [
+                    Observation(
+                        tool=invocation.tool,
+                        gap_id=invocation.gap_id,
+                        status=ObservationStatus.FAILED,
+                        attempt=attempt,
+                        iteration=iteration,
+                        relaxed=invocation.relaxed,
+                        duration_seconds=round(time.monotonic() - started, 3),
+                        detail=detail,
+                        diagnostics={"slice_deadline": True},
+                    )
+                ],
+            }
+
+        # Whatever is left of this slice is all this call may take. Zero means
+        # the slice is already over, so the call is not started at all.
+        remaining = self.budgets.remaining_seconds(self._usage(state))
+
         try:
-            output = await self.registry.run(invocation.tool, invocation.payload)
+            output = await asyncio.wait_for(
+                self.registry.run(invocation.tool, invocation.payload), timeout=remaining
+            )
+        except TimeoutError:
+            return deadline_abort(remaining)
         except Exception as error:  # noqa: BLE001 - recorded, never fatal
             return failure(str(error))
 
@@ -365,8 +412,29 @@ class ReconstructionNodes:
             status = ObservationStatus.OK
             detail = None
 
+        scores: dict[str, float] = dict(getattr(output, "scores", {}) or {})
+        if scores and invocation.gap_id:
+            # Evo 2's verdict on the fills the alignment left open. Recorded
+            # per gap so `reason` can re-decide with it, and so a resumed slice
+            # does not pay for the same generation twice.
+            update["plausibility"] = {
+                invocation.gap_id: {
+                    "scores": scores,
+                    "best": getattr(output, "best_candidate", None),
+                    "model_confidence": getattr(output, "model_confidence", 0.0),
+                }
+            }
+
         if references and invocation.gap_id:
-            update["references"] = {invocation.gap_id: references}
+            # Which round and attempt produced this evidence. Once references
+            # accumulate, a gap's pool mixes rounds, and "where did this come
+            # from" stops being answerable from the run log alone.
+            update["references"] = {
+                invocation.gap_id: [
+                    _with_provenance(reference, iteration=iteration, attempt=attempt)
+                    for reference in references
+                ]
+            }
         if isinstance(alignment, Alignment) and invocation.gap_id:
             update["alignments"] = {invocation.gap_id: alignment}
 
@@ -439,18 +507,45 @@ class ReconstructionNodes:
         """Build and score candidates from every alignment gathered so far."""
         alignments = state.get("alignments") or {}
         references = state.get("references") or {}
-        resolved = state.get("reconstructions") or {}
+        # Not `reconstructions`: a LOW_CONFIDENCE or UNRESOLVED entry there is
+        # this round's best answer, not a final one, and skipping on its mere
+        # presence is what made every REVISE unable to change an outcome.
+        settled = set(final_gap_outcomes(state))
 
         candidates: dict[str, Any] = {}
 
         for context in state.get("gap_contexts") or []:
             gap_id = context.identifier
-            if gap_id in resolved or gap_id not in alignments:
+            if gap_id in settled or gap_id not in alignments:
                 continue
 
             built = self.reasoner.build_candidates(
                 context, alignments[gap_id], references.get(gap_id, [])
             )
+            # Where the alignment left two fills open and Evo 2 has since
+            # judged them, its verdict decides. This is the whole point of
+            # carrying an alternative: the vote could not settle the column,
+            # and an independent read of the sequence context can.
+            arbitration = (state.get("plausibility") or {}).get(gap_id)
+            if arbitration and len(built) > 1:
+                built = self.reasoner.arbitrate(
+                    context,
+                    built,
+                    alignments[gap_id],
+                    references.get(gap_id, []),
+                    scores=dict(arbitration.get("scores") or {}),
+                )
+                self.events.emit(
+                    EventType.CANDIDATE_PROPOSED,
+                    state["run_id"],
+                    f"Evo 2 settled a contested reconstruction for {gap_id}.",
+                    {
+                        "gap_id": gap_id,
+                        "scores": arbitration.get("scores"),
+                        "chosen": built[0].sequence[:40] if built else None,
+                    },
+                )
+
             candidates[gap_id] = built
 
             self.events.emit(
@@ -472,14 +567,17 @@ class ReconstructionNodes:
         candidate silently became UNRESOLVED and the loop never learned why.
         """
         candidates = state.get("candidates") or {}
-        resolved = state.get("reconstructions") or {}
+        # Not `reconstructions`: a LOW_CONFIDENCE or UNRESOLVED entry there is
+        # this round's best answer, not a final one, and skipping on its mere
+        # presence is what made every REVISE unable to change an outcome.
+        settled = set(final_gap_outcomes(state))
         contexts = {context.identifier: context for context in state.get("gap_contexts") or []}
 
         reconstructions: dict[str, Any] = {}
         warnings: list[str] = []
 
         for gap_id, gap_candidates in candidates.items():
-            if gap_id in resolved:
+            if gap_id in settled:
                 continue
             context = contexts.get(gap_id)
             if context is None:
@@ -518,6 +616,7 @@ class ReconstructionNodes:
 
         notes: list[str] = []
         verdicts: dict[str, str] = {}
+        revisions: dict[str, str] = {}
 
         for gap_id, reconstruction in (state.get("reconstructions") or {}).items():
             context = contexts.get(gap_id)
@@ -529,6 +628,13 @@ class ReconstructionNodes:
             verdicts[gap_id] = critique.verdict.value
             if critique.verdict is not Verdict.ACCEPT:
                 notes.append(critique.as_note())
+            if critique.verdict is Verdict.REVISE:
+                # What the next plan should do differently. Derived from state
+                # rather than from the critic's prose so it is available with
+                # no LLM configured, and so it means the same thing every time.
+                reason = diagnose(state, gap_id)
+                if reason is not None:
+                    revisions[gap_id] = reason.value
 
         if notes:
             self.events.emit(
@@ -541,6 +647,14 @@ class ReconstructionNodes:
         update: dict[str, Any] = {"verdicts": verdicts} if verdicts else {}
         if notes:
             update["critiques"] = notes
+        if revisions:
+            update["revision_reasons"] = revisions
+            self.events.emit(
+                EventType.CRITIQUE_ISSUED,
+                state["run_id"],
+                "Diagnosed what to change on the next round.",
+                {"revision_reasons": revisions},
+            )
         return cast(ReconstructionState, update)
 
     # --- 9. Decide ----------------------------------------------------------
@@ -676,3 +790,8 @@ class ReconstructionNodes:
             llm_tokens=state.get("budget_llm_tokens", 0),
             slice_started_at=state.get("slice_started_at"),
         )
+
+
+def _with_provenance(reference: Reference, *, iteration: int, attempt: int) -> Reference:
+    """`reference` tagged with the round and attempt that produced it."""
+    return replace(reference, iteration=iteration, attempt=attempt)

@@ -32,27 +32,118 @@ class Reasoner:
         alignment: Alignment,
         references: list[Reference],
     ) -> list[Candidate]:
-        """Scored candidates for one gap.
+        """Scored candidates for one gap, best-first.
 
-        Currently one consensus candidate per alignment. The list return is not
-        speculative: per-reference candidates and a second method both belong
-        here, and the ranker already exists to choose between them.
+        One when the consensus is clean, two when it is contested. The second
+        is not a courtesy: where the references split evenly, the plurality
+        string is one hypothesis and the runner-up is another, and the vote by
+        itself cannot say which is right. Carrying both is what gives an
+        independent check - Evo 2 - something to arbitrate between, and it is
+        why a 50/50 gap can now be settled instead of only distrusted.
         """
-        consensus = self.ranker.build_consensus(context, alignment, references)
-        if consensus is None:
+        candidates = self.ranker.build_alternatives(context, alignment, references)
+        if not candidates:
             return []
 
-        score = self.confidence.score(
-            consensus, context, mean_identity=alignment.mean_identity()
-        )
-        explanation = deterministic_explanation(
-            gap_id=context.identifier,
-            length=consensus.length,
-            confidence=score,
-            references=consensus.supporting_references,
-            mean_identity=alignment.mean_identity(),
-        )
-        return [consensus.scored(score, explanation=explanation)]
+        scored: list[Candidate] = []
+        for candidate in candidates:
+            score = self.confidence.score(
+                candidate,
+                context,
+                mean_identity=alignment.mean_identity(),
+                # The references carry the measured homology and the
+                # phylogenetic proximity; without them the score cannot tell
+                # "five sequences agreed" from "five well-matched close
+                # relatives agreed".
+                references=references,
+            )
+            explanation = deterministic_explanation(
+                gap_id=context.identifier,
+                length=candidate.length,
+                confidence=score,
+                references=candidate.supporting_references,
+                mean_identity=alignment.mean_identity(),
+            )
+            scored.append(candidate.scored(score, explanation=explanation))
+
+        return self.ranker.rank(scored)
+
+    def arbitrate(
+        self,
+        context: GapContext,
+        candidates: list[Candidate],
+        alignment: Alignment,
+        references: list[Reference],
+        *,
+        scores: dict[str, float],
+    ) -> list[Candidate]:
+        """Re-decide a contested gap using Evo 2's read of the sequence context.
+
+        The candidates are keyed positionally - `candidate_0`, `candidate_1` -
+        because that is how they were handed to the tool, and re-deriving the
+        mapping from sequence text would break the moment two candidates shared
+        a prefix.
+
+        Each candidate is re-scored with its own plausibility, so the model's
+        opinion enters through the confidence policy rather than around it. That
+        matters: the policy lets plausibility *lower* a score and never raise
+        one, so a genome model cannot promote a fill the alignment does not
+        support - it can only break a tie between fills the alignment already
+        allows, and cast doubt on one it dislikes.
+        """
+        if not scores:
+            return candidates
+
+        # Relative, not absolute. Evo 2's agreement with any real sequence is
+        # low in absolute terms, so scoring candidates on the raw figure would
+        # penalise both equally and settle nothing. Against the best of them,
+        # the preferred fill keeps its score intact and the rejected one is
+        # discounted by exactly how much less the model expected it.
+        ordered = sorted(scores.values(), reverse=True)
+        best = ordered[0]
+        runner_up = ordered[1] if len(ordered) > 1 else 0.0
+        # How cleanly the model separated the leaders. A near-tie in its own
+        # opinion settles nothing and earns no relief from the ambiguity
+        # penalty; a decisive preference earns it in proportion.
+        margin = ((best - runner_up) / best) if best > 0 else 0.0
+
+        rescored: list[Candidate] = []
+        for index, candidate in enumerate(candidates):
+            raw = scores.get(f"candidate_{index}")
+            plausibility = (raw / best) if raw is not None and best > 0 else raw
+            if plausibility is None:
+                rescored.append(candidate)
+                continue
+
+            score = self.confidence.score(
+                candidate,
+                context,
+                mean_identity=alignment.mean_identity(),
+                references=references,
+                plausibility=plausibility,
+                # Only the fill the model actually preferred has its ambiguity
+                # resolved; the ones it rejected remain as unsettled as the
+                # vote left them.
+                arbitration_margin=margin if raw == best else None,
+            )
+            explanation = deterministic_explanation(
+                gap_id=context.identifier,
+                length=candidate.length,
+                confidence=score,
+                references=candidate.supporting_references,
+                mean_identity=alignment.mean_identity(),
+            )
+            rescored.append(
+                candidate.scored(
+                    score,
+                    explanation=(
+                        f"{explanation} Evo 2 scored this fill "
+                        f"{plausibility:.2f} against its own prediction."
+                    ),
+                )
+            )
+
+        return self.ranker.rank(rescored)
 
     def finalise(
         self,

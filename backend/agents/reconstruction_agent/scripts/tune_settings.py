@@ -23,8 +23,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import itertools
+import json
 import random
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,8 +86,63 @@ def _mutate(sequence: str, rate: float, rng: random.Random) -> str:
     return "".join(out)
 
 
-def build_case(scenario: Scenario, rng: random.Random) -> tuple[GapContext, Alignment, str]:
-    """A gap context, an alignment over it, and the truth it should recover."""
+def _plurality_fill(pairs: list[AlignedPair], start: int, end: int) -> str:
+    """The unweighted per-column plurality over the reference rows.
+
+    Deliberately a local reimplementation rather than a call into
+    `CandidateRanker`: this is the yardstick recall is measured against, so it
+    must not move when the ranker's voting rule changes. If a future weighted
+    voter recovers a case this cannot, that shows up as `correct` exceeding
+    `decidable` - which is a result worth seeing, not an error.
+    """
+    out: list[str] = []
+    for column in range(start, end):
+        votes = Counter(
+            pair.reference_aligned[column]
+            for pair in pairs
+            if column < len(pair.reference_aligned)
+        )
+        if not votes:
+            continue
+        ranked = votes.most_common()
+        # A tie is not a plurality. The old yardstick took `most_common`'s
+        # insertion order, which in this fixture put the agreeing references
+        # first - so it scored ties as winnable purely because of how the
+        # scenario was built. That flattered any voter that broke ties the same
+        # way, and penalised one that did not.
+        if len(ranked) > 1 and ranked[1][1] == ranked[0][1]:
+            return ""
+
+        base = ranked[0][0]
+        if base != "-":
+            out.append(base)
+    return "".join(out)
+
+
+def case_rng(scenario: Scenario, seed: int) -> random.Random:
+    """A generator keyed on the scenario's own coordinates.
+
+    One shared `Random` drawn sequentially made every scenario's data depend on
+    how many scenarios preceded it, so reordering the grid silently changed the
+    results. Seeding per scenario makes each case reproducible on its own.
+    """
+    return random.Random(
+        f"{seed}:{scenario.gap_length}:{scenario.reference_count}:"
+        f"{scenario.agreeing_fraction}:{scenario.both_flanks}:{scenario.flank_divergence}"
+    )
+
+
+def build_case(
+    scenario: Scenario, rng: random.Random
+) -> tuple[GapContext, Alignment, str, bool]:
+    """A gap context, an alignment over it, the truth, and whether it is winnable.
+
+    The last element is decided from the fixture alone - never from what the
+    pipeline produced - because it is the denominator recall is measured
+    against. Deriving it from the outcome (as this script used to) made recall
+    self-referential: recovering more cases also raised its own denominator, so
+    a real improvement could read as flat.
+    """
     flank_length = 120
     left = "".join(rng.choice(BASES) for _ in range(flank_length))
     right = "".join(rng.choice(BASES) for _ in range(flank_length))
@@ -121,7 +178,10 @@ def build_case(scenario: Scenario, rng: random.Random) -> tuple[GapContext, Alig
         gap_column_start=flank_length,
         gap_column_end=flank_length + scenario.gap_length,
     )
-    return context, alignment, truth
+    decidable = (
+        _plurality_fill(pairs, flank_length, flank_length + scenario.gap_length) == truth
+    )
+    return context, alignment, truth, decidable
 
 
 def scenarios() -> list[Scenario]:
@@ -157,11 +217,13 @@ class Outcome:
     confidence: float
     correct: bool
     produced: bool
+    #: Whether the truth was derivable from the references supplied, decided
+    #: from the fixture rather than from what the pipeline managed.
+    decidable: bool
 
 
 def run_confidence_sweep(seed: int = 20260818) -> list[Outcome]:
     """Score every scenario with the deterministic pipeline."""
-    rng = random.Random(seed)
     reasoner = Reasoner(
         ranker=CandidateRanker(),
         validator=ReconstructionValidator(),
@@ -172,7 +234,7 @@ def run_confidence_sweep(seed: int = 20260818) -> list[Outcome]:
 
     outcomes: list[Outcome] = []
     for scenario in scenarios():
-        context, alignment, truth = build_case(scenario, rng)
+        context, alignment, truth, decidable = build_case(scenario, case_rng(scenario, seed))
         candidates = reasoner.build_candidates(context, alignment, [])
         result = reasoner.finalise(context, candidates)
 
@@ -186,66 +248,192 @@ def run_confidence_sweep(seed: int = 20260818) -> list[Outcome]:
                 confidence=result.confidence,
                 correct=produced and result.reconstructed_sequence == truth,
                 produced=produced,
+                decidable=decidable,
             )
         )
     return outcomes
 
 
-def report_confidence(outcomes: list[Outcome]) -> float:
-    """Print precision/recall by threshold and return the recommended value."""
+def measure(outcomes: list[Outcome], threshold: float) -> dict[str, float]:
+    """Precision, recall and F1 at one threshold.
+
+    Recall is over **every** scenario, not over the ones the pipeline happened
+    to get right. The denominator is therefore a fixed property of the grid and
+    comparable across versions of the agent - which is the whole point of
+    measuring. `recall_decidable` narrows it to the cases an unweighted
+    plurality could win, for interpretation only.
+    """
+    accepted = [o for o in outcomes if o.produced and o.confidence >= threshold]
+    correct = sum(1 for o in accepted if o.correct)
+    decidable = sum(1 for o in outcomes if o.decidable) or 1
+
+    precision = correct / len(accepted) if accepted else 1.0
+    recall = correct / (len(outcomes) or 1)
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+
+    return {
+        "threshold": threshold,
+        "accepted": float(len(accepted)),
+        "correct": float(correct),
+        "precision": precision,
+        "recall": recall,
+        "recall_decidable": correct / decidable,
+        "f1": f1,
+    }
+
+
+def report_confidence(outcomes: list[Outcome], min_precision: float = 0.90) -> float:
+    """Print the precision/recall curve and return the recommended threshold."""
+    decidable = sum(1 for o in outcomes if o.decidable)
+
     print("\n" + "=" * 78)
     print("SWEEP 1 - RECONSTRUCTION_MIN_CONFIDENCE")
     print("=" * 78)
-    print(f"{len(outcomes)} scenarios; {sum(o.correct for o in outcomes)} recoverable.")
+    print(f"{len(outcomes)} scenarios; {decidable} winnable by unweighted plurality.")
     print(
-        "\nA wrong base is worse than no base: a reported reconstruction that is "
-        "\nincorrect corrupts an assembly silently, while an unresolved gap is "
-        "\nvisibly unresolved. So precision is weighted above recall."
+        "\nRecall is over all scenarios, so the denominator cannot move when the\n"
+        "agent improves. It is therefore comparable across versions, and its\n"
+        f"ceiling on this grid is {decidable / len(outcomes):.3f}, not 1.000."
+    )
+    print(
+        f"\nThe operating point is chosen for the highest recall whose precision\n"
+        f"still meets {min_precision:.2f}. A wrong base is worse than a missing one -\n"
+        "it corrupts an assembly silently - so precision sets the floor, but a\n"
+        "tool that refuses two answers in three is not doing its job either."
     )
     print(f"\n{'thresh':>7} {'accepted':>9} {'correct':>8} {'precision':>10} "
           f"{'recall':>8} {'F1':>7}")
     print("-" * 78)
 
-    recoverable = sum(1 for o in outcomes if o.correct) or 1
-    best_f1, best_threshold = -1.0, 0.55
-    at_95: float | None = None
-    clean: float | None = None
-    clean_recall = 0.0
-
-    for step in range(0, 20):
-        threshold = step / 20
-        accepted = [o for o in outcomes if o.produced and o.confidence >= threshold]
-        correct = sum(1 for o in accepted if o.correct)
-        precision = correct / len(accepted) if accepted else 1.0
-        recall = correct / recoverable
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-
-        if f1 > best_f1:
-            best_f1, best_threshold = f1, threshold
-        if accepted and precision >= 0.95 and at_95 is None:
-            at_95 = threshold
-        if accepted and precision >= 1.0 and clean is None:
-            clean, clean_recall = threshold, recall
-
-        print(f"{threshold:>7.2f} {len(accepted):>9} {correct:>8} {precision:>10.3f} "
-              f"{recall:>8.3f} {f1:>7.3f}")
+    rows = [measure(outcomes, step / 20) for step in range(0, 20)]
+    for row in rows:
+        print(f"{row['threshold']:>7.2f} {int(row['accepted']):>9} {int(row['correct']):>8} "
+              f"{row['precision']:>10.3f} {row['recall']:>8.3f} {row['f1']:>7.3f}")
 
     print("-" * 78)
-    print(f"best F1              : {best_threshold:.2f}  (F1={best_f1:.3f})")
-    print(f"precision >= 0.95    : {at_95 if at_95 is not None else 'not reached'}")
-    print(f"precision == 1.00    : {clean if clean is not None else 'not reached'}"
-          f"  (recall {clean_recall:.3f})")
 
-    # The zero-false-positive threshold, not the F1 optimum. F1 treats a wrong
-    # base and a missing base as equally bad; in an assembly they are not. A
-    # missing base stays visibly missing, a wrong one propagates silently into
-    # every downstream analysis.
-    recommended = clean if clean is not None else (at_95 or best_threshold)
-    print(f"\nRECOMMENDED RECONSTRUCTION_MIN_CONFIDENCE={recommended:.2f}")
-    print("Chosen for zero false positives on this grid, not for best F1.")
+    # Among the thresholds that clear the floor, the best F1 - not the lowest.
+    # Taking the lowest maximises recall by definition, but it gives away
+    # precision that costs almost no recall to keep: on the current curve the
+    # lowest qualifying threshold buys 0.04 recall for 0.04 precision, which is
+    # not a trade worth making when a wrong base corrupts an assembly silently.
+    qualifying = [r for r in rows if r["accepted"] and r["precision"] >= min_precision]
+    qualifying.sort(key=lambda r: (-r["f1"], r["threshold"]))
+    best_f1 = max(rows, key=lambda r: r["f1"])
+    clean = next((r for r in rows if r["accepted"] and r["precision"] >= 1.0), None)
+
+    if clean:
+        print(f"precision == 1.00    : {clean['threshold']:.2f}  "
+              f"(recall {clean['recall']:.3f})")
+    else:
+        print("precision == 1.00    : not reached")
+    print(f"best F1              : {best_f1['threshold']:.2f}  (F1={best_f1['f1']:.3f})")
+
+    chosen = qualifying[0] if qualifying else best_f1
+    print(f"\nRECOMMENDED RECONSTRUCTION_MIN_CONFIDENCE={chosen['threshold']:.2f}")
+    print(f"  precision {chosen['precision']:.3f}  recall {chosen['recall']:.3f}  "
+          f"(of winnable: {chosen['recall_decidable']:.3f})")
+    if not qualifying:
+        print(f"  NO threshold reaches precision {min_precision:.2f}; fell back to best F1.")
     print("Caveat: the grid over-represents adversarial 50/50 reference splits,")
     print("so this is a conservative floor rather than a calibrated optimum.")
-    return recommended
+    return float(chosen["threshold"])
+
+
+#: Committed alongside the script, so every change to the agent can be shown
+#: against the numbers it started from rather than against a memory of them.
+BASELINE_PATH = Path(__file__).resolve().parent / "tuning_baseline.json"
+
+
+def compare_to_baseline(outcomes: list[Outcome], *, save: bool = False) -> None:
+    """Show this run's curve against the committed baseline, and optionally replace it."""
+    current = {
+        "scenarios": len(outcomes),
+        "decidable": sum(1 for o in outcomes if o.decidable),
+        "curve": [measure(outcomes, step / 20) for step in range(0, 20)],
+    }
+
+    if save:
+        BASELINE_PATH.write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+        print(f"\nBaseline written to {BASELINE_PATH.name}.")
+        return
+
+    if not BASELINE_PATH.exists():
+        print(f"\nNo baseline yet. Run with --save-baseline to record {BASELINE_PATH.name}.")
+        return
+
+    previous = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+    print("\n" + "=" * 78)
+    print(f"AGAINST BASELINE ({BASELINE_PATH.name})")
+    print("=" * 78)
+    print(f"{'thresh':>7} {'precision':>21} {'recall':>21}")
+    print("-" * 78)
+
+    by_threshold = {row["threshold"]: row for row in previous.get("curve", [])}
+    for row in current["curve"]:
+        before = by_threshold.get(row["threshold"])
+        if before is None:
+            continue
+        d_precision = row["precision"] - before["precision"]
+        d_recall = row["recall"] - before["recall"]
+        if abs(d_precision) < 1e-9 and abs(d_recall) < 1e-9:
+            continue
+        print(
+            f"{row['threshold']:>7.2f} "
+            f"{before['precision']:>8.3f} -> {row['precision']:>6.3f} ({d_precision:+.3f}) "
+            f"{before['recall']:>8.3f} -> {row['recall']:>6.3f} ({d_recall:+.3f})"
+        )
+    print("-" * 78)
+
+
+def report_discrimination(outcomes: list[Outcome]) -> None:
+    """Whether the confidence score separates correct answers from wrong ones.
+
+    This is the measurement that matters most while the scoring is being
+    reworked. A threshold can only trade recall for precision if the score
+    ranks correct reconstructions above incorrect ones; if the two populations
+    overlap, raising the threshold discards good answers and bad ones in equal
+    proportion and buys nothing.
+
+    Reported as the separation between the two means, and as the probability
+    that a randomly chosen correct answer outscores a randomly chosen wrong one
+    (the rank statistic behind AUC - 0.5 is no signal, 1.0 is perfect ranking).
+    """
+    produced = [o for o in outcomes if o.produced]
+    right = [o.confidence for o in produced if o.correct]
+    wrong = [o.confidence for o in produced if not o.correct]
+
+    print()
+    print("=" * 78)
+    print("DOES CONFIDENCE PREDICT CORRECTNESS?")
+    print("=" * 78)
+
+    if not right or not wrong:
+        print("Only one population present; separation cannot be measured.")
+        return
+
+    mean_right = sum(right) / len(right)
+    mean_wrong = sum(wrong) / len(wrong)
+
+    wins = sum(
+        1.0 if r > w else 0.5 if r == w else 0.0
+        for r in right
+        for w in wrong
+    )
+    auc = wins / (len(right) * len(wrong))
+
+    print(f"correct   : n={len(right):>3}  mean confidence {mean_right:.3f}")
+    print(f"incorrect : n={len(wrong):>3}  mean confidence {mean_wrong:.3f}")
+    print(f"separation: {mean_right - mean_wrong:+.3f}")
+    print(f"ranking   : {auc:.3f}  (0.5 = the score carries no signal)")
+
+    if auc < 0.65:
+        print()
+        print(
+            "The score barely ranks correct above incorrect, so the threshold "
+            "is a blunt instrument: it discards good answers at nearly the same "
+            "rate as bad ones. Improving the score beats moving the threshold."
+        )
 
 
 def report_failure_modes(outcomes: list[Outcome]) -> None:
@@ -456,14 +644,27 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", help="Skip the Azure sweep.")
     parser.add_argument("--repeats", type=int, default=3, help="LLM samples per state.")
+    parser.add_argument(
+        "--min-precision",
+        type=float,
+        default=0.90,
+        help="Precision floor the recommended threshold must meet (default 0.90).",
+    )
+    parser.add_argument(
+        "--save-baseline",
+        action="store_true",
+        help=f"Overwrite {BASELINE_PATH.name} with this run's curve.",
+    )
     args = parser.parse_args()
 
     settings = Settings()
     configure_logging(settings.observability, log_format=LogFormat.JSON)
 
     outcomes = run_confidence_sweep()
-    confidence = report_confidence(outcomes)
+    confidence = report_confidence(outcomes, min_precision=args.min_precision)
+    report_discrimination(outcomes)
     report_failure_modes(outcomes)
+    compare_to_baseline(outcomes, save=args.save_baseline)
 
     temperature = 0.0
     if not args.offline:

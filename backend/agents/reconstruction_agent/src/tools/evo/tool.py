@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from configuration.logging import get_logger
 from domain.exceptions import ReconstructionError
+from infrastructure.ncbi.taxonomy import TaxonomyService
 from infrastructure.nvidia.client import Continuation, Evo2Client
 from tools.contracts import Tool
 from tools.evo.mapper import heuristic_relatedness
@@ -43,10 +44,17 @@ class EvolutionaryContextTool(Tool[EvolutionaryContextInput, EvolutionaryContext
     description = (
         "Score how closely candidate reference organisms relate to the target organism, so "
         "that references can be ranked by phylogenetic proximity as well as by alignment "
-        "quality. Fast and local, but genus-level only; when it cannot separate candidates "
-        "the Evolution Agent should be consulted instead."
+        "quality. Uses NCBI's taxonomy when reachable, falling back to a genus-level name "
+        "heuristic; when neither can separate the candidates the Evolution Agent should be "
+        "consulted instead."
     )
-    estimated_seconds = 0.1
+    estimated_seconds = 2.0
+
+
+    def __init__(self, taxonomy: TaxonomyService | None = None) -> None:
+        # Optional: without it the tool keeps the name heuristic, which is what
+        # every unit test constructs it with.
+        self.taxonomy = taxonomy
 
     async def run(self, payload: EvolutionaryContextInput) -> EvolutionaryContextOutput:
         if not payload.target_organism:
@@ -55,26 +63,66 @@ class EvolutionaryContextTool(Tool[EvolutionaryContextInput, EvolutionaryContext
                 notes=["No target organism given; relatedness could not be estimated."],
             )
 
+        # The heuristic is the floor, not the answer: it returns a flat 0.3 for
+        # everything outside the target's genus, which is almost every useful
+        # reference, so on its own it contributes a constant and ranks nothing.
         relatedness = {
             organism: heuristic_relatedness(payload.target_organism, organism)
             for organism in payload.candidate_organisms
         }
-
         notes: list[str] = []
+        source = "heuristic"
+
+        measured = await self._taxonomy_relatedness(payload)
+        if measured:
+            relatedness.update(measured)
+            source = "ncbi_taxonomy"
+            if len(measured) < len(payload.candidate_organisms):
+                notes.append(
+                    f"NCBI taxonomy placed {len(measured)} of "
+                    f"{len(payload.candidate_organisms)} organism(s); the rest kept the "
+                    "name-based estimate."
+                )
+
         if relatedness and max(relatedness.values()) < _DELEGATION_THRESHOLD:
             notes.append(
-                "The name-based heuristic could not place any candidate near "
-                f"{payload.target_organism}. A phylogeny from the Evolution Agent would "
-                "rank these references far better."
+                f"Nothing available places a candidate near {payload.target_organism}. "
+                "A phylogeny from the Evolution Agent would rank these references "
+                "far better."
             )
 
         return EvolutionaryContextOutput(
             succeeded=True,
             relatedness=relatedness,
-            source="heuristic",
+            source=source,
             notes=notes,
-            diagnostics={"delegation_recommended": bool(notes)},
+            diagnostics={
+                "delegation_recommended": bool(
+                    relatedness and max(relatedness.values()) < _DELEGATION_THRESHOLD
+                ),
+                "measured_by_taxonomy": len(measured),
+            },
         )
+
+    async def _taxonomy_relatedness(
+        self, payload: EvolutionaryContextInput
+    ) -> dict[str, float]:
+        """Real lineage distances, when a taxonomy service is wired.
+
+        Never fatal. Taxonomy enriches the ranking; a run that cannot reach
+        NCBI keeps the heuristic and carries on, because a reference ordering
+        that is merely coarse still beats no reconstruction at all.
+        """
+        if self.taxonomy is None or not payload.candidate_organisms:
+            return {}
+
+        try:
+            return await self.taxonomy.relatedness(
+                payload.target_organism, list(payload.candidate_organisms)
+            )
+        except Exception as error:  # noqa: BLE001 - enrichment must not fail a run
+            _log.info("taxonomy_relatedness_failed", error=str(error))
+            return {}
 
 
 class Evo2PlausibilityTool(Tool[PlausibilityInput, PlausibilityOutput]):

@@ -32,16 +32,32 @@ class TestConfidencePolicy:
         assert score >= policy.minimum_confidence
         assert policy.classify(score) is ReconstructionStatus.RECONSTRUCTED
 
-    def test_single_reference_scores_below_the_threshold(self) -> None:
-        """One reference carrying the answer alone is thin evidence."""
+    def test_single_reference_scores_below_corroborated_evidence(self) -> None:
+        """One reference carrying the answer alone is thin evidence.
+
+        It is no longer *barred* from being reported: the old depth factor
+        capped one reference at 0.50 and two at 0.625, which put them under any
+        usable threshold however perfect the alignment - so a gap with a single
+        excellent homologue was unreconstructable by arithmetic rather than by
+        judgement. What must still hold is the ordering: thin evidence scores
+        lower than corroborated evidence, and the critic still objects to it
+        (see `_THIN_EVIDENCE_REFERENCES` in the critic).
+        """
         policy = ConfidencePolicy()
-        candidate = Candidate(
+        alone = Candidate(
             gap_id="gap_1", sequence="ACGT", support=1.0, supporting_references=["A"]
         )
+        corroborated = Candidate(
+            gap_id="gap_1",
+            sequence="ACGT",
+            support=1.0,
+            supporting_references=["A", "B", "C"],
+        )
 
-        score = policy.score(candidate, make_context(4), mean_identity=0.99)
+        thin = policy.score(alone, make_context(4), mean_identity=0.99)
+        thick = policy.score(corroborated, make_context(4), mean_identity=0.99)
 
-        assert policy.classify(score) is ReconstructionStatus.LOW_CONFIDENCE
+        assert thin < thick
 
     def test_longer_gaps_score_lower_on_identical_evidence(self) -> None:
         """Flanking evidence constrains a long span less than a short one."""

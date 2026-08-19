@@ -13,9 +13,10 @@ from agent.planning.planner import PlanStep
 from agent.state.state import ReconstructionState, attempt_key
 from configuration.logging import get_logger
 from domain.models import GapContext, Reference
+from domain.policies.reference_quality import ReferenceQualityPolicy
 from domain.services import ReferenceRanker
 from tools.blast.schemas import BlastSearchInput
-from tools.evo.schemas import EvolutionaryContextInput
+from tools.evo.schemas import EvolutionaryContextInput, PlausibilityInput
 from tools.mafft.schemas import AlignmentInput
 from tools.ncbi.schemas import NCBISearchInput
 
@@ -48,6 +49,9 @@ _RELAXED_MAX_HITS = 100
 #: a gap in a non-coding or poorly-annotated region finds nothing there.
 _RELAXED_DATABASE = "em_rel_vrt"
 
+#: Annotation-based judgement, shared by every selection.
+_QUALITY = ReferenceQualityPolicy()
+
 
 class ToolSelector:
     """Builds tool payloads from plan steps and state."""
@@ -78,6 +82,8 @@ class ToolSelector:
             return self._ncbi(step, context, state, relaxed)
         if step.tool == "evolutionary_context":
             return self._evo(step, state)
+        if step.tool == "evo2_plausibility":
+            return self._plausibility(step, context, state)
 
         _log.warning("tool_payload_unbuildable", tool=step.tool)
         return None
@@ -111,6 +117,10 @@ class ToolSelector:
             payload=BlastSearchInput(
                 sequence=context.query_sequence(),
                 gap_id=context.identifier,
+                # So the tool knows how far past the HSPs to reach when it
+                # retrieves the subject region: the missing segment sits
+                # between the flanks and is in no HSP.
+                gap_length=context.gap.length,
                 **arguments,
             ),
         )
@@ -138,8 +148,11 @@ class ToolSelector:
             reference
             for reference in ranked
             # A reference with no residues cannot be aligned, however well it
-            # scored on the BLAST metadata alone.
+            # scored on the BLAST metadata alone. A pseudogene can be aligned
+            # and should not be: it diverges from the functional copy at
+            # exactly the bases being reconstructed.
             if reference.has_sequence
+            and _QUALITY.is_usable(reference, expected_length=context.gap.length)
         ]
         if not usable:
             return None
@@ -151,6 +164,16 @@ class ToolSelector:
                 references=len(usable),
                 detail="Including references below the usability floor.",
             )
+
+        # The end of the evidence path, and the number the earlier counts exist
+        # to explain: how many references actually reached the aligner.
+        _log.info(
+            "references_sent_to_mafft",
+            gap_id=context.identifier,
+            references_sent_to_mafft=len(usable),
+            available=len(available),
+            with_sequence=sum(1 for reference in available if reference.has_sequence),
+        )
 
         return ToolInvocation(
             tool="mafft_align",
@@ -182,6 +205,52 @@ class ToolSelector:
                 term=str(step.arguments.get("term") or state.get("organism") or ""),
                 organisms=[str(organism) for organism in organisms],
                 **_allowed(step.arguments, {"database", "limit", "fetch_sequences"}),
+            ),
+        )
+
+
+    def _plausibility(
+        self, step: PlanStep, context: GapContext | None, state: ReconstructionState
+    ) -> ToolInvocation | None:
+        """Ask Evo 2 to arbitrate between the fills the alignment left open.
+
+        Only worth a call when there is genuinely something to arbitrate. With
+        a single candidate the model has nothing to compare it against, and its
+        opinion would either rubber-stamp the consensus or contradict it on no
+        evidence - neither of which is a reason to spend a generation.
+
+        Until this branch existed the step was built by nothing and silently
+        dropped with `tool_payload_unbuildable`, so the tool was unreachable
+        however often the planner selected it.
+        """
+        if context is None:
+            return None
+
+        candidates = (state.get("candidates") or {}).get(context.identifier) or []
+        proposals = {
+            f"candidate_{index}": candidate.sequence
+            for index, candidate in enumerate(candidates)
+            if candidate.sequence
+        }
+        if len(proposals) < 2:
+            _log.info(
+                "evo2_skipped",
+                gap_id=context.identifier,
+                candidates=len(proposals),
+                detail="Nothing to arbitrate; a lone candidate needs no tie-break.",
+            )
+            return None
+
+        if not context.left_flank:
+            return None
+
+        return ToolInvocation(
+            tool="evo2_plausibility",
+            gap_id=context.identifier,
+            payload=PlausibilityInput(
+                gap_id=context.identifier,
+                left_flank=context.left_flank,
+                candidates=proposals,
             ),
         )
 

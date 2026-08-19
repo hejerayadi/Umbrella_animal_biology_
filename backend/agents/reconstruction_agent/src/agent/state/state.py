@@ -19,7 +19,7 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, TypedDict
 
-from agent.state.reducers import merge_by_gap, replace
+from agent.state.reducers import accumulate_references, merge_by_gap, replace
 from contracts.observation import Observation
 from contracts.output import GapReconstruction
 from domain.models import Candidate, GapContext, Reference, Sequence
@@ -52,9 +52,15 @@ class ReconstructionState(TypedDict, total=False):
     # --- Evidence, accumulated across iterations and slices ---------------
     # Keyed by gap id: each gap gathers its own references and candidates, and
     # nodes may process gaps in any order.
-    references: Annotated[dict[str, list[Reference]], merge_by_gap]
+    # Accumulated, not replaced: a later round must add to a gap's evidence
+    # rather than discard what earlier rounds paid for.
+    references: Annotated[dict[str, list[Reference]], accumulate_references]
     alignments: Annotated[dict[str, Any], merge_by_gap]
     candidates: Annotated[dict[str, list[Candidate]], merge_by_gap]
+    #: Evo 2's arbitration for a contested gap: candidate id -> plausibility,
+    #: plus which it preferred. Keyed by gap so a resumed slice does not pay
+    #: for the same generation again.
+    plausibility: Annotated[dict[str, Any], merge_by_gap]
     reconstructions: Annotated[dict[str, GapReconstruction], merge_by_gap]
 
     # --- Agent loop control -----------------------------------------------
@@ -69,6 +75,9 @@ class ReconstructionState(TypedDict, total=False):
     critiques: Annotated[list[str], operator.add]
     #: Per-gap verdict from the last critique round: accept | revise | abstain.
     verdicts: Annotated[dict[str, str], merge_by_gap]
+    #: Why each revised gap failed, as a `RevisionReason` value. This is what
+    #: lets the next plan change strategy instead of reissuing the same call.
+    revision_reasons: Annotated[dict[str, str], merge_by_gap]
     #: How many times each (tool, gap) pair has been attempted, so a semantic
     #: failure is retried once with relaxed parameters and then abandoned.
     attempts: Annotated[dict[str, int], merge_by_gap]
@@ -129,6 +138,7 @@ def initial_state(
         references={},
         alignments={},
         candidates={},
+        plausibility={},
         reconstructions={},
         plan=[],
         pending_invocations=[],
@@ -136,6 +146,7 @@ def initial_state(
         tool_calls=[],
         critiques=[],
         verdicts={},
+        revision_reasons={},
         attempts={},
         iteration=0,
         max_iterations=max_iterations,
