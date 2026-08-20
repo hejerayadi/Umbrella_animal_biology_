@@ -1,0 +1,27 @@
+{
+  "name": "Animal Image Generation Agent",
+  "type": "worker",
+  "description": "Generates a scientifically grounded image of an animal species when no photograph exists.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [
+    "Trait Discovery Agent",
+    "Biodiversity Agent"
+  ],
+  "managed_services": [
+    "Stable Diffusion XL",
+    "DALL-E 3"
+  ],
+  "capabilities": [
+    "Animal image generation",
+    "Species visualization"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "generated_image": "string"
+  }
+}

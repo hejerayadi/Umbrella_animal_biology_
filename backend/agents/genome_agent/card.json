@@ -1,0 +1,27 @@
+{
+  "name": "Genome Agent",
+  "type": "worker",
+  "description": "Retrieves, analyzes and interprets genomic information.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [
+    "Literature Agent"
+  ],
+  "managed_services": [
+    "NCBI",
+    "Ensembl"
+  ],
+  "capabilities": [
+    "Genome retrieval",
+    "Gene retrieval",
+    "Genome analysis"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "genome": "string"
+  }
+}

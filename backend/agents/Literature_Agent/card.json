@@ -1,0 +1,24 @@
+{
+  "name": "Literature Agent",
+  "type": "worker",
+  "description": "Searches and summarizes scientific literature.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "PubMed",
+    "Semantic Scholar"
+  ],
+  "capabilities": [
+    "Paper retrieval",
+    "Scientific summarization"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "papers": "list"
+  }
+}
