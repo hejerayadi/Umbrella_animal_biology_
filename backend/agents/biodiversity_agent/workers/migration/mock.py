@@ -45,15 +45,29 @@ class MigrationMock:
                 source_agents=["Migration Analysis Agent"],
             )
 
+        # Lazy import breaks the circular dep (orchestrator -> workers -> orchestrator).
+        try:
+            from ...orchestrator.services.map_renderer import render_route_map
+
+            map_url = render_route_map(
+                species,
+                route=record["route"],
+                seasonal_pattern=record["seasonal_pattern"],
+            )
+        except Exception:
+            slug = species.lower().replace(" ", "_")
+            map_url = f"https://maps.umbrella.local/migration/{slug}.html"
+
         payload = {
-            "species_name": species,
-            **record,
-            "map_url": f"https://maps.umbrella.local/migration/{species.lower().replace(' ', '_')}.html",
+            "species_name":     species,
+            "route":            record["route"],
+            "seasonal_pattern": record["seasonal_pattern"],
+            "map_url":          map_url,
         }
         return AgentResult(
             status=AgentStatus.COMPLETED,
             output=payload,
-            map_url=payload["map_url"],
+            map_url=map_url,
             migration_route=record["route"],
             source_agents=["Migration Analysis Agent"],
         )

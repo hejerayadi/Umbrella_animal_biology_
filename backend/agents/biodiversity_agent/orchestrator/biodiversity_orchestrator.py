@@ -44,7 +44,7 @@ from ..schema import (
 from ..workers.habitat.mock import HabitatMock
 from ..workers.hotspots.mock import HotspotsMock
 from ..workers.migration.mock import MigrationMock
-from ..workers.species_distribution.mock import SpeciesDistributionMock
+from ..workers.species_distribution.worker import SpeciesDistributionWorker
 from .aggregator import aggregate
 from .router import Router
 from .services.qdrant_client import SpeciesTaxonomyService
@@ -81,11 +81,18 @@ class BiodiversityOrchestrator:
         workers: dict[BiodiversityFeature, Any] | None = None,
         taxonomy: SpeciesTaxonomyService | None = None,
     ) -> None:
+        # Species Distribution now runs against real GBIF via
+        # ``SpeciesDistributionWorker``. The three other workers stay on
+        # their mocks until Ouissale (habitat, hotspots) and Miriam
+        # (migration) ship their Sprint 3 implementations - the
+        # orchestrator and its tests do not care which flavor is
+        # plugged in as long as the ``run(AgentRequest) -> AgentResult``
+        # contract holds.
         self._workers = workers or {
-            BiodiversityFeature.SPECIES_DISTRIBUTION_MAP: SpeciesDistributionMock(),
-            BiodiversityFeature.HABITAT_VISUALIZATION: HabitatMock(),
-            BiodiversityFeature.BIODIVERSITY_HOTSPOTS: HotspotsMock(),
-            BiodiversityFeature.MIGRATION_ANALYSIS: MigrationMock(),
+            BiodiversityFeature.SPECIES_DISTRIBUTION_MAP: SpeciesDistributionWorker(),
+            BiodiversityFeature.HABITAT_VISUALIZATION:    HabitatMock(),
+            BiodiversityFeature.BIODIVERSITY_HOTSPOTS:    HotspotsMock(),
+            BiodiversityFeature.MIGRATION_ANALYSIS:       MigrationMock(),
         }
         self._router = Router(self._workers)
         self._taxonomy = taxonomy or SpeciesTaxonomyService.from_env()
