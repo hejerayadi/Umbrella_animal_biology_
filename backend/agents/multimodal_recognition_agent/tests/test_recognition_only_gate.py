@@ -1,13 +1,3 @@
-"""The recognition-only gate.
-
-The final Sprint 2 decision is that this agent has one core function - name the
-species in one photograph - and explicitly does NOT search for similar animals
-or similar images, own a reference-image corpus, or use a vector database.
-
-A comment saying so proves nothing. Every test in this file is a mechanical
-check on what the shipped code, configuration, dependencies, fixtures and card
-actually contain, so the decision cannot quietly erode.
-"""
 from __future__ import annotations
 
 import json
@@ -283,7 +273,7 @@ def test_no_output_field_names_similarity():
 
 
 # ===========================================================================
-# 36 / 37 - real BioCLIP-2, live GBIF and live NCBI stay out of Sprint 2
+# 36 / 37 - real BioCLIP-2 stays behind `remote`; live GBIF/NCBI now real (P4)
 # ===========================================================================
 
 @pytest.mark.parametrize("mode", ["real", "bioclip2", "torch", "hf", ""])
@@ -294,8 +284,10 @@ def test_a_non_mock_bioclip_mode_is_refused_at_startup(monkeypatch, mode):
     assert "BIOCLIP_PROVIDER_MODE" in str(caught.value)
 
 
-@pytest.mark.parametrize("mode", ["real", "live", "gbif", "http"])
+@pytest.mark.parametrize("mode", ["live", "gbif", "http"])
 def test_a_non_mock_taxonomy_mode_is_refused_at_startup(monkeypatch, mode):
+    """`real` is excluded here since Phase 4 implemented it - see
+    test_phase1_config_hardening.py for its selectable/credential tests."""
     monkeypatch.setenv("TAXONOMY_PROVIDER_MODE", mode)
     with pytest.raises(ConfigError) as caught:
         RecognitionConfig.from_env()
@@ -303,18 +295,23 @@ def test_a_non_mock_taxonomy_mode_is_refused_at_startup(monkeypatch, mode):
 
 
 def test_no_module_can_reach_a_biological_service():
-    """No taxonomy-service host anywhere in the shipped runtime.
+    """No IUCN host anywhere in the shipped runtime, and GBIF/NCBI hosts stay
+    confined to the one module that owns that boundary.
 
-    Phase 3 narrowed this gate rather than weakened it. BioCLIP-2 now runs on its
-    authors' public Space, so the BioCLIP host is expected - but ONLY in the two
-    modules that own that boundary, and every taxonomy host stays forbidden
-    everywhere, because live GBIF/NCBI belong to Phase 4 and do not exist yet.
+    Phase 3 narrowed this gate for BioCLIP-2's Space host; Phase 4 does the same
+    for GBIF/NCBI. IUCN is still not integrated anywhere, so it stays forbidden
+    everywhere with no allowlist at all.
     """
-    forbidden_hosts = ("api.gbif.org", "gbif.org", "eutils.ncbi.nlm.nih.gov",
-                       "ncbi.nlm.nih.gov", "apiv3.iucnredlist.org", "iucnredlist.org")
+    forbidden_hosts = ("apiv3.iucnredlist.org", "iucnredlist.org")
+
     # The classification boundary, and nothing else, may name the BioCLIP Space.
     bioclip_host_allowed = {"config.py", "bioclip.py"}
     bioclip_hosts = ("huggingface.co", "imageomics")
+
+    # The taxonomy boundary, and nothing else, may name GBIF/NCBI hosts.
+    taxonomy_host_allowed = {"taxonomy.py"}
+    taxonomy_hosts = ("api.gbif.org", "gbif.org", "eutils.ncbi.nlm.nih.gov",
+                      "ncbi.nlm.nih.gov")
 
     offenders = []
     for path in shipped_files(".py"):
@@ -326,13 +323,22 @@ def test_no_module_can_reach_a_biological_service():
         offenders += [f"{path.name}: {host}" for host in forbidden_hosts if host in text]
         if path.name not in bioclip_host_allowed:
             offenders += [f"{path.name}: {host}" for host in bioclip_hosts if host in text]
+        if path.name not in taxonomy_host_allowed:
+            offenders += [f"{path.name}: {host}" for host in taxonomy_hosts if host in text]
     assert not offenders, offenders
 
 
-def test_no_http_client_is_imported_by_the_taxonomy_adapter():
+def test_no_http_client_is_imported_at_module_level_by_the_taxonomy_adapter():
+    """Phase 4's real providers need an HTTP client, but importing this module
+    must still open no connection - so the import may only happen lazily,
+    inside a method, never at module scope. Same rule bioclip.py's
+    gradio_client import already follows.
+    """
     source = (PACKAGE / "adapters" / "taxonomy.py").read_text(encoding="utf-8")
+    # Column-anchored: only a TOP-LEVEL import is caught. An indented one
+    # inside a function/method is exactly what Phase 4 is allowed to do.
     pattern = re.compile(
-        r"^\s*(?:import|from)\s+(requests|httpx|urllib|http|socket|aiohttp)\b",
+        r"^(?:import|from)\s+(requests|httpx|urllib|http|socket|aiohttp)\b",
         re.MULTILINE,
     )
     assert pattern.search(source) is None

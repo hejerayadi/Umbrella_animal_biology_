@@ -342,7 +342,7 @@ class MockTaxonomyProvider:
         return enriched, degraded
 
 
-def build_taxonomy_provider(config: "RecognitionConfig") -> MockTaxonomyProvider:
+def build_taxonomy_provider(config: "RecognitionConfig") -> "MockTaxonomyProvider | RealTaxonomyProvider":
     """Construct the taxonomy provider the configured mode names, or refuse.
 
     Same contract as `bioclip.build_classifier`: the fixture-backed provider is
@@ -361,11 +361,27 @@ def build_taxonomy_provider(config: "RecognitionConfig") -> MockTaxonomyProvider
     if mode == "mock":
         return MockTaxonomyProvider()
 
+    if mode == "real":
+        if not config.ncbi_tool or not config.ncbi_email:
+            raise ConfigError(
+                "TAXONOMY_PROVIDER_MODE=real requires NCBI_TOOL and NCBI_EMAIL to be "
+                "set, per NCBI's Entrez usage guidelines. Refusing to start rather "
+                "than calling NCBI unidentified."
+            )
+        return RealTaxonomyProvider(
+            gbif=RealGBIFProvider(timeout_seconds=config.taxonomy_timeout_seconds),
+            ncbi=RealNCBIProvider(
+                tool=config.ncbi_tool,
+                email=config.ncbi_email,
+                api_key=config.ncbi_api_key,
+                timeout_seconds=config.taxonomy_timeout_seconds,
+            ),
+        )
+
     if mode in TAXONOMY_PROVIDER_MODES:
         raise ConfigError(
-            f"TAXONOMY_PROVIDER_MODE={mode!r} has no implementation yet "
-            "(live GBIF and NCBI lookups arrive in Phase 4). Refusing to start "
-            "rather than serving fixture taxonomy as live lookups."
+            f"TAXONOMY_PROVIDER_MODE={mode!r} has no implementation yet. "
+            "Refusing to start rather than serving fixture taxonomy as live lookups."
         )
 
     raise ConfigError(
@@ -373,3 +389,267 @@ def build_taxonomy_provider(config: "RecognitionConfig") -> MockTaxonomyProvider
         + ", ".join(TAXONOMY_PROVIDER_MODES)
         + f". Got {mode!r}."
     )
+
+
+# ============================================================================
+# Phase 4 - real GBIF and NCBI providers.
+#
+# Deliberately SEPARATE classes from MockGBIFProvider/MockNCBIProvider, for the
+# same reason RemoteBioCLIP2Provider (adapters/bioclip.py) is separate from
+# MockBioCLIP2Provider: the mock stays provably fixture-only, and a mode bug
+# can never make a live deployment silently construct it.
+#
+# NOT YET WIRED IN: there is no RealTaxonomyProvider facade here, and
+# build_taxonomy_provider() above has not been extended with a "real" branch.
+# Both are blocked on confirming how real-mode taxonomy_status should be
+# labeled, since domain/models.py's TaxonomyStatus Literal currently only
+# allows "mock_verified" / "partial" / "unverified".
+# ============================================================================
+
+# GBIF's official matchType values that count as a usable exact match. FUZZY
+# and HIGHERRANK are real GBIF outcomes but not exact matches - treated the
+# same way MockGBIFProvider treats an inconsistent record: available, not
+# matched cleanly, no identifier taken from it.
+_GBIF_EXACT_MATCH_TYPES = {"EXACT"}
+_GBIF_AMBIGUOUS_MATCH_TYPES = {"FUZZY", "HIGHERRANK"}
+
+
+class RealGBIFProvider:
+    """Live GBIF species lookup via the official public Species API.
+
+    No account or API key is required for this endpoint - it is GBIF's free,
+    open species-match service. The client is built lazily so importing this
+    module never opens a connection, matching RemoteBioCLIP2Provider's pattern.
+    """
+
+    source = "GBIF"
+    mode = "real"
+
+    _BASE_URL = "https://api.gbif.org/v1/species/match"
+
+    def __init__(self, *, timeout_seconds: float = 10.0, session: object = None) -> None:
+        self.timeout_seconds = timeout_seconds
+        # Injectable so offline tests drive this with no network at all.
+        self._session = session
+
+    def _ensure_session(self):
+        if self._session is None:
+            # Imported here, not at module scope - importing this package must
+            # not pull in an HTTP client or reach the network.
+            import requests
+
+            self._session = requests.Session()
+        return self._session
+
+    def lookup(self, species_id: str, scientific_name: str) -> TaxonomyLookup:
+        try:
+            session = self._ensure_session()
+            response = session.get(
+                self._BASE_URL,
+                params={"name": scientific_name},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:  # noqa: BLE001 - every transport failure is one outcome
+            # A GBIF outage is a fact about the request, never a crash. The
+            # candidate survives, unverified - same contract as the mock's
+            # `unavailable` branch.
+            return TaxonomyLookup(available=False, matched=False)
+
+        if not isinstance(payload, dict):
+            return TaxonomyLookup(available=True, matched=False)
+
+        match_type = payload.get("matchType")
+        usage_key = payload.get("usageKey")
+
+        if match_type in _GBIF_AMBIGUOUS_MATCH_TYPES:
+            return TaxonomyLookup(available=True, matched=False, inconsistent=True)
+
+        if match_type not in _GBIF_EXACT_MATCH_TYPES:
+            # NONE, or an unrecognised value from a future API change - treated
+            # as "answered, no usable match", never guessed at.
+            return TaxonomyLookup(available=True, matched=False)
+
+        identifier = (
+            usage_key if isinstance(usage_key, int) and not isinstance(usage_key, bool) else None
+        )
+        if identifier is None:
+            # An EXACT match with no usable key is a contract surprise, not an
+            # identifier to invent - treated as unmatched rather than guessing.
+            return TaxonomyLookup(available=True, matched=False)
+
+        accepted_name = payload.get("canonicalName") or payload.get("scientificName")
+        rank = payload.get("rank")
+
+        classification = {}
+        for level in ("kingdom", "phylum", "class", "order", "family", "genus"):
+            value = payload.get(level)
+            if isinstance(value, str) and value:
+                classification[level] = value
+
+        return TaxonomyLookup(
+            available=True,
+            matched=True,
+            identifier=identifier,
+            accepted_name=accepted_name if isinstance(accepted_name, str) else None,
+            rank=rank if isinstance(rank, str) else None,
+            classification=classification,
+        )
+
+    def provenance(self) -> dict:
+        return {"source": self.source, "mode": self.mode, "endpoint": self._BASE_URL}
+
+
+class RealNCBIProvider:
+    """Live NCBI Taxonomy lookup via the official Entrez E-utilities.
+
+    Per NCBI's usage guidelines, `tool` and `email` identify the calling
+    application; no API key is required below 3 requests/second. Both are read
+    from configuration at construction time, never hardcoded, and never logged.
+    """
+
+    source = "NCBI"
+    mode = "real"
+
+    _ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+
+    def __init__(
+        self,
+        *,
+        tool: str,
+        email: str,
+        api_key: str | None = None,
+        timeout_seconds: float = 10.0,
+        session: object = None,
+    ) -> None:
+        self.tool = tool
+        self.email = email
+        self.api_key = api_key
+        self.timeout_seconds = timeout_seconds
+        self._session = session
+
+    def _ensure_session(self):
+        if self._session is None:
+            import requests
+
+            self._session = requests.Session()
+        return self._session
+
+    def lookup(self, species_id: str, scientific_name: str) -> TaxonomyLookup:
+        params = {
+            "db": "taxonomy",
+            "term": f'"{scientific_name}"[Scientific Name]',
+            "retmode": "json",
+            "tool": self.tool,
+            "email": self.email,
+        }
+        if self.api_key:
+            params["api_key"] = self.api_key
+
+        try:
+            session = self._ensure_session()
+            response = session.get(self._ESEARCH_URL, params=params, timeout=self.timeout_seconds)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:  # noqa: BLE001
+            return TaxonomyLookup(available=False, matched=False)
+
+        if not isinstance(payload, dict):
+            return TaxonomyLookup(available=True, matched=False)
+
+        id_list = payload.get("esearchresult", {}).get("idlist")
+        if not isinstance(id_list, list) or not id_list:
+            return TaxonomyLookup(available=True, matched=False)
+
+        if len(id_list) > 1:
+            # More than one TaxID for an exact-quoted scientific name is an
+            # ambiguous record - no identifier is taken from it.
+            return TaxonomyLookup(available=True, matched=False, inconsistent=True)
+
+        raw_taxid = id_list[0]
+        try:
+            taxid = int(raw_taxid)
+        except (TypeError, ValueError):
+            return TaxonomyLookup(available=True, matched=False)
+
+        return TaxonomyLookup(
+            available=True,
+            matched=True,
+            identifier=taxid,
+            accepted_name=scientific_name,
+            rank="species",
+        )
+
+    def provenance(self) -> dict:
+        return {"source": self.source, "mode": self.mode, "endpoint": self._ESEARCH_URL}
+
+
+class RealTaxonomyProvider:
+    """Live taxonomy facade - same public surface as MockTaxonomyProvider,
+    backed by RealGBIFProvider and RealNCBIProvider instead of fixtures.
+
+    Deliberately a SEPARATE class, not a modified MockTaxonomyProvider, for the
+    same reason RemoteBioCLIP2Provider is separate from MockBioCLIP2Provider:
+    the mock stays provably fixture-only, and a mode bug can never make a live
+    deployment silently construct it.
+
+    Uses "verified" (not "mock_verified") so a response can never be misread as
+    mocked when it was live, or the reverse - confirmed with the team.
+    """
+
+    mode = "real"
+
+    def __init__(self, *, gbif: RealGBIFProvider, ncbi: RealNCBIProvider) -> None:
+        self.gbif = gbif
+        self.ncbi = ncbi
+
+    def validate_candidate(self, candidate: SpeciesCandidate) -> tuple[SpeciesCandidate, dict]:
+        gbif = self.gbif.lookup(candidate.species_id, candidate.scientific_name)
+        ncbi = self.ncbi.lookup(candidate.species_id, candidate.scientific_name)
+
+        gbif_id = gbif.identifier if gbif.matched else None
+        ncbi_taxid = ncbi.identifier if ncbi.matched else None
+
+        if gbif_id is not None and ncbi_taxid is not None:
+            status = "verified"
+        elif gbif_id is not None or ncbi_taxid is not None:
+            status = "partial"
+        else:
+            status = "unverified"
+
+        updates: dict[str, object] = {
+            "gbif_id": gbif_id,
+            "ncbi_taxid": ncbi_taxid,
+            "taxonomy_status": status,
+        }
+
+        report = {
+            "gbif": {"mode": self.gbif.mode, "available": gbif.available,
+                     "matched": gbif.matched, "identifier": gbif_id,
+                     "inconsistent_record": gbif.inconsistent},
+            "ncbi": {"mode": self.ncbi.mode, "available": ncbi.available,
+                     "matched": ncbi.matched, "identifier": ncbi_taxid,
+                     "inconsistent_record": ncbi.inconsistent},
+            "status": status,
+        }
+        return candidate.model_copy(update=updates), report
+
+    def enrich(self, candidate: SpeciesCandidate) -> SpeciesCandidate:
+        enriched, _ = self.validate_candidate(candidate)
+        return enriched
+
+    def enrich_all(self, candidates: list[SpeciesCandidate]) -> tuple[list[SpeciesCandidate], bool]:
+        """Enrich every candidate. Returns (candidates, taxonomy_degraded).
+
+        A source outage degrades the answer; it does not fail the request -
+        same contract as MockTaxonomyProvider.enrich_all.
+        """
+        enriched: list[SpeciesCandidate] = []
+        degraded = False
+        for candidate in candidates:
+            updated, report = self.validate_candidate(candidate)
+            if not report["gbif"]["available"] or not report["ncbi"]["available"]:
+                degraded = True
+            enriched.append(updated)
+        return enriched, degraded

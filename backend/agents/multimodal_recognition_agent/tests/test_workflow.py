@@ -234,13 +234,18 @@ def test_resume_keys_match_the_agent_cards():
 
 
 def test_agent_never_references_a_peer_endpoint():
-    """No import of another agent, no peer URL, no HTTP client."""
+    """No import of another agent, no peer URL.
+
+    HTTP-client imports are no longer forbidden outright: Phase 3's remote
+    BioCLIP-2 provider and Phase 4's real GBIF/NCBI providers both legitimately
+    need one, lazily, inside their own adapter module. What must never appear
+    is a reference to a PEER AGENT - another service in this same system.
+    """
     import pathlib
 
     package = pathlib.Path(__file__).resolve().parent.parent
     forbidden = ("localhost:800", "AGENT_URL", "backend.agents.genome_agent",
-                 "backend.agents.evolution_agent", "backend.orchestrator",
-                 "import httpx", "import requests")
+                 "backend.agents.evolution_agent", "backend.orchestrator")
     offenders = []
     for path in package.rglob("*.py"):
         # Skip this agent's own installed dependencies and its test suite.

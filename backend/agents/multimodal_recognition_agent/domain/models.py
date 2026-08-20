@@ -45,11 +45,13 @@ Intent = Literal["recognition", "scientific_follow_up"]
 TextAlignment = Literal["agree", "neutral", "conflict"]
 Decision = Literal["identified", "uncertain", "not_identified"]
 
-# How much of a candidate's taxonomy the MOCKED sources could supply.
-# `mock_verified` means "the mock fixture had both identifiers". It does NOT
-# mean anything was checked against a live GBIF or NCBI database - nothing here
-# ever is.
-TaxonomyStatus = Literal["mock_verified", "partial", "unverified"]
+# How much of a candidate's taxonomy the sources could supply.
+# `mock_verified` means "the mock fixture had both identifiers" - it does NOT
+# mean anything was checked against a live GBIF or NCBI database. `verified` is
+# the Phase 4 real-mode equivalent: both live GBIF and NCBI lookups matched and
+# returned an identifier. The two are deliberately distinct values so a
+# response can never be misread as live when it was mocked, or vice versa.
+TaxonomyStatus = Literal["mock_verified", "verified", "partial", "unverified"]
 
 
 class NormalizedRecognitionInput(BaseModel):

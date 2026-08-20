@@ -88,8 +88,16 @@ RECOGNITION_MODE_REMOTE_CLASSIFICATION = "remote_bioclip2_open_domain_species"
 # generous than the LLM timeout. It is still a hard bound: no request waits forever.
 DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS = 90.0
 
+# --- taxonomy provider modes ------------------------------------------------
+# "real" is now implemented (Phase 4): live GBIF species-match plus live NCBI
+# Entrez taxonomy esearch. See adapters/taxonomy.py - RealGBIFProvider,
+# RealNCBIProvider, RealTaxonomyProvider.
 TAXONOMY_PROVIDER_MODES = ("mock", "real")
-TAXONOMY_IMPLEMENTED_MODES = ("mock",)
+TAXONOMY_IMPLEMENTED_MODES = ("mock", "real")
+
+# Bounded wait for a single GBIF or NCBI HTTP call. Both public APIs are
+# generally fast; this is a safety bound, not a tuned value.
+DEFAULT_TAXONOMY_TIMEOUT_SECONDS = 10.0
 
 REASONING_LLM_PROVIDER_MODES = ("disabled", "fake", "azure")
 
@@ -312,6 +320,19 @@ class RecognitionConfig:
     # documents `fake` as the local-development value.
     reasoning_llm_provider_mode: str = "disabled"
 
+    # --- real taxonomy (Phase 4) --------------------------------------------
+    # Bounded wait for a single GBIF or NCBI HTTP call. Mock mode never uses it.
+    taxonomy_timeout_seconds: float = DEFAULT_TAXONOMY_TIMEOUT_SECONDS
+    # Required by NCBI's Entrez usage guidelines when TAXONOMY_PROVIDER_MODE is
+    # "real" - identifies the calling application/contact so NCBI can reach out
+    # if a deployment causes trouble, rather than silently blocking it.
+    # None in mock mode; build_taxonomy_provider() enforces both are set before
+    # constructing a real provider.
+    ncbi_tool: str | None = None
+    ncbi_email: str | None = None
+    # Optional. Only needed to exceed NCBI's default 3 requests/second limit.
+    ncbi_api_key: str | None = None
+
     @classmethod
     def from_env(cls) -> RecognitionConfig:
         validation = ValidationConfig(
@@ -380,6 +401,12 @@ class RecognitionConfig:
                 "RECOGNITION_LLM_TIMEOUT_SECONDS", DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
             ),
             reasoning_llm_provider_mode=_provider_mode(),
+            taxonomy_timeout_seconds=_timeout(
+                "RECOGNITION_TAXONOMY_TIMEOUT_SECONDS", DEFAULT_TAXONOMY_TIMEOUT_SECONDS
+            ),
+            ncbi_tool=_str("NCBI_TOOL"),
+            ncbi_email=_str("NCBI_EMAIL"),
+            ncbi_api_key=_str("NCBI_API_KEY"),
         )
 
 

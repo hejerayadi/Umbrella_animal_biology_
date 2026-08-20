@@ -76,6 +76,9 @@ def clean_env(monkeypatch):
         "AZURE_OPENAI_BASE_URL",
         "AZURE_OPENAI_API_KEY",
         "AZURE_OPENAI_DEPLOYMENT",
+        "NCBI_TOOL",
+        "NCBI_EMAIL",
+        "NCBI_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
@@ -257,7 +260,7 @@ def test_the_smoke_script_env_path_resolves_inside_the_agent_directory():
 
 def test_the_supported_mode_vocabularies_are_explicit():
     # Phase 3 replaced the placeholder BioCLIP `real` mode with the implemented
-    # `remote` one. Taxonomy still has an unimplemented `real` mode until Phase 4.
+    # `remote` one. Phase 4 implemented taxonomy's `real` mode.
     assert BIOCLIP_PROVIDER_MODES == ("mock", "remote")
     assert TAXONOMY_PROVIDER_MODES == ("mock", "real")
     assert REASONING_LLM_PROVIDER_MODES == ("disabled", "fake", "azure")
@@ -313,13 +316,27 @@ def test_the_old_real_bioclip_mode_name_is_refused_as_unknown(clean_env):
     assert "remote" in message  # names the legal values
 
 
-def test_real_taxonomy_mode_is_recognised_but_refused_until_phase_4(clean_env):
+def test_real_taxonomy_mode_is_implemented_and_selectable(clean_env):
+    """Phase 4 landed: `real` is a working mode, not a placeholder."""
     clean_env.setenv("TAXONOMY_PROVIDER_MODE", "real")
+    clean_env.setenv("NCBI_TOOL", "test-tool")
+    clean_env.setenv("NCBI_EMAIL", "test@example.com")
+    config = RecognitionConfig.from_env()
+    assert config.taxonomy_provider_mode == "real"
+
+
+def test_real_taxonomy_mode_without_ncbi_contact_info_is_refused(clean_env):
+    """Real mode is selectable, but NCBI's usage guidelines require a tool and
+    email - selecting real mode without them must still fail loudly, not call
+    NCBI unidentified."""
+    clean_env.setenv("TAXONOMY_PROVIDER_MODE", "real")
+    # NCBI_TOOL / NCBI_EMAIL deliberately left unset.
+    config = RecognitionConfig.from_env()
     with pytest.raises(ConfigError) as caught:
-        RecognitionConfig.from_env()
+        build_taxonomy_provider(config)
     message = str(caught.value)
-    assert "TAXONOMY_PROVIDER_MODE" in message
-    assert "Phase 4" in message
+    assert "NCBI_TOOL" in message
+    assert "NCBI_EMAIL" in message
 
 
 def test_real_bioclip_mode_never_returns_a_mock_provider():
@@ -331,6 +348,8 @@ def test_real_bioclip_mode_never_returns_a_mock_provider():
 
 
 def test_real_taxonomy_mode_never_returns_a_fixture_provider():
+    """With no NCBI credentials configured, real mode must still refuse rather
+    than silently falling back to the fixture provider."""
     config = make_config(taxonomy_provider_mode="real")
     with pytest.raises(ConfigError):
         build_taxonomy_provider(config)
@@ -360,7 +379,12 @@ def test_no_non_mock_mode_can_produce_fixture_taxonomy(mode):
 
 def test_the_agent_refuses_to_start_in_an_unimplemented_production_mode():
     """The whole agent, not just the factory: construction must fail rather
-    than come up serving fixtures."""
+    than come up serving fixtures.
+
+    `taxonomy_provider_mode="real"` still refuses here too - not because
+    `real` itself is unimplemented anymore, but because `make_config()`'s
+    default carries no NCBI credentials.
+    """
     with pytest.raises(ConfigError):
         RecognitionAgent(make_config(bioclip_provider_mode="real"))
     with pytest.raises(ConfigError):
