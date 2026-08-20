@@ -1,0 +1,26 @@
+# Orchestration and framework
+langgraph==0.2.39
+langchain-core==0.3.15
+langchain-openai==0.2.4
+qdrant-client==1.11.3
+python-dotenv==1.0.1
+
+# M3 - Biodiversity Hotspots pipeline (Sprint 3 task 1)
+# pandas and numpy arrive with streamlit, but are pinned here because the
+# pipeline imports them directly.
+pandas>=2.0
+numpy>=1.26
+scikit-learn==1.5.2
+requests==2.32.3
+
+# Maps and the dashboards
+folium==0.17.0
+streamlit==1.39.0
+
+# Tests
+pytest==8.3.2
+pytest-asyncio==0.24.0
+
+# --- Agent API layer (api.py) - required, do not remove ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0

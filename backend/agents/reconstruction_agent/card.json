@@ -1,0 +1,25 @@
+{
+  "name": "Reconstruction Agent",
+  "type": "worker",
+  "description": "Reconstructs incomplete genomes or missing biological information. Covers filling in fragmented, partial or missing sequence data; reconstructing the genome of an extinct or poorly sequenced species; and inferring biological information that no database holds directly. Used when retrieval has already failed or the data is known to be incomplete - not as a first stop for data that can simply be looked up.",
+  "reports_to": [
+    "Global Scientific Orchestrator"
+  ],
+  "may_need": [
+    "Evolution Agent"
+  ],
+  "managed_services": [
+    "Genome Reconstruction Model"
+  ],
+  "capabilities": [
+    "Genome reconstruction",
+    "Sequence completion"
+  ],
+  "input": {
+    "instruction": "string",
+    "context": "dict"
+  },
+  "output": {
+    "reconstructed_genome": "string"
+  }
+}

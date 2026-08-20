@@ -1,0 +1,38 @@
+{
+  "name": "Global Scientific Orchestrator",
+  "type": "orchestrator",
+  "description": "Routes user requests through the planner, workers, and capability resolver to produce a final answer.",
+  "reports_to": [
+    "Backend API"
+  ],
+  "may_need": [
+    "Genome Agent",
+    "Evolution Agent",
+    "Biodiversity Agent",
+    "Literature Agent",
+    "Multimodal Species Recognition Agent",
+    "Reconstruction Agent",
+    "Trait Discovery Agent",
+    "3D Protein Structure Visualization Agent",
+    "Animal Image Generation Agent"
+  ],
+  "managed_services": [
+    "LangGraph",
+    "Azure OpenAI"
+  ],
+  "capabilities": [
+    "Plan multi-agent workflows",
+    "Resolve missing capabilities",
+    "Coordinate worker execution",
+    "Assemble final answers"
+  ],
+  "input": {
+    "user_query": "string",
+    "initial_context": "dict"
+  },
+  "output": {
+    "final_answer": "string",
+    "context": "dict",
+    "execution_history": "list[string]"
+  }
+}

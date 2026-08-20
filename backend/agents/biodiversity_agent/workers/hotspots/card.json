@@ -1,0 +1,120 @@
+{
+  "name": "Biodiversity Hotspots Agent",
+  "id": "biodiversity_hotspots_agent",
+  "type": "worker",
+  "version": "2.0.0",
+  "description": "Discovers and ranks biodiversity hotspots within a region. Bins GBIF occurrence coordinates onto an equal-area grid, computes species richness corrected for sampling effort, clusters dense regions with DBSCAN using a haversine metric, and returns ranked hotspots with a richness heatmap.",
+  "reports_to": [
+    "Biodiversity Agent Orchestrator"
+  ],
+  "may_need": [
+    "Habitat Visualization Agent",
+    "Species Distribution Agent",
+    "Migration Analysis Agent"
+  ],
+  "framework": "none - a deterministic pipeline, no agent framework and no LLM",
+  "workflow": "question -> region + parameters -> GBIF -> clean -> grid -> indices -> effort correction -> DBSCAN -> rank -> map -> AgentResult",
+  "managed_services": [
+    "GBIF Occurrence Search API (count probe and paged retrieval)",
+    "scikit-learn (DBSCAN, haversine metric; silhouette scoring)"
+  ],
+  "knowledge_domain": "Biodiversity - species richness, spatial clustering and conservation prioritisation",
+  "capabilities": [
+    "Read a free-text question into study area, species and analysis parameters",
+    "Resolve a region name to a query geometry",
+    "Resolve a species name to a GBIF key, or ask for the scientific name",
+    "Estimate the record volume of a region before retrieving it",
+    "Bin coordinates onto an equal-area grid",
+    "Compute species richness, Shannon, Simpson and Chao1 per cell",
+    "Correct richness for sampling effort and report how",
+    "Discover hotspot clusters with DBSCAN using a haversine metric",
+    "Cluster one species' occurrences and rank them by record count",
+    "Tune eps and min_samples by an explicit silhouette scan",
+    "Rank clusters by the selected diversity index",
+    "Emit a graduated heatmap render specification",
+    "State the scope, the mode and the effort correction alongside every answer"
+  ],
+  "cannot_do": [
+    "Characterise the habitat of a hotspot (use the Habitat Visualization Agent)",
+    "Analyse temporal change or migration (use the Migration Analysis Agent)",
+    "Predict undiscovered hotspots - it measures what has been recorded",
+    "Claim that a low-richness cell is species-poor when its sampling effort is also low",
+    "Return a result without stating the taxonomic scope it applies to",
+    "Compute the IUCN threat-weighted index without a Red List token",
+    "Validate against the published CEPF hotspots without that shapefile",
+    "Render an image; it returns a render specification plus an HTML map path",
+    "Score a point it was not fitted on - DBSCAN is transductive, so no model is saved",
+    "Call a single species' occurrence cluster a biodiversity hotspot - with one species there is no richness to rank"
+  ],
+  "routing_triggers": [
+    "biodiversity hotspots",
+    "richest region",
+    "most species",
+    "species richness",
+    "biodiversity of <region>",
+    "compare regions",
+    "where is diversity highest",
+    "biodiversity heatmap"
+  ],
+  "input": {
+    "region_name": "string | null",
+    "bbox": "[float, float, float, float] | null",
+    "taxon_filter": "string (default 'Animalia')",
+    "year_from": "integer | null (default 1990)",
+    "year_to": "integer | null (default 2025)",
+    "cell_size_km": "float (default 42.0)",
+    "min_records_per_cell": "integer (default 10)",
+    "index": "richness | shannon | simpson | threat_weighted",
+    "normalise_by_effort": "boolean (default true)",
+    "algorithm": "dbscan | hdbscan",
+    "eps_km": "float (default 120.0)",
+    "min_samples": "integer (default 5)",
+    "auto_tune": "boolean (default true)",
+    "top_n": "integer (default 10)",
+    "include_grid": "boolean (default true)",
+    "max_records": "integer (default 9000)",
+    "species_name": "string | null (switches to species mode)",
+    "species_key": "integer | null (GBIF speciesKey)"
+  },
+  "output": {
+    "region": "string",
+    "study_area_km2": "float",
+    "records_retrieved": "integer",
+    "records_analysed": "integer",
+    "species_analysed": "integer",
+    "cells_analysed": "integer",
+    "noise_cells": "integer",
+    "clusters": "List<HotspotCluster>",
+    "ranked_hotspots": "List<HotspotCluster>",
+    "effort_correction": "EffortCorrection",
+    "quality": "ClusteringQuality",
+    "validation": "HotspotValidation",
+    "parameters_used": "object",
+    "render_spec": "MapRenderSpec",
+    "citations": "List<Citation>",
+    "summary": "string",
+    "confidence": "float",
+    "cleaning_report": "List<object>",
+    "grid": "List<RichnessCell>",
+    "warnings": "List<string>"
+  },
+  "statuses": [
+    "completed",
+    "partial",
+    "needs_clarification",
+    "failed"
+  ],
+  "dependencies": [
+    "GBIF",
+    "scikit-learn"
+  ],
+  "confidence": "High where sampling is dense, Medium where effort correction dominates",
+  "execution_cost": "High",
+  "average_latency_seconds": 45,
+  "supports_partial_results": true,
+  "cacheable": false,
+  "modes": {
+    "region": "biodiversity hotspots - grid, richness, effort correction, ranked by species count",
+    "species": "occurrence clusters for one species - ranked by record count, no effort correction"
+  }
+}

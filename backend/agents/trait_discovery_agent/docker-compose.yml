@@ -1,0 +1,8 @@
+services:
+  trait-discovery-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_llm_smoke.py -v
