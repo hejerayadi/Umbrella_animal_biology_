@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 from .planner import plan
@@ -202,6 +203,12 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
 
     output["source_agents"] = analysis.source_agents
 
+    # Explainer (LLM #2) output — prose only, kept in its own key so it can
+    # never be confused with, or overwrite, a value produced by a worker.
+    output["interpretation"] = result.interpretation
+    output["warnings"]       = list(result.warnings)
+    output["llm_calls"]      = result.llm_calls
+
     return AgentResult(
         status=AgentStatus.COMPLETED,
         output=output,
@@ -214,6 +221,9 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
         alignment_url=mc.alignment_url if mc else None,
         confidence=analysis.overall_confidence,
         source_agents=analysis.source_agents,
+        interpretation=result.interpretation,
+        warnings=list(result.warnings),
+        llm_calls=result.llm_calls,
     )
 
 
@@ -240,6 +250,10 @@ class OrchestratorEvolutionAgent:
     async def run(self, request: AgentRequest) -> AgentResult:
         context = request.context or {}
 
+        # LLM budget accounting: the Planner is call #1 when it runs, the
+        # Explainer is call #2 (counted by the orchestrator). Total <= 2.
+        planner_calls = 0
+
         # Check if a planner decision was already made (e.g. by tests)
         existing_decision: PlannerDecision | None = context.get("planner_decision")
 
@@ -262,6 +276,7 @@ class OrchestratorEvolutionAgent:
         else:
             try:
                 decision = await classify_intent(request.instruction)
+                planner_calls = 1
             except Exception as exc:
                 _logger.warning("[Evolution] planner call failed: %s", exc)
                 return _failed(
@@ -278,8 +293,10 @@ class OrchestratorEvolutionAgent:
                     "decision": "clarification_required",
                     "clarification_question": decision.clarification_question or "Could you rephrase your question?",
                     "source": decision.source,
+                    "llm_calls": planner_calls,
                 },
                 source_agents=["Evolution Agent Orchestrator"],
+                llm_calls=planner_calls,
             )
 
         orchestrator_request = to_orchestrator_request(request, decision)
@@ -305,6 +322,10 @@ class OrchestratorEvolutionAgent:
             return _failed(
                 f"The Evolution Agent encountered an error: {exc}"
             )
+
+        # Fold the Planner call into the count the orchestrator started
+        # (it already counted the Explainer, if one ran).
+        result = replace(result, llm_calls=result.llm_calls + planner_calls)
 
         feature_value = decision.feature.value if isinstance(decision.feature, PlannedFeature) else str(decision.feature)
         return to_platform_result(result, feature=feature_value)

@@ -188,6 +188,16 @@ class AgentResult:
     confidence:    float | None  = None
     source_agents: list[str]     = field(default_factory=list)
 
+    # Explainer (LLM #2). Kept strictly apart from the structured payload:
+    # ``interpretation`` is prose only and never carries scores, trees or
+    # support values. ``None`` means no trustworthy interpretation was
+    # produced — see the ``interpretation_unavailable`` warning.
+    interpretation: str | None = None
+    warnings:       list[str]  = field(default_factory=list)
+
+    # Observability: how many LLM calls this request consumed (max 2).
+    llm_calls: int = 0
+
 
 # ---------------------------------------------------------------------------
 # INTERNAL PIPELINE TYPES

@@ -21,9 +21,12 @@ LangGraph graph shape
       dispatch_node
             "assemble"   → assemble_node
             "failed"     → fail_node
-      assemble_node → END
+      assemble_node → explain_node → END
       clarify_node  → END
       fail_node     → END
+
+Only the assemble path reaches explain_node (LLM #2), so clarification,
+failure and needs_agent escalation never spend an Explainer call.
 
 State transitions
 -----------------
@@ -36,7 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -52,6 +55,7 @@ from ..schema import (
     PlannedFeature,
     PlannerDecision,
 )
+from ..explainer import explain as _default_explainer, fallback_explanation
 from ..workers.molecular_comparison.mock import MolecularComparisonMock
 from ..workers.phylogenetic_tree.worker import PhylogeneticTreeWorker
 from .services.species_resolver import SpeciesResolverService
@@ -91,7 +95,12 @@ class EvolutionState:
     phylo_result: PhylogeneticResult | None = None
     phylo_error:  str | None = None
 
-    # Terminal result — set by assemble_node, clarify_node, or fail_node
+    # Set by explain_node (LLM #2) — prose only, never structured data
+    interpretation: str | None = None
+    warnings:       list[str]  = field(default_factory=list)
+
+    # Terminal result — set by assemble_node, clarify_node, or fail_node,
+    # then enriched with the interpretation by explain_node
     result: AgentResult | None = None
 
 
@@ -113,10 +122,13 @@ class EvolutionOrchestrator:
         mc_worker:    Any | None = None,
         phylo_worker: Any | None = None,
         resolver:     SpeciesResolverService | None = None,
+        explainer:    Any | None = None,
     ) -> None:
         self._mc_worker    = mc_worker    or MolecularComparisonMock()
         self._phylo_worker = phylo_worker or PhylogeneticTreeWorker()
         self._resolver     = resolver     or SpeciesResolverService.from_env()
+        # LLM #2. Injectable so tests never touch a real backend.
+        self._explainer    = explainer    or _default_explainer
         self._graph        = self._build_graph()
 
     # ------------------------------------------------------------------
@@ -141,6 +153,7 @@ class EvolutionOrchestrator:
         g.add_node("species_resolver", self._species_resolver_node)
         g.add_node("dispatch",         self._dispatch_node)
         g.add_node("assemble",         self._assemble_node)
+        g.add_node("explain",          self._explain_node)
         g.add_node("clarify",          self._clarify_node)
         g.add_node("fail",             self._fail_node)
 
@@ -166,7 +179,10 @@ class EvolutionOrchestrator:
             {"assemble": "assemble", "failed": "fail"},
         )
 
-        g.add_edge("assemble", END)
+        # Only a successful assembly is worth explaining. Clarification,
+        # failure and escalation reach END without an Explainer call.
+        g.add_edge("assemble", "explain")
+        g.add_edge("explain",  END)
         g.add_edge("clarify",  END)
         g.add_edge("fail",     END)
 
@@ -367,6 +383,114 @@ class EvolutionOrchestrator:
                 source_agents=source_agents,
             )
         }
+
+    async def _explain_node(self, state: EvolutionState) -> dict:
+        """LLM #2 — attach a grounded interpretation to a successful result.
+
+        Reached only from ``assemble``: clarification, failure and
+        escalation go straight to END, so no LLM call is spent on them.
+
+        The Explainer receives a strict whitelist (instruction, feature,
+        validated species, the structured output of the SELECTED worker(s),
+        warnings, mocked/real flags) and gives back prose only.  The
+        structured payload assembled upstream is never rebuilt from it.
+
+        A missing, failing or ungrounded interpretation is not an error:
+        the worker result is kept, ``status`` stays COMPLETED, and a
+        ``interpretation_unavailable`` warning records what happened.
+        """
+        result = state.result
+        if result is None or result.status is not AgentStatus.COMPLETED:
+            return {}
+
+        analysis = result.output
+        if not isinstance(analysis, EvolutionAnalysisResult):
+            return {}
+
+        feature  = state.planned_feature
+        species  = list(analysis.species_list)
+        results  = self._explainer_payload(analysis)
+        mocked   = self._providers_are_mocked(analysis)
+        warnings = list(state.warnings)
+
+        interpretation: str | None = None
+        try:
+            interpretation = await self._explainer(
+                instruction=state.request.instruction,
+                feature=feature,
+                species=species,
+                results=results,
+                warnings=warnings,
+                providers_are_mocked=mocked,
+            )
+        except Exception as exc:  # noqa: BLE001 — never break a good result
+            _logger.warning(
+                "[Explain] explainer raised (%s); keeping worker result",
+                type(exc).__name__,
+            )
+            interpretation = None
+
+        if not interpretation:
+            warnings.append("interpretation_unavailable")
+            interpretation = fallback_explanation(feature, species, results)
+
+        return {
+            "interpretation": interpretation,
+            "warnings": warnings,
+            "result": replace(
+                result,
+                interpretation=interpretation,
+                warnings=warnings,
+                llm_calls=result.llm_calls + 1,
+            ),
+        }
+
+    @staticmethod
+    def _explainer_payload(analysis: EvolutionAnalysisResult) -> dict:
+        """Serialise ONLY the workers that actually ran."""
+        payload: dict[str, Any] = {}
+
+        mc = analysis.molecular
+        if mc is not None:
+            payload["similarity"] = {
+                "similarity_scores": [
+                    {"species_a": e.species_a,
+                     "species_b": e.species_b,
+                     "score": e.score}
+                    for e in mc.similarity_scores
+                ],
+                "species_groups": [
+                    {"group_id": g.group_id,
+                     "species": g.species,
+                     "mean_score": g.mean_score}
+                    for g in mc.species_groups
+                ],
+                "network_nodes": len(mc.similarity_network),
+            }
+
+        phylo = analysis.phylogenetic
+        if phylo is not None:
+            payload["phylogeny"] = {
+                "newick_tree": phylo.newick_tree,
+                "model": phylo.model,
+                "bootstrap_support": dict(phylo.bootstrap_support),
+                "confidence_values": dict(phylo.confidence_values),
+                "overall_confidence": phylo.overall_confidence,
+            }
+
+        return payload
+
+    def _providers_are_mocked(self, analysis: EvolutionAnalysisResult) -> dict:
+        """Report mocked/real per branch from the wired worker classes.
+
+        Read-only inspection — it does not touch the providers themselves.
+        """
+        flags: dict[str, bool] = {}
+        if analysis.molecular is not None:
+            flags["similarity"] = "mock" in type(self._mc_worker).__name__.lower()
+        if analysis.phylogenetic is not None:
+            flags["phylogeny"] = "mock" in type(self._phylo_worker).__name__.lower()
+        return flags
 
     def _clarify_node(self, state: EvolutionState) -> dict:
         """Return a clarification question to the user."""
