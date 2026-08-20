@@ -9,16 +9,22 @@ Uses real bioinformatics tools:
 Pipeline:
     Sequences → MAFFT → aligned sequences → IQ-TREE → tree + support
 
-The worker runs in parallel with the Molecular Comparison subagent
-(``asyncio.gather`` fan-out), so it does not consume MC's alignment.
+The orchestrator dispatches this worker only for the phylogenetic branch,
+so it builds its own alignment rather than consuming Molecular Comparison's.
 
 What this worker returns (PhylogeneticResult):
-  • newick_tree       — Newick-format tree string from IQ-TREE
-  • tree_url          — URL to rendered SVG/HTML tree
-  • model             — substitution model chosen by ModelFinder
-  • bootstrap_support — per-internal-node UFBoot % {node_label: int}
-  • confidence_values — per-leaf confidence {species: float}
-  • overall_confidence— mean UFBoot support (0-1 scale)
+  • newick_tree       — Newick tree from IQ-TREE, leaves labelled with the
+                        full scientific names (quoted when they contain a
+                        space)
+  • tree_url          — ``None``: no rendered artefact is served yet
+  • model             — substitution model reported by ModelFinder
+  • bootstrap_support — per-INTERNAL-NODE UFBoot % {node_label: int}
+  • confidence_values — per-INTERNAL-NODE confidence {node_label: float};
+                        branch support is a property of a split, never of a
+                        single species
+  • overall_confidence— mean of the real UFBoot supports, or ``None``
+  • aligned_fasta     — the MAFFT alignment, names restored
+  • warnings          — e.g. ``ufboot_not_run``
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ from ...schema import (
 )
 from ...tools.mafft import align as mafft_align, MAFFTError
 from ...tools.iqtree import build_tree as iqtree_build, IQTreeError
+from ...tools import taxon_ids
 
 _logger = logging.getLogger(__name__)
 
@@ -126,9 +133,10 @@ class PhylogeneticTreeWorker:
             status=AgentStatus.COMPLETED,
             output=phylo_result,
             newick_tree=phylo_result.newick_tree,
-            tree_url=self._tree_url(species),
+            tree_url=phylo_result.tree_url,
             confidence=phylo_result.overall_confidence,
             source_agents=["Phylogenetic Tree Agent"],
+            warnings=list(phylo_result.warnings),
         )
 
     # ------------------------------------------------------------------
@@ -138,19 +146,40 @@ class PhylogeneticTreeWorker:
     def _build_tree(
         self, species: list[str], sequences: dict[str, str]
     ) -> PhylogeneticResult:
-        """Run MAFFT → IQ-TREE pipeline."""
+        """Run MAFFT → IQ-TREE pipeline.
+
+        Scientific names are swapped for whitespace-free ids before the
+        external tools see them, and restored afterwards: MAFFT and IQ-TREE
+        both truncate a FASTA header at the first space, which would turn
+        "Homo sapiens" into "Homo" and collide with "Homo erectus".
+        """
+        warnings: list[str] = []
+
+        name_to_id, id_to_name = taxon_ids.make_mapping(list(sequences))
+        safe_sequences = taxon_ids.to_safe_sequences(sequences, name_to_id)
+
+        # Step 1: MAFFT alignment (on safe ids)
         _logger.info("[Phylo] aligning %d sequences with MAFFT...", len(species))
+        aligned_fasta = mafft_align(safe_sequences)
+        aligned_dict = taxon_ids.parse_fasta(aligned_fasta)
 
-        # Step 1: MAFFT alignment
-        aligned_fasta = mafft_align(
-            sequences,
-        )
-        aligned_dict = _parse_fasta(aligned_fasta)
-        _logger.info("[Phylo] alignment complete (%d columns)", len(next(iter(aligned_dict.values()))))
+        missing = [i for i in safe_sequences if i not in aligned_dict]
+        if missing or not aligned_dict:
+            lost = [id_to_name.get(i, i) for i in missing]
+            raise MAFFTError(
+                "MAFFT did not return every input taxon; missing: "
+                f"{lost or '(no sequence at all)'}"
+            )
+        _logger.info("[Phylo] alignment complete (%d columns)",
+                     len(next(iter(aligned_dict.values()))))
 
-        # Step 2: IQ-TREE (ModelFinder + UFBoot)
+        # Step 2: IQ-TREE (ModelFinder + UFBoot), still on safe ids.
+        # UFBoot needs at least 4 taxa to have a non-trivial split to
+        # resample; below that it is skipped and reported, never faked.
         num_species = len(aligned_dict)
         bootstrap_val = 1000 if num_species >= 4 else 0
+        if bootstrap_val == 0:
+            warnings.append("ufboot_not_run")
         _logger.info("[Phylo] building tree with IQ-TREE (ModelFinder%s)...",
                      " + UFBoot" if bootstrap_val > 0 else "")
         phylo = iqtree_build(
@@ -158,15 +187,24 @@ class PhylogeneticTreeWorker:
             model="MFP",
             bootstrap=bootstrap_val,
         )
-        _logger.info("[Phylo] tree built: model=%s, confidence=%.2f", phylo.model, phylo.overall_confidence)
+        if not phylo.ufboot_run and "ufboot_not_run" not in warnings:
+            warnings.append("ufboot_not_run")
+        _logger.info("[Phylo] tree built: model=%s, ufboot_run=%s, confidence=%s",
+                     phylo.model, phylo.ufboot_run, phylo.overall_confidence)
+
+        # Step 3: put the full scientific names back
+        newick = taxon_ids.restore_newick(phylo.newick_tree, id_to_name)
+        alignment = taxon_ids.restore_fasta(aligned_fasta, id_to_name)
 
         return PhylogeneticResult(
-            newick_tree=phylo.newick_tree,
-            tree_url="",  # set by caller
+            newick_tree=newick,
+            tree_url=None,      # no rendered artefact is served yet
             model=phylo.model,
             bootstrap_support=phylo.bootstrap_support,
             confidence_values=phylo.confidence_values,
             overall_confidence=phylo.overall_confidence,
+            aligned_fasta=alignment,
+            warnings=warnings,
         )
 
     # ------------------------------------------------------------------
@@ -198,31 +236,12 @@ class PhylogeneticTreeWorker:
             raw = ctx.get("species_list") or ctx.get("species") or []
             if isinstance(raw, str):
                 raw = [raw]
-        return [s.strip().lower() for s in raw if s.strip()]
-
-    @staticmethod
-    def _tree_url(species: list[str]) -> str:
-        slug = "_".join(s.replace(" ", "_") for s in sorted(species))
-        return f"https://evolution.umbrella.local/tree/{slug}.svg"
+        # Keep the caller's canonical form ("Homo sapiens"): it is what ends
+        # up labelling the tree. Case folding happens only for the catalogue
+        # lookup in _fetch_sequences.
+        return [s.strip() for s in raw if s.strip()]
 
 
-def _parse_fasta(fasta_str: str) -> dict[str, str]:
-    """Parse FASTA string into {name: sequence}."""
-    result = {}
-    current_name = None
-    current_seq = []
-
-    for line in fasta_str.splitlines():
-        line = line.strip()
-        if line.startswith(">"):
-            if current_name is not None:
-                result[current_name] = "".join(current_seq)
-            current_name = line[1:].strip()
-            current_seq = []
-        elif line:
-            current_seq.append(line)
-
-    if current_name is not None:
-        result[current_name] = "".join(current_seq)
-
-    return result
+# FASTA parsing lives in tools.taxon_ids so that identifier handling and
+# identifier restoration cannot drift apart.
+_parse_fasta = taxon_ids.parse_fasta

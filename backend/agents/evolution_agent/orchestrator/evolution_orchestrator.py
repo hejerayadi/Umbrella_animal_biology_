@@ -327,15 +327,13 @@ class EvolutionOrchestrator:
         phylo = state.phylo_result
         feature = state.planned_feature
 
-        overall_confidence = 0.0
-        if mc and phylo:
-            overall_confidence = round(
-                (self._mc_mean(mc) + phylo.overall_confidence) / 2, 4
-            )
-        elif mc:
-            overall_confidence = round(self._mc_mean(mc), 4)
-        elif phylo:
-            overall_confidence = phylo.overall_confidence
+        # phylo.overall_confidence is None when UFBoot did not run; it must
+        # not be silently treated as a number.
+        phylo_conf = getattr(phylo, "overall_confidence", None) if phylo else None
+        mc_conf = round(self._mc_mean(mc), 4) if mc else None
+
+        parts = [c for c in (mc_conf, phylo_conf) if c is not None]
+        overall_confidence = round(sum(parts) / len(parts), 4) if parts else None
 
         source_agents = ["Evolution Agent Orchestrator"]
         if mc:
@@ -350,6 +348,12 @@ class EvolutionOrchestrator:
             overall_confidence=overall_confidence,
             source_agents=source_agents,
         )
+
+        # Carry worker-level flags (e.g. ufboot_not_run) up to the caller.
+        warnings = list(state.warnings)
+        for w in getattr(phylo, "warnings", []) or []:
+            if w not in warnings:
+                warnings.append(w)
 
         # Branch-specific top-level fields
         newick_tree: str | None = None
@@ -372,6 +376,7 @@ class EvolutionOrchestrator:
             alignment_url = mc.alignment_url
 
         return {
+            "warnings": warnings,
             "result": AgentResult(
                 status=AgentStatus.COMPLETED,
                 output=analysis,
@@ -381,6 +386,7 @@ class EvolutionOrchestrator:
                 alignment_url=alignment_url,
                 confidence=overall_confidence,
                 source_agents=source_agents,
+                warnings=warnings,
             )
         }
 

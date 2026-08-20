@@ -35,6 +35,25 @@ ALLOWED_INPUT_KEYS = frozenset({
 
 _MAX_CHARS = 900
 
+# Ordinary English words that legitimately follow a genus name in prose.
+# Without this list "the Mus+Gallus node has bootstrap 100" was read as a
+# hallucinated species "Gallus node" and the whole answer was discarded.
+_PROSE_AFTER_GENUS = frozenset({
+    "node", "nodes", "clade", "clades", "branch", "branches", "lineage",
+    "lineages", "group", "groups", "cluster", "clusters", "split", "splits",
+    "taxon", "taxa", "leaf", "leaves", "tip", "tips", "sequence", "sequences",
+    "sample", "samples", "pair", "pairs", "subtree", "tree", "trees",
+    "and", "with", "has", "have", "had", "was", "were", "are", "is", "being",
+    "appears", "appear", "forms", "form", "shows", "show", "sits", "sit",
+    "groups", "clusters", "falls", "fall", "shares", "share", "than", "then",
+    "versus", "vs", "against", "from", "into", "onto", "near", "next",
+    "similarity", "support", "supports", "confidence", "score", "scores",
+    "bootstrap", "model", "topology", "position", "placement", "relative",
+    "together", "separately", "alone", "also", "still", "however", "which",
+    "that", "this", "these", "those", "both", "each", "either", "neither",
+    "protein", "proteins", "genome", "genomes", "gene", "genes",
+})
+
 EXPLAINER_SYSTEM_PROMPT = """\
 You are the explainer of the Evolution Agent (Umbrella BioHub).
 
@@ -165,12 +184,21 @@ def _grounding_violation(
 
     allowed = {s.strip().lower() for s in species}
     allowed_genera = {s.split()[0] for s in allowed if s.split()}
+    allowed_epithets = {p[1] for p in (s.split() for s in allowed) if len(p) > 1}
     for match in re.findall(r"\b([A-Z][a-z]{2,})\s+([a-z]{3,})\b", text):
-        candidate = f"{match[0]} {match[1]}".lower()
-        if candidate in allowed:
+        genus, second = match[0].lower(), match[1].lower()
+        if f"{genus} {second}" in allowed:
             continue
-        if match[0].lower() in allowed_genera:
-            return f"species not in the analysed set: {candidate!r}"
+        if genus not in allowed_genera:
+            continue
+        if second in allowed_epithets:
+            # e.g. "Mus musculus" written after "Homo sapiens" — both known.
+            continue
+        if second in _PROSE_AFTER_GENUS:
+            # "the Mus+Gallus node has ...", "the Homo branch is ..." — the
+            # word after the genus is ordinary English, not an epithet.
+            continue
+        return f"species not in the analysed set: {genus} {second!r}"
 
     return None
 

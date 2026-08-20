@@ -3,7 +3,20 @@
 Uses the locally installed IQ-TREE binary for tree building.
 Supports ModelFinder (MFP) and UFBoot2.
 
-Local binary: iqtree/iqtree-2.3.6-Windows/bin/iqtree2.exe (Windows)
+The binary is located by ``binaries.resolve_binary``: ``$IQTREE_BINARY``
+first, then ``iqtree3(.exe)`` / ``iqtree2(.exe)`` / ``iqtree`` on PATH, then
+the legacy bundled path kept below for backward compatibility.
+
+Support semantics
+-----------------
+``bootstrap_support`` and ``confidence_values`` are keyed by INTERNAL NODE
+(``node_0``, ``node_1``, …), not by species: UFBoot measures how well a
+branch is supported, which is a property of a split, never of a single leaf.
+When UFBoot does not run, all three confidence fields stay empty / ``None``
+— no value is invented.
+
+Callers must pass FASTA identifiers without whitespace; see
+``tools.taxon_ids``.
 """
 
 from __future__ import annotations
@@ -15,12 +28,24 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from .binaries import (
+    IQTREE_CANDIDATES,
+    IQTREE_ENV_VAR,
+    describe_search,
+    resolve_binary,
+)
+
 _logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
-# Local IQ-TREE binary path (Windows)
+# Legacy bundled location — last resort, kept so existing setups keep working.
 _LOCAL_IQTREE = str(_PROJECT_ROOT / "iqtree" / "iqtree-2.3.6-Windows" / "bin" / "iqtree2.exe")
+
+
+def resolve_iqtree() -> str | None:
+    """Path to a usable IQ-TREE executable, or ``None`` if none is installed."""
+    return resolve_binary(IQTREE_ENV_VAR, IQTREE_CANDIDATES, _LOCAL_IQTREE)
 
 
 class IQTreeError(Exception):
@@ -58,13 +83,14 @@ def build_tree(
     if not alignment_text.strip():
         raise IQTreeError("An aligned FASTA input is required.")
 
-    if not os.path.exists(_LOCAL_IQTREE):
+    binary = resolve_iqtree()
+    if not binary:
         raise IQTreeError(
-            f"IQ-TREE binary not found at {_LOCAL_IQTREE}. "
-            "Please install IQ-TREE."
+            "No IQ-TREE executable was found. Searched: "
+            + describe_search(IQTREE_ENV_VAR, IQTREE_CANDIDATES, _LOCAL_IQTREE)
         )
 
-    return _run_local_iqtree(alignment_text, model, bootstrap, timeout)
+    return _run_local_iqtree(alignment_text, model, bootstrap, timeout, binary)
 
 
 def _run_local_iqtree(
@@ -72,8 +98,16 @@ def _run_local_iqtree(
     model: str,
     bootstrap: int,
     timeout: int,
+    binary: str | None = None,
 ) -> "PhyloResult":
     """Run IQ-TREE locally."""
+    executable = binary or resolve_iqtree()
+    if not executable:
+        raise IQTreeError(
+            "No IQ-TREE executable was found. Searched: "
+            + describe_search(IQTREE_ENV_VAR, IQTREE_CANDIDATES, _LOCAL_IQTREE)
+        )
+
     with tempfile.TemporaryDirectory() as tmpdir:
         aln_path = os.path.join(tmpdir, "alignment.fasta")
         with open(aln_path, "w", encoding="utf-8") as f:
@@ -81,7 +115,7 @@ def _run_local_iqtree(
 
         # Build command
         cmd = [
-            _LOCAL_IQTREE,
+            executable,
             "-s", aln_path,
             "-m", model,
             "-pre", os.path.join(tmpdir, "output"),
@@ -128,24 +162,28 @@ def _run_local_iqtree(
             if m:
                 model_used = m.group(1)
 
-        # Parse bootstrap support from newick
-        bootstrap_support = _parse_bootstrap(newick)
-        num_leaves = newick.count(":")  # rough count
+        # Parse per-internal-node bootstrap support from the Newick string.
+        bootstrap_support = _parse_bootstrap(newick) if bootstrap > 0 else {}
 
-        # Compute confidence values from bootstrap
-        confidence_values = {}
-        for node, val in bootstrap_support.items():
-            confidence_values[node] = val / 100.0
-
-        overall = (
-            sum(confidence_values.values()) / len(confidence_values)
-            if confidence_values
-            else 0.95
-        )
+        # Confidence is derived ONLY from real UFBoot values. With no
+        # bootstrap there is nothing to derive, so nothing is reported —
+        # an invented default would misrepresent an unsupported tree.
+        if bootstrap_support:
+            confidence_values = {
+                node: val / 100.0 for node, val in bootstrap_support.items()
+            }
+            overall_confidence = round(
+                sum(confidence_values.values()) / len(confidence_values), 4
+            )
+            ufboot_run = True
+        else:
+            confidence_values = {}
+            overall_confidence = None
+            ufboot_run = False
 
         _logger.info(
-            "[IQ-TREE] tree built: model=%s, bootstrap_nodes=%d",
-            model_used, len(bootstrap_support),
+            "[IQ-TREE] tree built: model=%s, ufboot_run=%s, bootstrap_nodes=%d",
+            model_used, ufboot_run, len(bootstrap_support),
         )
 
         return PhyloResult(
@@ -153,7 +191,8 @@ def _run_local_iqtree(
             model=model_used,
             bootstrap_support=bootstrap_support,
             confidence_values=confidence_values,
-            overall_confidence=round(overall, 4),
+            overall_confidence=overall_confidence,
+            ufboot_run=ufboot_run,
         )
 
 
@@ -181,7 +220,13 @@ def _dict_to_fasta(sequences: dict[str, str]) -> str:
 
 
 class PhyloResult:
-    """Normalized result returned by the IQ-TREE client."""
+    """Normalized result returned by the IQ-TREE client.
+
+    ``bootstrap_support`` and ``confidence_values`` are keyed by internal
+    node (``node_0``, ``node_1``, …). They express branch support, never
+    per-species confidence. Both are empty and ``overall_confidence`` is
+    ``None`` when UFBoot did not run — check ``ufboot_run``.
+    """
 
     def __init__(
         self,
@@ -189,10 +234,12 @@ class PhyloResult:
         model: str,
         bootstrap_support: dict[str, int],
         confidence_values: dict[str, float],
-        overall_confidence: float,
+        overall_confidence: float | None,
+        ufboot_run: bool = False,
     ) -> None:
         self.newick_tree = newick_tree
         self.model = model
         self.bootstrap_support = bootstrap_support
         self.confidence_values = confidence_values
         self.overall_confidence = overall_confidence
+        self.ufboot_run = ufboot_run

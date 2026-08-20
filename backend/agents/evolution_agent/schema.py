@@ -236,15 +236,41 @@ class MolecularComparisonResult:
 class PhylogeneticResult:
     """Output of Subagent 2 (Phylogenetic Reconstruction).
 
-    Tools mocked in Sprint 2: IQ-TREE, ModelFinder, UFBoot.
+    Fields
+    ------
+    newick_tree
+        Newick string. Leaf labels are the full scientific names, quoted
+        when they contain a space (``'Homo sapiens'``).
+    tree_url
+        URL of a rendered tree, or ``None``. It is only set when a real
+        artefact is served — no placeholder URL is ever fabricated.
+    model
+        Substitution model actually reported by ModelFinder.
+    bootstrap_support / confidence_values
+        Keyed by INTERNAL NODE (``node_0``, ``node_1``, …), never by
+        species: UFBoot measures branch support, which is a property of a
+        split, not of a single leaf. Both are empty when UFBoot did not
+        run.
+    overall_confidence
+        Mean of the real UFBoot supports, or ``None`` when there are none.
+        Never a default value.
+    aligned_fasta
+        The MAFFT alignment that produced the tree, with full scientific
+        names restored. ``None`` when the worker did not keep it. Named
+        distinctly from MolecularComparisonResult.alignment so the two
+        sub-agent contracts stay disjoint.
+    warnings
+        Machine-readable flags, e.g. ``ufboot_not_run``.
     """
 
     newick_tree:        str
-    tree_url:           str
+    tree_url:           str | None
     model:              str
     bootstrap_support:  dict[str, int]
     confidence_values:  dict[str, float]
-    overall_confidence: float
+    overall_confidence: float | None
+    aligned_fasta:      str | None  = None
+    warnings:           list[str]   = field(default_factory=list)
 
 
 @dataclass

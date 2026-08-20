@@ -1,7 +1,15 @@
 """MAFFT multiple sequence alignment.
 
 Primary: EBI REST API (https://www.ebi.ac.uk/Tools/services/rest/mafft).
-Fallback: locally installed MAFFT binary (mafft/mafft-win/mafft.bat).
+Fallback: a locally installed MAFFT binary.
+
+The local binary is located by ``binaries.resolve_binary``:
+``$MAFFT_BINARY`` first, then ``mafft.bat`` / ``mafft`` on PATH, then the
+legacy bundled path kept below for backward compatibility.
+
+Callers must pass FASTA identifiers without whitespace — MAFFT truncates a
+header at the first space. Use ``tools.taxon_ids`` to map scientific names
+to safe ids and back.
 """
 
 from __future__ import annotations
@@ -12,10 +20,24 @@ import tempfile
 import time
 from pathlib import Path
 
+from .binaries import (
+    MAFFT_CANDIDATES,
+    MAFFT_ENV_VAR,
+    describe_search,
+    resolve_binary,
+)
+
 _logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+
+# Legacy bundled location — last resort, kept so existing setups keep working.
 _LOCAL_MAFFT = str(_PROJECT_ROOT / "mafft" / "mafft-win" / "mafft.bat")
+
+
+def resolve_mafft() -> str | None:
+    """Path to a usable MAFFT executable, or ``None`` if none is installed."""
+    return resolve_binary(MAFFT_ENV_VAR, MAFFT_CANDIDATES, _LOCAL_MAFFT)
 
 EBI_RUN_URL = "https://www.ebi.ac.uk/Tools/services/rest/mafft/run/"
 EBI_STATUS_URL = "https://www.ebi.ac.uk/Tools/services/rest/mafft/status/"
@@ -61,16 +83,18 @@ def align(
         _logger.warning("[MAFFT] EBI API failed (%s), trying local binary...", exc)
 
     # Fallback: local binary
-    if os.path.exists(_LOCAL_MAFFT):
+    binary = resolve_mafft()
+    if binary:
         try:
-            return _align_local(fasta_input, method, timeout)
+            return _align_local(fasta_input, method, timeout, binary=binary)
         except MAFFTError as exc:
             _logger.warning("[MAFFT] local binary failed (%s)", exc)
             raise
-    else:
-        raise MAFFTError(
-            f"EBI API failed and local MAFFT not found at {_LOCAL_MAFFT}"
-        )
+
+    raise MAFFTError(
+        "EBI API failed and no local MAFFT executable was found. Searched: "
+        + describe_search(MAFFT_ENV_VAR, MAFFT_CANDIDATES, _LOCAL_MAFFT)
+    )
 
 
 def _align_ebi(fasta_input: str, timeout: int) -> str:
@@ -139,9 +163,18 @@ def _align_ebi(fasta_input: str, timeout: int) -> str:
         raise MAFFTError(f"EBI API error: {exc}") from exc
 
 
-def _align_local(fasta_input: str, method: str, timeout: int) -> str:
-    """Run MAFFT using local binary."""
+def _align_local(
+    fasta_input: str, method: str, timeout: int, binary: str | None = None
+) -> str:
+    """Run MAFFT using the local binary."""
     import subprocess
+
+    executable = binary or resolve_mafft()
+    if not executable:
+        raise MAFFTError(
+            "No local MAFFT executable was found. Searched: "
+            + describe_search(MAFFT_ENV_VAR, MAFFT_CANDIDATES, _LOCAL_MAFFT)
+        )
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".fasta", delete=False, encoding="utf-8"
@@ -150,7 +183,7 @@ def _align_local(fasta_input: str, method: str, timeout: int) -> str:
         inp_path = inp.name
 
     try:
-        cmd = [_LOCAL_MAFFT, "--auto", inp_path]
+        cmd = [executable, "--auto", inp_path]
         result = subprocess.run(
             cmd,
             capture_output=True,

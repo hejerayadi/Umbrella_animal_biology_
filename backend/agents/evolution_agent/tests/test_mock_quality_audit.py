@@ -148,7 +148,16 @@ def test_phylogenetic_result_matches_its_dataclass() -> None:
     _assert_matches_dataclass(out, PhylogeneticResult)
     assert out.newick_tree.endswith(";")
     assert all(isinstance(v, int) for v in out.bootstrap_support.values())
-    assert 0.0 <= out.overall_confidence <= 1.0
+
+    # Confidence is reported only when UFBoot actually ran. With THREE taxa
+    # it is skipped, so None is the correct answer — a number here would be
+    # fabricated.
+    if out.bootstrap_support:
+        assert 0.0 <= out.overall_confidence <= 1.0
+        assert set(out.confidence_values) == set(out.bootstrap_support)
+    else:
+        assert out.overall_confidence is None
+        assert out.confidence_values == {}
 
 
 def test_pairwise_score_count_is_n_choose_2() -> None:

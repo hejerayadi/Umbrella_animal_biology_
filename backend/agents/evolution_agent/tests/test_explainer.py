@@ -599,6 +599,85 @@ async def test_explain_rejects_a_species_outside_the_analysed_set() -> None:
     assert got is None
 
 
+# ---------------------------------------------------------------------------
+# Grounding regression: genus followed by ordinary English prose
+# ---------------------------------------------------------------------------
+
+PHYLO_RESULTS = {
+    "phylogeny": {
+        "newick_tree": ("('Homo sapiens':0.0000022520,'Pan troglodytes':0.0160806457,"
+                        "('Mus musculus':0.0000025762,'Gallus gallus':0.2227994490)"
+                        "100:0.7755216079);"),
+        "model": "MTVER+R2",
+        "bootstrap_support": {"node_0": 100},
+        "confidence_values": {"node_0": 1.0},
+        "overall_confidence": 1.0,
+    }
+}
+FOUR_SPECIES = ["Homo sapiens", "Pan troglodytes", "Mus musculus",
+                "Gallus gallus"]
+
+
+@pytest.mark.asyncio
+async def test_explain_accepts_a_genus_followed_by_an_english_word() -> None:
+    """Regression: 'Mus+Gallus node' was read as the species 'Gallus node'.
+
+    A real IQ-TREE run produced exactly this sentence and the whole
+    interpretation was discarded, leaving interpretation_unavailable.
+    """
+    text = ("The Mus+Gallus node has bootstrap support 100 and the overall "
+            "confidence is 1.0, so that grouping is strongly supported.")
+    got = await explain(instruction="Build a tree.",
+                        feature="phylogenetic_tree", species=FOUR_SPECIES,
+                        results=PHYLO_RESULTS, llm=StubLLM(text))
+    assert got == text
+
+
+@pytest.mark.parametrize("phrase", [
+    "The Homo branch is short.",
+    "The Gallus lineage is the most distant.",
+    "Mus and Gallus cluster together.",
+    "The Pan tip sits next to the human one.",
+    "The Homo clade shows a similarity of 1.0.",
+])
+@pytest.mark.asyncio
+async def test_explain_accepts_common_prose_after_a_genus(phrase) -> None:
+    got = await explain(instruction="Build a tree.",
+                        feature="phylogenetic_tree", species=FOUR_SPECIES,
+                        results=PHYLO_RESULTS, llm=StubLLM(phrase))
+    assert got == phrase, f"false positive on: {phrase!r}"
+
+
+@pytest.mark.asyncio
+async def test_explain_still_rejects_an_unprovided_species() -> None:
+    """The guard must keep catching a genuinely hallucinated taxon."""
+    got = await explain(instruction="Build a tree.",
+                        feature="phylogenetic_tree", species=FOUR_SPECIES,
+                        results=PHYLO_RESULTS,
+                        llm=StubLLM("Homo erectus branches before Homo sapiens."))
+    assert got is None
+
+
+@pytest.mark.asyncio
+async def test_explain_still_rejects_a_fabricated_support_value() -> None:
+    """Numerical grounding must survive the false-positive fix."""
+    got = await explain(instruction="Build a tree.",
+                        feature="phylogenetic_tree", species=FOUR_SPECIES,
+                        results=PHYLO_RESULTS,
+                        llm=StubLLM("The node has a confidence of 0.73."))
+    assert got is None
+
+
+@pytest.mark.asyncio
+async def test_explain_accepts_a_species_pair_that_was_analysed() -> None:
+    text = ("Mus musculus and Gallus gallus form a clade with bootstrap "
+            "support 100.")
+    got = await explain(instruction="Build a tree.",
+                        feature="phylogenetic_tree", species=FOUR_SPECIES,
+                        results=PHYLO_RESULTS, llm=StubLLM(text))
+    assert got == text
+
+
 @pytest.mark.asyncio
 async def test_explain_allows_plain_integers() -> None:
     got = await explain(instruction="compare", feature="molecular_comparison",

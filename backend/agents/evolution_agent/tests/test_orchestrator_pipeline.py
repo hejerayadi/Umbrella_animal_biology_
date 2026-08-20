@@ -80,10 +80,13 @@ async def test_convenience_fields_populated_on_result(orchestrator) -> None:
 
     # Top-level AgentResult convenience fields
     assert result.newick_tree is not None
-    assert result.tree_url    is not None
     assert result.alignment_url is not None
     assert result.similarity_scores is not None
     assert result.confidence is not None
+
+    # tree_url stays None: no rendered tree artefact is served, and a
+    # placeholder URL would be a fabricated result.
+    assert result.tree_url is None
 
 
 @pytest.mark.asyncio
@@ -95,12 +98,21 @@ async def test_overall_confidence_is_mean_of_mc_and_phylo(orchestrator) -> None:
     result = await orchestrator.run(request)
     analysis: EvolutionAnalysisResult = result.output
 
-    # Verify it's the arithmetic mean of mc mean-score and phylo confidence
-    mc   = analysis.molecular
+    # The aggregate averages only the confidences that actually exist:
+    # phylo.overall_confidence is None when UFBoot did not run, and a
+    # missing value must never be counted as a number.
+    mc    = analysis.molecular
     phylo = analysis.phylogenetic
-    mc_mean = sum(e.score for e in mc.similarity_scores) / len(mc.similarity_scores)
-    expected = round((mc_mean + phylo.overall_confidence) / 2, 4)
+    mc_mean = round(
+        sum(e.score for e in mc.similarity_scores) / len(mc.similarity_scores), 4
+    )
+
+    parts = [c for c in (mc_mean, phylo.overall_confidence) if c is not None]
+    expected = round(sum(parts) / len(parts), 4)
     assert analysis.overall_confidence == expected
+
+    if phylo.overall_confidence is None:
+        assert analysis.overall_confidence == mc_mean
 
 
 @pytest.mark.asyncio
@@ -128,7 +140,12 @@ async def test_all_five_species_full_pipeline(orchestrator) -> None:
     )
     result = await orchestrator.run(request)
     assert result.status is AgentStatus.COMPLETED
-    assert "danio" in result.output.phylogenetic.newick_tree
+
+    # The resolver canonicalises the names before the worker sees them, and
+    # the full binomial must reach the tree label — not just the genus.
+    newick = result.output.phylogenetic.newick_tree
+    assert "'Danio rerio'" in newick
+    assert "(Danio:" not in newick and ",Danio:" not in newick
 
 
 # ---------------------------------------------------------------------------
