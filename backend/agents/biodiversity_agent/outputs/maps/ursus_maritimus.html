@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    
+        <script>
+            L_NO_TOUCH = false;
+            L_DISABLE_3D = false;
+        </script>
+    
+    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
+    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_39cb81effab18b28bec83843000cddd7 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+        
+</head>
+<body>
+    
+    
+    <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
+                background: white; padding: 8px 12px; border: 1px solid #ccc;
+                border-radius: 4px; font-family: sans-serif; font-size: 12px;">
+      <b>Ursus maritimus</b><br>
+      4 observations (mock)<br>
+      <span style="color: #666;">Sprint 2 — Biodiversity Agent</span>
+    </div>
+    
+    
+            <div class="folium-map" id="map_39cb81effab18b28bec83843000cddd7" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_39cb81effab18b28bec83843000cddd7 = L.map(
+                "map_39cb81effab18b28bec83843000cddd7",
+                {
+                    center: [76.17, -44.519999999999996],
+                    crs: L.CRS.EPSG3857,
+                    zoom: 2,
+                    zoomControl: true,
+                    preferCanvas: false,
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_cbc0425151c29e41e0d6a93aac488321 = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
+            );
+        
+    
+            tile_layer_cbc0425151c29e41e0d6a93aac488321.addTo(map_39cb81effab18b28bec83843000cddd7);
+        
+    
+            var circle_marker_c1cb3433c690f6eb89d581867d3b3f85 = L.circleMarker(
+                [78.22, 15.65],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_39cb81effab18b28bec83843000cddd7);
+        
+    
+        var popup_fecdebaacba1464dd48074c75cab366d = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_0342ba587f4f0a300771154000c43aef = $(`<div id="html_0342ba587f4f0a300771154000c43aef" style="width: 100.0%; height: 100.0%;"><b>Ursus maritimus</b><br>(78.220, 15.650)</div>`)[0];
+                popup_fecdebaacba1464dd48074c75cab366d.setContent(html_0342ba587f4f0a300771154000c43aef);
+            
+        
+
+        circle_marker_c1cb3433c690f6eb89d581867d3b3f85.bindPopup(popup_fecdebaacba1464dd48074c75cab366d)
+        ;
+
+        
+    
+    
+            var circle_marker_5e8940fbefa054c12a718acaff42c6fd = L.circleMarker(
+                [74.75, -94.99],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_39cb81effab18b28bec83843000cddd7);
+        
+    
+        var popup_5ecdc48be959721a89de4457479423ff = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_6755c42d455b276c26c0a5e67e873840 = $(`<div id="html_6755c42d455b276c26c0a5e67e873840" style="width: 100.0%; height: 100.0%;"><b>Ursus maritimus</b><br>(74.750, -94.990)</div>`)[0];
+                popup_5ecdc48be959721a89de4457479423ff.setContent(html_6755c42d455b276c26c0a5e67e873840);
+            
+        
+
+        circle_marker_5e8940fbefa054c12a718acaff42c6fd.bindPopup(popup_5ecdc48be959721a89de4457479423ff)
+        ;
+
+        
+    
+    
+            var circle_marker_427ee8e2e3535635974aecd81d45297f = L.circleMarker(
+                [71.29, -156.79],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_39cb81effab18b28bec83843000cddd7);
+        
+    
+        var popup_77311e72c28ead3d5cadcf272f0bfd16 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_1bad97aa145ab92639af842a06b4adf8 = $(`<div id="html_1bad97aa145ab92639af842a06b4adf8" style="width: 100.0%; height: 100.0%;"><b>Ursus maritimus</b><br>(71.290, -156.790)</div>`)[0];
+                popup_77311e72c28ead3d5cadcf272f0bfd16.setContent(html_1bad97aa145ab92639af842a06b4adf8);
+            
+        
+
+        circle_marker_427ee8e2e3535635974aecd81d45297f.bindPopup(popup_77311e72c28ead3d5cadcf272f0bfd16)
+        ;
+
+        
+    
+    
+            var circle_marker_c95e80656e99b71d1ddc36dde7924b34 = L.circleMarker(
+                [80.42, 58.05],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_39cb81effab18b28bec83843000cddd7);
+        
+    
+        var popup_56a4c8d7260a156755b6698e3db5846d = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_78b4eea993a8a85968ca9b5367265c49 = $(`<div id="html_78b4eea993a8a85968ca9b5367265c49" style="width: 100.0%; height: 100.0%;"><b>Ursus maritimus</b><br>(80.420, 58.050)</div>`)[0];
+                popup_56a4c8d7260a156755b6698e3db5846d.setContent(html_78b4eea993a8a85968ca9b5367265c49);
+            
+        
+
+        circle_marker_c95e80656e99b71d1ddc36dde7924b34.bindPopup(popup_56a4c8d7260a156755b6698e3db5846d)
+        ;
+
+        
+    
+</script>
+</html>

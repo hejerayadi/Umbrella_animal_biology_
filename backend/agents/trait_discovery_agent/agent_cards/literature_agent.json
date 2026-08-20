@@ -1,0 +1,11 @@
+  {
+    "name": "Literature Agent",
+    "kind": "external",
+    "role": "Runs deep literature search across PubMed and full-text corpora when a lightweight literature pass came back too thin to support a conclusion.",
+    "call_when": "Literature Support already tried and returned few records, and stronger evidence is required before finalizing an explanation.",
+    "cannot_help_with": [
+      "Gene mapping",
+      "Pathway lookup",
+      "Protein annotation"
+    ]
+  }

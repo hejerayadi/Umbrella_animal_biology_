@@ -7,5 +7,6 @@ folium>=0.17.0
 streamlit>=1.42.0
 pillow>=11.0.0
 pygbif>=0.6.4
+scikit-learn>=1.5.0          # ← si Ouissale l'a ajouté
 pytest==8.3.2
 pytest-asyncio==0.24.0

@@ -1,0 +1,8 @@
+pytest==8.3.2
+pytest-asyncio==0.24.0
+langgraph==0.2.39
+langchain-core==0.3.15
+langchain-nvidia-ai-endpoints==0.3.5
+python-dotenv==1.0.1
+pydantic>=2.0.0
+requests>=2.28.0

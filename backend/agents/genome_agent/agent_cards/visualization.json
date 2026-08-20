@@ -1,0 +1,28 @@
+{
+  "name": "Visualization",
+  "type": "worker",
+  "description": "Generates chromosome maps, size comparisons, or delegates protein structure rendering.",
+  "reports_to": [
+    "Genome Agent"
+  ],
+  "managed_services": [
+    "Local rendering"
+  ],
+  "capabilities": [
+    "Chromosome map rendering",
+    "Size comparison chart",
+    "Visualization generation"
+  ],
+  "input": {
+    "scope": "string",
+    "genome_size_bp": "integer",
+    "gene_table": "array"
+  },
+  "output": {
+    "status": "string",
+    "chart_data": "bytes",
+    "format": "string",
+    "target_agent": "string",
+    "prompt_to_target_agent": "string"
+  }
+}

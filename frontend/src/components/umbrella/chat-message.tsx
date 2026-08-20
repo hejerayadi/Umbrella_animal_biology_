@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Markdown } from "@/components/umbrella/markdown";
 import { UmbrellaMark } from "@/components/umbrella/logo";
+import { ProteinViewer } from "@/components/umbrella/protein-viewer";
 import { UserAvatar } from "@/components/umbrella/user-avatar";
 import type { Message } from "@/lib/umbrella-types";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,15 @@ export function ChatMessage({
 }) {
   const isUser = message.sender === "user";
   const { shown, done } = useTypedText(message.content, streaming && !isUser);
+  // The backend evicts old uploads, so the URL can 404 in a long-lived
+  // conversation. Hide the image rather than leaving a broken-image icon -
+  // the message text is still perfectly readable without it.
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = Boolean(message.imageUrl) && !imageFailed;
+  // Same eviction story as the attachment above, for the generated
+  // illustration on an assistant message.
+  const [generatedFailed, setGeneratedFailed] = useState(false);
+  const showGenerated = Boolean(message.generatedImageUrl) && !generatedFailed;
 
   return (
     <div className={cn("flex w-full gap-3 animate-fade-up", isUser && "justify-end")}>
@@ -49,12 +59,54 @@ export function ChatMessage({
 
       <div className={cn("min-w-0", isUser ? "max-w-[80%]" : "flex-1")}>
         {isUser ? (
-          <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-[0.95rem] leading-7 text-primary-foreground">
-            {message.content}
+          <div className="flex flex-col items-end gap-2">
+            {showImage && (
+              <a
+                href={message.imageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-2xl rounded-tr-sm border border-border"
+              >
+                <img
+                  src={message.imageUrl}
+                  alt={message.imageName ?? "Attached image"}
+                  onError={() => setImageFailed(true)}
+                  className="max-h-64 w-auto max-w-full object-contain"
+                />
+              </a>
+            )}
+            {message.content && (
+              <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-[0.95rem] leading-7 text-primary-foreground">
+                {message.content}
+              </div>
+            )}
           </div>
         ) : (
           <div className={cn(!done && "typing-caret")}>
             <Markdown content={shown} />
+            {/* Shown as soon as it is known rather than waiting for `done`:
+                it is a plain <img>, so unlike Mol* below there is no WebGL
+                context to initialise, and the picture is the point of the
+                answer - making the user read to the end first is worse. */}
+            {showGenerated && (
+              <a
+                href={message.generatedImageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 block w-fit overflow-hidden rounded-2xl border border-border"
+              >
+                <img
+                  src={message.generatedImageUrl}
+                  alt="Generated scientific illustration"
+                  onError={() => setGeneratedFailed(true)}
+                  className="max-h-[28rem] w-auto max-w-full object-contain"
+                />
+              </a>
+            )}
+            {/* Held back until the text finishes typing: mounting Mol* mid-
+                animation makes it initialise its WebGL context while the
+                message above it is still reflowing on every tick. */}
+            {message.proteinViewer && done && <ProteinViewer spec={message.proteinViewer} />}
           </div>
         )}
       </div>

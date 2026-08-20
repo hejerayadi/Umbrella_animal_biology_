@@ -53,6 +53,9 @@ _SYNTHESIS_SYSTEM_PROMPT = (
     "- If a finding is obviously a placeholder (for example a paper literally titled "
     "'Paper 1'), note that briefly in one line - do not build the answer around it.\n"
     "- If the findings do not answer the question, say so plainly in one or two lines.\n"
+    "- Scientific quality gates are hard constraints. Preserve every PARTIAL, REVISE, "
+    "ABSTAIN, and warning reported in the quality constraints. State the caveat plainly "
+    "and never describe such a result as complete, clean, conclusive, or fully validated.\n"
     "- BE CONCISE. A few short paragraphs or a short list. Never add "
     "'Limitations', 'What would be needed', or 'Overview' sections, and never restate "
     "the question back to the user.\n"
@@ -65,9 +68,12 @@ _SYNTHESIS_PROMPT = ChatPromptTemplate.from_messages(
         ("system", _SYNTHESIS_SYSTEM_PROMPT),
         (
             "human",
-            "User's question:\n{user_query}\n\n"
-            "Findings produced by the agents:\n{findings}\n\n"
-            "Agents that ran, in order:\n{execution_history}{failure_note}",
+            (
+                "User's question:\n{user_query}\n\n"
+                "Findings produced by the agents:\n{findings}\n\n"
+                "Scientific quality constraints:\n{quality_constraints}\n\n"
+                "Agents that ran, in order:\n{execution_history}{failure_note}"
+            ),
         ),
     ]
 )
@@ -111,6 +117,7 @@ class Responder:
             {
                 "user_query": user_query,
                 "findings": _format_findings(context),
+                "quality_constraints": _quality_constraints(context),
                 "execution_history": "\n".join(f"- {entry}" for entry in execution_history),
                 "failure_note": (
                     f"\n\nNote: an agent failed with: {failure}. Explain this to the user "
@@ -131,8 +138,95 @@ def _format_capabilities(agent_cards: dict[str, AgentCard]) -> str:
     )
 
 
+# No single finding needs more than this to be summarised, and everything past
+# it is prompt tokens spent on nothing. The cap is a backstop, not a policy:
+# large values reach here by accident (a base64 image, a full sequence, a
+# thousand-row result), and the failure without it is an opaque context-length
+# error from the model rather than an obviously truncated finding.
+_MAX_FINDING_CHARS = 4000
+
+
+def _render_value(value: Any) -> str:
+    text = str(value)
+    if len(text) <= _MAX_FINDING_CHARS:
+        return text
+    return (
+        f"{text[:_MAX_FINDING_CHARS]}... [truncated, {len(text)} characters total - "
+        f"summarise from what is shown]"
+    )
+
+
+# Context keys that exist for the browser, not for the model, mapped to what
+# the model should know is on screen because of them. A viewer scene is
+# coordinates, colours and URLs - the frontend renders it, and there is nothing
+# in it the answer could quote. Left in, the Mol* scene alone spends most of
+# `_MAX_FINDING_CHARS` and then gets cut mid-structure, so the model pays for
+# it and reads a broken fragment. The agent's own summary key carries what the
+# answer needs to say.
+#
+# The note matters as much as the exclusion: told nothing, the model closes
+# with "to view this structure, go to rcsb.org and search for 1KZY" while the
+# rotatable structure sits directly underneath its own answer.
+_RENDER_ONLY_KEYS: dict[str, str] = {
+    "protein_viewer": (
+        "An interactive 3D viewer showing this structure is displayed directly below your "
+        "answer. Refer to it as already visible; never tell the user to open RCSB, AlphaFold "
+        "or another viewer to see it."
+    ),
+    # FLUX.2-pro answers with a base64 data URI, not a link - a single 1024x1024
+    # image measured ~440 KB of characters. Left in, it is the biggest "finding"
+    # by far: it would consume the whole `_MAX_FINDING_CHARS` budget and hand the
+    # model 4000 characters of base64 to summarise.
+    #
+    # The note matters as much as the exclusion. Told nothing, the model sees a
+    # request to draw and no drawing, and apologises - which is exactly what the
+    # Genome agent did on the Arctic fox run ("I'm not able to draw an image of
+    # an Arctic fox for you").
+    "image": (
+        "The generated illustration is displayed directly below your answer. Refer to it as "
+        "already visible - describe what it shows and the biology behind it. Never say you "
+        "cannot draw or display images, and never suggest searching for one elsewhere."
+    ),
+}
+
+
 def _format_findings(context: dict[str, Any]) -> str:
     """Plain-text rendering of everything the agents produced."""
-    if not context:
+    findings = {key: value for key, value in context.items() if key not in _RENDER_ONLY_KEYS}
+    rendered = [note for key, note in _RENDER_ONLY_KEYS.items() if context.get(key)]
+
+    if not findings and not rendered:
         return "(the agents did not produce any findings)"
-    return "\n".join(f"- {key}: {value}" for key, value in context.items())
+
+    lines = [f"- {key}: {_render_value(value)}" for key, value in findings.items()]
+    lines.extend(f"- (shown in the interface) {note}" for note in rendered)
+    return "\n".join(lines)
+
+
+def _quality_constraints(context: dict[str, Any]) -> str:
+    """Surface non-clean scientific states separately from free-form findings."""
+    constraints: list[str] = []
+    for key, value in context.items():
+        if not isinstance(value, dict):
+            continue
+
+        # `or ""` rather than a default: an agent that reports `status: None`
+        # means "not stated", and `str(None)` would turn that into the string
+        # "NONE", which reads as a non-clean status and would make the model
+        # hedge an answer that has nothing wrong with it.
+        status = str(value.get("status") or "").upper()
+        validation = str(value.get("validation_status") or "").upper()
+        warnings = value.get("warnings")
+        parts: list[str] = []
+
+        if status and status != "COMPLETED":
+            parts.append(f"status={status}")
+        if validation and validation != "ACCEPT":
+            parts.append(f"validation_status={validation}")
+        if isinstance(warnings, list) and warnings:
+            parts.append("warnings=" + "; ".join(str(item) for item in warnings))
+
+        if parts:
+            constraints.append(f"- {key}: " + "; ".join(parts))
+
+    return "\n".join(constraints) if constraints else "(none reported)"

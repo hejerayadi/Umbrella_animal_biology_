@@ -1,16 +1,8 @@
 services:
-  toy-agent-langgraph:
+  trait-discovery-agent:
     build: .
     env_file:
       - .env
     volumes:
       - .:/app
-    command: python -m framework.toy_agent_langgraph
-
-  toy-agent-crewai:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m framework.toy_agent_crewai
+    command: pytest tests/test_llm_smoke.py -v

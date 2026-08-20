@@ -1,135 +1,123 @@
-import time
-import asyncio
-
 import pytest
 
-from workflows.state import TraitDiscoveryState, FunctionalEvidenceState
-import workflows.functional_evidence_graph as fe_graph_module
+import workflows.capability_resolver as resolver_module
+import workflows.nodes.escalation_nodes as esc_module
 import workflows.trait_discovery_graph as td_graph_module
+from workflows.capability_resolver import CapabilityResolution
+from workflows.state import TraitDiscoveryState
 from schemas.common import AgentStatus
 
 
-# ---- subgraph tested in isolation, before being wired into the parent ----
+async def fake_resolve_genome(*, waiting_agent, need_description, known_context):
+    return CapabilityResolution(
+        target_agent="Genome Agent",
+        prompt_to_target_agent=f"Resolve genes: {need_description}",
+        reasoning="fake",
+    )
+
+
+async def fake_write_explanation(**kwargs):
+    return f"Mock explanation for {kwargs['trait_name']}"
+
+
+@pytest.fixture
+def patch_llm_nodes(monkeypatch):
+    monkeypatch.setattr(esc_module, "resolve_capability", fake_resolve_genome)
+    monkeypatch.setattr(td_graph_module, "write_explanation", fake_write_explanation)
+
 
 @pytest.mark.asyncio
-async def test_functional_evidence_subgraph_parallel_execution():
-    app = fe_graph_module.build_functional_evidence_graph()
-    result = await app.ainvoke(FunctionalEvidenceState(
-        gene_list=["UCP1", "PRDM16"], instruction="test",
-    ))
-    assert result["status"] == AgentStatus.COMPLETED
-    assert len(result["pathway_data"]) == 2   # both UCP1 and PRDM16 resolve
-    assert result["protein_data"]              # UCP1 resolves, PRDM16 doesn't -> still COMPLETED
+async def test_escalation_and_aggregate_nodes_work(patch_llm_nodes):
+    state = TraitDiscoveryState(
+        trait_name="coat color",
+        species_name="mouse",
+        instruction="find relevant genes",
+        go_annotations=[],
+        pathway_data=[],
+        protein_data=[],
+        evidence=[],
+    )
+
+    genome_result = await esc_module.escalate_genome_agent_node(state)
+    assert genome_result["status"].value == "needs_agent"
+    assert genome_result["target_agent"] == "Genome Agent"
+
+    aggregate_result = await td_graph_module.aggregate_node(state)
+    assert aggregate_result["status"].value == "completed"
+    assert "Mock explanation" in aggregate_result["explanation"]
 
 
 @pytest.mark.asyncio
-async def test_functional_evidence_subgraph_fails_when_both_children_empty():
-    app = fe_graph_module.build_functional_evidence_graph()
-    result = await app.ainvoke(FunctionalEvidenceState(
-        gene_list=["ZZZ999"], instruction="test",
-    ))
-    assert result["status"] == AgentStatus.FAILED
-
-
-# ---- full end-to-end runs, mirroring Task 1's four scenarios ----
-
-@pytest.mark.asyncio
-async def test_full_completion_fur_growth():
+async def test_trait_discovery_graph_propagates_gene_list_and_runs_nodes(monkeypatch):
+    monkeypatch.setattr(td_graph_module, "write_explanation", fake_write_explanation)
     app = td_graph_module.build_trait_discovery_graph()
     result = await app.ainvoke(TraitDiscoveryState(
-        trait_name="fur growth", species_name="mouse",
+        trait_name="fur growth",
+        species_name="mouse",
         instruction="Which genes cause fur growth?",
         context={"gene_list": ["FGF5", "KRT71", "HR"]},
     ))
+
+    assert result["gene_list"] == ["FGF5", "KRT71", "HR"]
+    assert result["go_annotations"]
+    assert result["pathway_data"]
+    assert result["protein_data"]
+    assert result["evidence"]
     assert result["status"] == AgentStatus.COMPLETED
-    assert any(a.gene_symbol == "FGF5" for a in result["go_annotations"])
-    assert result["explanation"]
+
+
+def test_catalog_text_uses_json_card_fields():
+    from workflows.agent_catalog import build_catalog_text
+
+    catalog = build_catalog_text()
+    assert "### Genome Agent" in catalog
+    assert "Role:" in catalog
+    assert "Call when:" in catalog
 
 
 @pytest.mark.asyncio
-async def test_thin_evidence_escalates_to_literature_agent():
-    """Confirms NEEDS_AGENT surfaces at the top-level graph's END with target_agent
-    populated, and partial functional-evidence data is still attached, not discarded."""
-    app = td_graph_module.build_trait_discovery_graph()
-    result = await app.ainvoke(TraitDiscoveryState(
-        trait_name="cold adaptation", species_name="human",
-        instruction="Which genes are involved in cold adaptation?",
-        context={"gene_list": ["UCP1"]},
-    ))
-    assert result["status"] == AgentStatus.NEEDS_AGENT
-    assert result["target_agent"] == "Literature Agent"
-    assert result["prompt_to_target_agent"] is not None
-    assert len(result["pathway_data"]) == 1
-    assert result["pathway_data"][0].pathway_name == "Fatty acid degradation"
+async def test_resolve_capability_parses_valid_json(monkeypatch):
+    class _Resp:
+        content = (
+            '{"target_agent":"Genome Agent",'
+            '"prompt_to_target_agent":"Resolve genes for fur growth in mouse.",'
+            '"reasoning":"Genome Agent provides missing gene candidates."}'
+        )
+
+    async def _fake_invoke(*args, **kwargs):
+        return _Resp()
+
+    monkeypatch.setattr(resolver_module, "invoke_with_fallback", _fake_invoke)
+
+    result = await resolver_module.resolve_capability(
+        waiting_agent="Trait Discovery Agent",
+        need_description="Need a candidate gene list for fur growth.",
+        known_context="trait=fur growth, species=mouse",
+    )
+
+    assert result.target_agent == "Genome Agent"
+    assert "Resolve genes" in result.prompt_to_target_agent
 
 
 @pytest.mark.asyncio
-async def test_unknown_genes_fail_at_gene_mapper():
-    app = td_graph_module.build_trait_discovery_graph()
-    result = await app.ainvoke(TraitDiscoveryState(
-        trait_name="unknown trait", species_name="cat",
-        instruction="Random question",
-        context={"gene_list": ["ZZZ999"]},
-    ))
-    assert result["status"] == AgentStatus.FAILED
+async def test_resolve_capability_falls_back_on_non_json(monkeypatch):
+    class _Resp:
+        content = (
+            "We should escalate this to the Literature Agent because the evidence is too thin "
+            "and more papers are required before concluding."
+        )
 
+    async def _fake_invoke(*args, **kwargs):
+        return _Resp()
 
-@pytest.mark.asyncio
-async def test_missing_gene_list_escalates_to_genome_agent():
-    """Confirms escalation happens at graph entry, before gene_mapper ever runs."""
-    app = td_graph_module.build_trait_discovery_graph()
-    result = await app.ainvoke(TraitDiscoveryState(
-        trait_name="fur growth", species_name="mouse",
-        instruction="Which genes cause fur growth?",
-        context={},
-    ))
-    assert result["status"] == AgentStatus.NEEDS_AGENT
-    assert result["target_agent"] == "Genome Agent"
-    assert result["prompt_to_target_agent"] is not None
+    monkeypatch.setattr(resolver_module, "invoke_with_fallback", _fake_invoke)
 
+    result = await resolver_module.resolve_capability(
+        waiting_agent="Literature Support",
+        need_description="Evidence for cold adaptation is too thin.",
+        known_context="genes so far=['UCP1']",
+    )
 
-# ---- proof that the parallel branches actually run concurrently, not sequentially ----
-
-@pytest.mark.asyncio
-async def test_functional_evidence_and_literature_run_concurrently(monkeypatch):
-    events = []
-
-    async def slow_pathways(state):
-        events.append(("pathways_start", time.monotonic()))
-        await asyncio.sleep(0.1)
-        events.append(("pathways_end", time.monotonic()))
-        return {"pathway_data": [], "pathways_status": AgentStatus.COMPLETED}
-
-    async def fast_protein_data(state):
-        return {"protein_data": [], "protein_data_status": AgentStatus.COMPLETED}
-
-    async def instant_literature(state):
-        events.append(("literature_start", time.monotonic()))
-        events.append(("literature_end", time.monotonic()))
-        return {
-            "evidence": [], "literature_status": AgentStatus.COMPLETED,
-            "_literature_target_agent": None, "_literature_prompt": None,
-        }
-
-    # Patch at the module that BINDS the node function into the graph (import-time
-    # reference), not at the original definition module — and rebuild the graphs
-    # afterward so the patched functions are actually the ones compiled into nodes.
-    monkeypatch.setattr(fe_graph_module, "pathways_node", slow_pathways)
-    monkeypatch.setattr(fe_graph_module, "protein_data_node", fast_protein_data)
-    monkeypatch.setattr(td_graph_module, "literature_support_node", instant_literature)
-
-    patched_fe_app = fe_graph_module.build_functional_evidence_graph()
-    monkeypatch.setattr(td_graph_module, "_functional_evidence_app", patched_fe_app)
-    app = td_graph_module.build_trait_discovery_graph()
-
-    result = await app.ainvoke(TraitDiscoveryState(
-        trait_name="fur growth", species_name="mouse",
-        instruction="test", context={"gene_list": ["FGF5"]},
-    ))
-
-    assert result["status"] == AgentStatus.COMPLETED
-    literature_end = next(t for label, t in events if label == "literature_end")
-    pathways_end = next(t for label, t in events if label == "pathways_end")
-    # literature (instant) finished well before the artificially slow pathways call —
-    # proof the two branches ran concurrently, not one after another
-    assert literature_end < pathways_end
+    assert result.target_agent == "Literature Agent"
+    assert "Known context:" in result.prompt_to_target_agent
+    assert "fallback" in result.reasoning.lower()

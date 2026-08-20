@@ -8,6 +8,7 @@ import { ChatMessage } from "@/components/umbrella/chat-message";
 import { UmbrellaMark } from "@/components/umbrella/logo";
 import { SUGGESTED_PROMPTS } from "@/lib/mock-data";
 import { useUmbrella } from "@/lib/umbrella-store";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/chat/$conversationId")({
   component: ConversationView,
@@ -17,7 +18,6 @@ function ConversationView() {
   const { conversationId } = Route.useParams();
   const {
     conversations,
-    user,
     messagesFor,
     activitiesFor,
     sendMessage,
@@ -25,6 +25,7 @@ function ConversationView() {
     streamingMessageId,
     hydrated,
   } = useUmbrella();
+  const { user } = useAuth();
 
   const conversation = conversations.find((c) => c.id === conversationId);
   const messages = messagesFor(conversationId);
@@ -59,7 +60,7 @@ function ConversationView() {
             <div className="flex flex-col items-center py-16 text-center">
               <UmbrellaMark className="h-9 w-9" />
               <h2 className="mt-5 text-2xl font-semibold">
-                What are we investigating, {user?.name?.split(" ")[0] ?? "researcher"}?
+                What are we investigating, {user?.full_name?.split(" ")[0] ?? "researcher"}?
               </h2>
               <p className="mt-2 max-w-md text-sm text-muted-foreground">
                 Umbrella routes your question to the genome, biodiversity, trait, protein, and
@@ -84,7 +85,7 @@ function ConversationView() {
                 <ChatMessage
                   key={message.id}
                   message={message}
-                  userName={user?.name ?? "Researcher"}
+                  userName={user?.full_name ?? "Researcher"}
                   streaming={message.id === streamingMessageId}
                 />
               ))}
@@ -100,10 +101,10 @@ function ConversationView() {
           <ChatComposer
             focusKey={conversationId}
             disabled={isThinking}
-            onSend={(value) => sendMessage(conversationId, value)}
+            onSend={(value, image) => sendMessage(conversationId, value, image)}
           />
           <p className="text-center text-[0.7rem] text-muted-foreground">
-            Mock orchestration — no backend connected in this phase.
+            Attach, paste or drop a photo to identify a species.
           </p>
         </div>
       </div>

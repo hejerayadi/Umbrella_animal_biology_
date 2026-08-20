@@ -5,6 +5,19 @@ from schemas.common import AgentStatus
 from schemas.outputs import GOAnnotation, PathwayEntry, ProteinEntry, LiteratureRecord
 
 
+def _coerce_gene_list(context: dict | None, gene_list: Optional[List[str]] = None) -> List[str]:
+    if gene_list:
+        return gene_list
+    if not context:
+        return []
+    raw = context.get("gene_list")
+    if isinstance(raw, list):
+        return [str(item) for item in raw]
+    if raw is not None:
+        return [str(raw)]
+    return []
+
+
 @dataclass
 class TraitDiscoveryState:
     """Top-level graph state. Mirrors TraitDiscoveryOutput field-for-field so the final
@@ -18,6 +31,10 @@ class TraitDiscoveryState:
 
     # ---- populated as nodes run ----
     gene_list: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.gene_list = _coerce_gene_list(self.context, self.gene_list)
+
     go_annotations: List[GOAnnotation] = field(default_factory=list)
     pathway_data: List[PathwayEntry] = field(default_factory=list)
     protein_data: List[ProteinEntry] = field(default_factory=list)
@@ -33,6 +50,10 @@ class TraitDiscoveryState:
     # public output shape until an escalation node promotes them ----
     _literature_target_agent: Optional[str] = None
     _literature_prompt: Optional[str] = None
+
+    # ---- capability-resolver output, carried through for observability/tracing.
+    # Not used for routing (routing only ever reads `status`) — purely diagnostic. ----
+    resolution_reasoning: Optional[str] = None
 
     # ---- final output fields, same names/shape as TraitDiscoveryOutput ----
     status: Optional[AgentStatus] = None

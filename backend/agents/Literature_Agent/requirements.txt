@@ -1,0 +1,14 @@
+# Standalone local dependencies for the Literature agent
+requests==2.32.3
+
+# --- Orchestrator dependencies (orchestrator/, routing/, subagents/, llm/) ---
+langgraph==1.2.10
+openai==2.50.0
+python-dotenv==1.0.1
+
+# --- Agent API layer (api.py) - required, do not remove ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# --- Testing ---
+pytest==8.3.2

@@ -35,23 +35,15 @@ class HotspotsMock:
                 source_agents=["Biodiversity Hotspots Agent"],
             )
 
-        # Lazy import breaks the circular dep with the orchestrator package.
-        try:
-            from ...orchestrator.services.map_renderer import render_heatmap
-
-            heatmap_url = render_heatmap(region, hotspots)
-        except Exception:
-            heatmap_url = f"https://maps.umbrella.local/hotspots/{region}.html"
-
         payload = {
             "region": region,
             "hotspots": hotspots,
-            "heatmap_url": heatmap_url,
+            "heatmap_url": f"https://maps.umbrella.local/hotspots/{region}.html",
         }
         return AgentResult(
             status=AgentStatus.COMPLETED,
             output=payload,
-            map_url=heatmap_url,
+            map_url=payload["heatmap_url"],
             hotspots=hotspots,
             source_agents=["Biodiversity Hotspots Agent"],
         )

@@ -1,0 +1,17 @@
+# --- Required for the agent API layer — do not remove ---
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
+
+# --- Runtime dependencies ---
+# flux_client.py: POSTs the prompt to FLUX.2-pro on Azure AI Foundry.
+requests==2.32.3
+# flux_client.py: loads AZURE_FLUX_* from this agent's .env at import time.
+python-dotenv==1.2.2
+
+# --- Test dependencies ---
+# `python -m pytest backend/agents/image_generation_agent/tests` from the repo root.
+pytest==8.3.4
+# Required by fastapi.testclient.TestClient, which tests/test_api.py uses to
+# exercise POST /execute the same way the orchestrator's worker_node does.
+httpx==0.28.1

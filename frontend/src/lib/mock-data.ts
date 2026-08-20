@@ -1,16 +1,4 @@
-import type { AgentActivity, Conversation, Message, User } from "./umbrella-types";
-
-export const MOCK_USER: User = {
-  id: "usr_demo_01",
-  name: "Dr. Amara Sørensen",
-  email: "amara@umbrella.research",
-  role: "Researcher",
-  purpose: "Accelerate comparative genomics across endangered vertebrates",
-  mainInterest: "Genome reconstruction and trait evolution",
-  goals: "Publish a cross-species trait atlas within the year",
-  researchInterests: ["Genome Reconstruction", "Trait Discovery", "Scientific Literature"],
-  createdAt: "2026-03-11T09:12:00.000Z",
-};
+import type { AgentActivity, Conversation, Message } from "./umbrella-types";
 
 export const MOCK_CONVERSATIONS: Conversation[] = [
   {

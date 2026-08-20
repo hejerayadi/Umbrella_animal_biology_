@@ -5,6 +5,7 @@ is missing, the resolver uses Azure OpenAI (via LangChain) to decide which
 registered worker agent can satisfy that request. It never uses keyword
 matching.
 """
+
 from __future__ import annotations
 
 import logging
@@ -65,12 +66,16 @@ class CapabilityResolver:
         # Ask the model: "here's who's waiting and what they need - who can help?"
         # We deliberately exclude the waiting agent itself from the list of
         # options, so the model can't just pick the same agent again.
-        response = self._chain.invoke(
-            {
-                "agent_catalog": _format_agent_catalog(self._agent_cards, exclude=current_agent),
-                "current_agent": current_agent,
-                "prompt_to_target_agent": prompt_to_target_agent,
-            }
+        response = _ResolverOutput.model_validate(
+            self._chain.invoke(
+                {
+                    "agent_catalog": _format_agent_catalog(
+                        self._agent_cards, exclude=current_agent
+                    ),
+                    "current_agent": current_agent,
+                    "prompt_to_target_agent": prompt_to_target_agent,
+                }
+            )
         )
 
         # Safety check #1: make sure the model picked a real, known agent.

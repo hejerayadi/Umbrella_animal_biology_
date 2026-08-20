@@ -1,0 +1,6 @@
+{
+  "results": [{
+    "metadata": {"accession": "IPR011615", "name": "p53 DNA-binding domain", "type": "domain"},
+    "proteins": [{"entry_protein_locations": [{"fragments": [{"start": 102, "end": 292}]}]}]
+  }]
+}

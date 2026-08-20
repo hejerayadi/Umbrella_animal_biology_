@@ -9,20 +9,25 @@ import {
 } from "react";
 
 import { MOCK_AGENT_ACTIVITY, MOCK_CONVERSATIONS, MOCK_MESSAGES } from "./mock-data";
-import { askOrchestrator, parseExecutionHistory } from "./orchestrator-client";
-import type { AgentActivity, Conversation, Message, User } from "./umbrella-types";
+import {
+  askOrchestrator,
+  generatedImageFrom,
+  imageUrlFor,
+  parseExecutionHistory,
+  proteinViewerFrom,
+  type UploadedImage,
+} from "./orchestrator-client";
+import type { AgentActivity, Conversation, Message } from "./umbrella-types";
 
 const STORAGE_KEY = "umbrella.mock.state.v1";
 
 interface PersistedState {
-  user: User | null;
   conversations: Conversation[];
   messages: Message[];
   activities: AgentActivity[];
 }
 
 const initialState: PersistedState = {
-  user: null,
   conversations: MOCK_CONVERSATIONS,
   messages: MOCK_MESSAGES,
   activities: MOCK_AGENT_ACTIVITY,
@@ -35,7 +40,6 @@ function readPersisted(): PersistedState {
     if (!raw) return initialState;
     const parsed = JSON.parse(raw) as Partial<PersistedState>;
     return {
-      user: parsed.user ?? null,
       conversations: parsed.conversations ?? MOCK_CONVERSATIONS,
       messages: parsed.messages ?? MOCK_MESSAGES,
       activities: parsed.activities ?? MOCK_AGENT_ACTIVITY,
@@ -52,13 +56,10 @@ interface UmbrellaContextValue extends PersistedState {
   hydrated: boolean;
   isThinking: boolean;
   streamingMessageId: string | null;
-  signIn: (email: string) => void;
-  signUp: (payload: Omit<User, "id" | "createdAt">) => void;
-  signOut: () => void;
   createConversation: (title?: string) => Conversation;
   renameConversation: (id: string, title: string) => void;
   deleteConversation: (id: string) => void;
-  sendMessage: (conversationId: string, content: string) => void;
+  sendMessage: (conversationId: string, content: string, image?: UploadedImage | null) => void;
   messagesFor: (conversationId: string) => Message[];
   activitiesFor: (conversationId: string) => AgentActivity[];
 }
@@ -81,36 +82,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state, hydrated]);
 
-  const signIn = useCallback((email: string) => {
-    setState((prev) => ({
-      ...prev,
-      user:
-        prev.user ??
-        ({
-          id: uid("usr"),
-          name: email.split("@")[0] || "Researcher",
-          email,
-          role: "Researcher",
-          purpose: "",
-          mainInterest: "",
-          goals: "",
-          researchInterests: [],
-          createdAt: new Date().toISOString(),
-        } satisfies User),
-    }));
-  }, []);
-
-  const signUp = useCallback((payload: Omit<User, "id" | "createdAt">) => {
-    setState((prev) => ({
-      ...prev,
-      user: { ...payload, id: uid("usr"), createdAt: new Date().toISOString() },
-    }));
-  }, []);
-
-  const signOut = useCallback(() => {
-    setState((prev) => ({ ...prev, user: null }));
-  }, []);
-
   const createConversation = useCallback((title = "New conversation") => {
     const now = new Date().toISOString();
     const conversation: Conversation = { id: uid("cnv"), title, createdAt: now, updatedAt: now };
@@ -122,7 +93,9 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({
       ...prev,
       conversations: prev.conversations.map((c) =>
-        c.id === id ? { ...c, title: title.trim() || c.title, updatedAt: new Date().toISOString() } : c,
+        c.id === id
+          ? { ...c, title: title.trim() || c.title, updatedAt: new Date().toISOString() }
+          : c,
       ),
     }));
   }, []);
@@ -137,7 +110,7 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendMessage = useCallback(
-    (conversationId: string, content: string) => {
+    (conversationId: string, content: string, image?: UploadedImage | null) => {
       const now = new Date().toISOString();
       const userMessage: Message = {
         id: uid("msg"),
@@ -145,6 +118,9 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
         sender: "user",
         content,
         timestamp: now,
+        // Served back from the backend rather than kept as the composer's
+        // blob: URL, which is revoked as soon as the attachment clears.
+        ...(image ? { imageUrl: imageUrlFor(image.image_id), imageName: image.filename } : {}),
       };
 
       setState((prev) => ({
@@ -167,7 +143,7 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
 
       setIsThinking(true);
 
-      askOrchestrator(content)
+      askOrchestrator(content, image)
         .then((response) => {
           const activities = parseExecutionHistory(response.execution_history, conversationId);
           const assistantId = uid("msg");
@@ -186,6 +162,17 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 sender: "assistant",
                 content: response.answer,
                 timestamp: new Date().toISOString(),
+                // Kept on the message rather than in a side channel so the
+                // structure is still there after a reload, exactly like the
+                // text it belongs to.
+                ...(() => {
+                  const viewer = proteinViewerFrom(response.context);
+                  return viewer ? { proteinViewer: viewer } : {};
+                })(),
+                ...(() => {
+                  const generated = generatedImageFrom(response);
+                  return generated ? { generatedImageUrl: generated } : {};
+                })(),
               },
             ],
           }));
@@ -231,9 +218,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
       hydrated,
       isThinking,
       streamingMessageId,
-      signIn,
-      signUp,
-      signOut,
       createConversation,
       renameConversation,
       deleteConversation,
@@ -246,9 +230,6 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
       hydrated,
       isThinking,
       streamingMessageId,
-      signIn,
-      signUp,
-      signOut,
       createConversation,
       renameConversation,
       deleteConversation,

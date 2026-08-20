@@ -1,7 +1,7 @@
 {
   "name": "Literature Agent",
   "type": "worker",
-  "description": "Searches and summarizes scientific literature.",
+  "description": "Searches and summarizes scientific literature, and supports scientific writing and publication. Covers peer-reviewed papers, publications and studies about a topic or species; what the published evidence says on a question; citations, references and DOIs; literature reviews; and recent findings or the current state of research. Also drafts and edits academic text for a study - abstracts, introductions, discussion and review sections, with or without a literature search behind it - and recommends journals or publication venues for a manuscript. Any request to write, draft or rewrite scientific text, or to choose where to publish, belongs to this agent.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
@@ -12,13 +12,16 @@
   ],
   "capabilities": [
     "Paper retrieval",
-    "Scientific summarization"
+    "Scientific summarization",
+    "Scientific writing and drafting",
+    "Publication venue recommendation"
   ],
   "input": {
     "instruction": "string",
     "context": "dict"
   },
   "output": {
-    "papers": "list"
+    "discovery": "dict | null",
+    "writing": "dict | null"
   }
 }

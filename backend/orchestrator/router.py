@@ -20,11 +20,16 @@ def route_after_planner(state: WorkflowState) -> str:
     The planner sets `current_agent` to the agent that should start, or
     leaves it as None when the message needs no research agent at all (a
     greeting, small talk, a question about the platform).
+
+    The research path goes through the extractor first, so the agent the
+    planner chose finds the subject of the question already in `context`.
+    Non-research messages skip it - a greeting names no species, and the
+    extra LLM call would buy nothing.
     """
 
     if state.current_agent is None:
         return "direct_answer"
-    return state.current_agent
+    return "extractor"
 
 
 def route_after_worker(state: WorkflowState) -> str:

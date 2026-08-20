@@ -1,3 +1,3 @@
-from .mock import ProteinMock
+from .orchestrator_adapter import OrchestratorProteinAgent
 
-__all__ = ["ProteinMock"]
+__all__ = ["OrchestratorProteinAgent"]

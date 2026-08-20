@@ -1,0 +1,31 @@
+from backend.agents.Protein_visualization.app.domain.models.protein import (
+    Annotation,
+    CriticReport,
+    EvidencePack,
+    EvidenceRef,
+    Explanation,
+    KnowledgeHit,
+    LlmUsage,
+    ProteinStructureRequest,
+    ResidueMapping,
+    ResolvedProtein,
+    SpeciesRef,
+    StructureCandidate,
+    VisualizationSpec,
+)
+
+__all__ = [
+    "Annotation",
+    "CriticReport",
+    "EvidencePack",
+    "EvidenceRef",
+    "Explanation",
+    "KnowledgeHit",
+    "LlmUsage",
+    "ProteinStructureRequest",
+    "ResolvedProtein",
+    "ResidueMapping",
+    "SpeciesRef",
+    "StructureCandidate",
+    "VisualizationSpec",
+]

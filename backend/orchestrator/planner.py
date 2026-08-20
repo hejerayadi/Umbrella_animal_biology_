@@ -14,6 +14,7 @@ The agent catalog it chooses from comes from `backend/registry.py`, which is
 built only from the stable `card.json` files - not from the agents'
 (still-changing) Python code.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,12 +43,46 @@ _SYSTEM_PROMPT = (
     "about you or the platform, or anything that is not an animal-biology research "
     "request. In that case leave `initial_agent` empty - it will be answered "
     "conversationally. Never force a research agent onto a non-research message.\n\n"
+    "NEVER set `needs_agent` to false on the grounds that you already know the answer "
+    "yourself. Umbrella exists to retrieve data live from scientific sources - NCBI, "
+    "Ensembl, GBIF, IUCN, PubMed, UniProt, AlphaFold - and an answer written from your "
+    "own memory is exactly what it is built to avoid: unsourced, unverifiable, and "
+    "possibly out of date. If the message asks about the genome, genes, traits, "
+    "morphology, behaviour, habitat, range, distribution, conservation status, "
+    "evolution, proteins or published literature of a real species, it IS a research "
+    "request. Set `needs_agent` to true and pick an agent, however famous the species "
+    "is and however obvious the answer feels. 'I can answer this directly' is not a "
+    "valid reason to skip the agents.\n\n"
     "Set `needs_agent` to true only for genuine research requests. Then pick the single "
     "agent that owns the CORE of the question as `initial_agent`. Do not try to list "
     "every agent involved: if the starting agent needs something from another agent, it "
     "will request that automatically later.\n\n"
+    "Each agent's description below spells out the specific topics it covers. Match the "
+    "topics named in the user's message against those descriptions rather than guessing "
+    "from the agent's name alone.\n\n"
+    "{image_note}"
     "Always fill in `reasoning` with one short sentence explaining your choice.\n\n"
     "Available agents:\n{agent_catalog}"
+)
+
+# Swapped into `{image_note}` depending on whether the user attached a photo.
+# Stated as a fact about THIS message rather than a general rule, because the
+# model cannot see the attachment and would otherwise have to infer it from
+# wording like "this photo" - which is exactly what users leave out.
+_IMAGE_ATTACHED_NOTE = (
+    "IMPORTANT - the user attached an IMAGE to this message. Only the Multimodal "
+    "agent can look at it, and it is the agent that identifies a species from a "
+    "photograph. Unless the message is clearly asking for something else entirely, "
+    "set `needs_agent` to true and choose Multimodal as `initial_agent`: whatever "
+    "else the user wants to know, the species has to be identified from the image "
+    "first, and Multimodal will request the other agents itself afterwards.\n\n"
+)
+
+_NO_IMAGE_NOTE = (
+    "No image is attached to this message. Do NOT choose the Multimodal agent: it "
+    "requires an image and cannot identify a species from a text description. If "
+    "the user talks as though they attached a photo but none arrived, pick the "
+    "agent that fits the text.\n\n"
 )
 
 # Bundles the system instructions above with the user's actual question into
@@ -76,7 +111,9 @@ class _PlannerOutput(BaseModel):
     reasoning: str = Field(description="One short sentence explaining the decision.")
     needs_agent: bool = Field(
         description="True if a research worker agent is required, false for greetings, "
-        "small talk, platform questions, or anything outside animal-biology research."
+        "small talk, platform questions, or anything outside animal-biology research. "
+        "Never false merely because you already know the answer - a question about a "
+        "real species' biology always needs an agent."
     )
     initial_agent: str | None = Field(
         default=None,
@@ -110,22 +147,32 @@ class Planner:
         # it to the model."
         self._chain = _PROMPT | get_llm().with_structured_output(_PlannerOutput)
 
-    def plan(self, user_query: str) -> ExecutionPlan:
-        """Ask the LLM how `user_query` should be handled."""
+    def plan(self, user_query: str, *, has_image: bool = False) -> ExecutionPlan:
+        """Ask the LLM how `user_query` should be handled.
+
+        `has_image` is not in the text the model reads, so it has to be stated
+        explicitly: the same sentence means something different when a photo is
+        attached, and only one agent can act on one.
+        """
 
         # Actually call the model: fill in the prompt's placeholders and get
         # back a `_PlannerOutput` object.
-        response = self._chain.invoke(
-            {
-                "agent_catalog": _format_agent_catalog(self._agent_cards),
-                "user_query": user_query,
-            }
+        response = _PlannerOutput.model_validate(
+            self._chain.invoke(
+                {
+                    "agent_catalog": _format_agent_catalog(self._agent_cards),
+                    "user_query": user_query,
+                    "image_note": _IMAGE_ATTACHED_NOTE if has_image else _NO_IMAGE_NOTE,
+                }
+            )
         )
 
         # No agent needed - this message gets a direct conversational reply.
         if not response.needs_agent or not response.initial_agent:
             _logger.info(
-                "[Planner] query=%r -> no agent needed (%s)", user_query, response.reasoning
+                "[Planner] query=%r -> no agent needed (%s)",
+                user_query,
+                response.reasoning,
             )
             return ExecutionPlan(initial_agent=None, reasoning=response.reasoning)
 
