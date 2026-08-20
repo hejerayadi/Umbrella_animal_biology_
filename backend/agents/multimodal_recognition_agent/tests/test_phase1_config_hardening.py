@@ -349,10 +349,36 @@ def test_real_bioclip_mode_never_returns_a_mock_provider():
 
 def test_real_taxonomy_mode_never_returns_a_fixture_provider():
     """With no NCBI credentials configured, real mode must still refuse rather
-    than silently falling back to the fixture provider."""
+    than silently falling back to the fixture provider.
+
+    The refusal must be about the MISSING CONTACT DETAILS, not about `real`
+    being unimplemented - so the message is checked, not just the exception.
+    """
     config = make_config(taxonomy_provider_mode="real")
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigError) as caught:
         build_taxonomy_provider(config)
+    message = str(caught.value)
+    assert "NCBI_TOOL" in message and "NCBI_EMAIL" in message
+
+
+def test_real_taxonomy_mode_with_contact_details_builds_the_real_provider():
+    """The positive half of the pair above: given the required NCBI contact
+    details, real mode must actually build the LIVE provider - never a fixture
+    one, and without opening a connection."""
+    import dataclasses
+
+    from ..adapters.taxonomy import RealTaxonomyProvider
+
+    config = dataclasses.replace(
+        make_config(taxonomy_provider_mode="real"),
+        ncbi_tool="umbrella-recognition-agent",
+        ncbi_email="contact@example.invalid",
+    )
+    built = build_taxonomy_provider(config)
+    assert isinstance(built, RealTaxonomyProvider)
+    assert not isinstance(built, MockTaxonomyProvider)
+    # Lazy: constructing the provider must open no HTTP session.
+    assert built.gbif._session is None and built.ncbi._session is None
 
 
 @pytest.mark.parametrize("mode", ["real", "banana", "", "REAL"])
@@ -381,9 +407,10 @@ def test_the_agent_refuses_to_start_in_an_unimplemented_production_mode():
     """The whole agent, not just the factory: construction must fail rather
     than come up serving fixtures.
 
-    `taxonomy_provider_mode="real"` still refuses here too - not because
-    `real` itself is unimplemented anymore, but because `make_config()`'s
-    default carries no NCBI credentials.
+    Only genuinely unimplemented/unknown modes belong here. `taxonomy=real` is
+    implemented and is covered by its own tests - asserting it "refuses" would
+    pass for the wrong reason (missing NCBI contact details, not an absent
+    implementation) and would hide a broken real provider behind a green test.
     """
     with pytest.raises(ConfigError):
         RecognitionAgent(make_config(bioclip_provider_mode="real"))

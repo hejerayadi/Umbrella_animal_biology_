@@ -21,6 +21,8 @@ identifier was verified against a live database. Nothing here was.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
@@ -399,11 +401,11 @@ def build_taxonomy_provider(config: "RecognitionConfig") -> "MockTaxonomyProvide
 # MockBioCLIP2Provider: the mock stays provably fixture-only, and a mode bug
 # can never make a live deployment silently construct it.
 #
-# NOT YET WIRED IN: there is no RealTaxonomyProvider facade here, and
-# build_taxonomy_provider() above has not been extended with a "real" branch.
-# Both are blocked on confirming how real-mode taxonomy_status should be
-# labeled, since domain/models.py's TaxonomyStatus Literal currently only
-# allows "mock_verified" / "partial" / "unverified".
+# WIRED IN: build_taxonomy_provider() above has a "real" branch that builds
+# RealTaxonomyProvider from RealGBIFProvider + RealNCBIProvider, and
+# domain/models.py's TaxonomyStatus Literal carries the additive "verified"
+# value used for a live double match. "mock_verified" is untouched, so a mocked
+# response can never be misread as live.
 # ============================================================================
 
 # GBIF's official matchType values that count as a usable exact match. FUZZY
@@ -501,12 +503,82 @@ class RealGBIFProvider:
         return {"source": self.source, "mode": self.mode, "endpoint": self._BASE_URL}
 
 
+# NCBI's Entrez usage guidelines cap an unkeyed caller at 3 requests/second,
+# and 10/second once an API key is supplied. Enriching a Top-K list issues one
+# request per candidate back to back, which overruns the unkeyed cap: measured
+# against the live service, 2 of 8 rapid requests came back rate-limited, so a
+# perfectly healthy species lost its taxid and the answer reported `partial`
+# for no real reason.
+#
+# The fix is spacing, not retrying. A retry would double the load that caused
+# the problem and would break the agent's no-retry rule; waiting the remaining
+# fraction of a second before the next request simply keeps us inside the limit.
+#
+# The unkeyed rate is set BELOW the published 3/second on purpose. Pacing at
+# exactly the cap left no margin: a later measurement still saw 1 of 8 requests
+# rejected at a measured 2.86/second, because the rate NCBI observes is not the
+# rate we send at - network transit bunches requests together at the far end,
+# and their accounting window need not line up with ours. 2/second buys that
+# margin back. The keyed rate is left at the published 10/second, where an API
+# key already gives the deployment its own budget.
+NCBI_PUBLISHED_LIMIT_WITHOUT_KEY = 3.0     # what NCBI documents
+NCBI_REQUESTS_PER_SECOND_WITHOUT_KEY = 2.0  # what we actually send at
+NCBI_REQUESTS_PER_SECOND_WITH_KEY = 10.0
+
+
+class _RateLimiter:
+    """Smallest thing that spaces calls out: one lock, one deadline.
+
+    `monotonic` and `sleep` are injected so timing is testable without a test
+    ever really sleeping. Wall-clock time is deliberately NOT used - a clock
+    adjustment mid-request could otherwise push the deadline backwards and let
+    a burst through, or forwards and stall one.
+
+    The lock is held across the wait on purpose. Releasing it first would let
+    every waiting thread wake, see a stale deadline and fire together, which is
+    exactly the burst this class exists to prevent.
+    """
+
+    def __init__(self, requests_per_second: float, *, monotonic=None, sleep=None) -> None:
+        if requests_per_second <= 0:
+            raise ValueError("requests_per_second must be positive")
+        self.requests_per_second = requests_per_second
+        self.min_interval = 1.0 / requests_per_second
+        self._monotonic = monotonic or time.monotonic
+        self._sleep = sleep or time.sleep
+        self._lock = threading.Lock()
+        self._next_allowed: float | None = None
+
+    def acquire(self) -> float:
+        """Block until the next request is allowed. Returns seconds waited."""
+        with self._lock:
+            now = self._monotonic()
+            if self._next_allowed is None:
+                # First call is free: nothing has been sent yet to space out.
+                self._next_allowed = now + self.min_interval
+                return 0.0
+
+            waited = 0.0
+            remaining = self._next_allowed - now
+            if remaining > 0:
+                self._sleep(remaining)
+                waited = remaining
+                now = self._monotonic()
+
+            self._next_allowed = now + self.min_interval
+            return waited
+
+
 class RealNCBIProvider:
     """Live NCBI Taxonomy lookup via the official Entrez E-utilities.
 
     Per NCBI's usage guidelines, `tool` and `email` identify the calling
     application; no API key is required below 3 requests/second. Both are read
     from configuration at construction time, never hardcoded, and never logged.
+
+    Requests are spaced by `_RateLimiter` to stay inside that published rate -
+    3/second unkeyed, 10/second with an API key - because enriching a Top-K list
+    otherwise sends one request per candidate faster than NCBI allows.
     """
 
     source = "NCBI"
@@ -522,12 +594,25 @@ class RealNCBIProvider:
         api_key: str | None = None,
         timeout_seconds: float = 10.0,
         session: object = None,
+        rate_limiter: "_RateLimiter | None" = None,
+        monotonic=None,
+        sleep=None,
     ) -> None:
         self.tool = tool
         self.email = email
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
         self._session = session
+        # A key raises NCBI's published ceiling from 3/s to 10/s. The limiter is
+        # built from whichever applies, and is per-provider: one provider serves
+        # every candidate in a request, which is the burst that needed spacing.
+        self.requests_per_second = (
+            NCBI_REQUESTS_PER_SECOND_WITH_KEY if api_key
+            else NCBI_REQUESTS_PER_SECOND_WITHOUT_KEY
+        )
+        self._rate_limiter = rate_limiter or _RateLimiter(
+            self.requests_per_second, monotonic=monotonic, sleep=sleep
+        )
 
     def _ensure_session(self):
         if self._session is None:
@@ -549,6 +634,9 @@ class RealNCBIProvider:
 
         try:
             session = self._ensure_session()
+            # Wait our turn BEFORE sending, so the published rate is respected
+            # by construction rather than discovered through a 429.
+            self._rate_limiter.acquire()
             response = session.get(self._ESEARCH_URL, params=params, timeout=self.timeout_seconds)
             response.raise_for_status()
             payload = response.json()
@@ -634,6 +722,40 @@ class RealTaxonomyProvider:
             "status": status,
         }
         return candidate.model_copy(update=updates), report
+
+    # -- name catalogue -----------------------------------------------------
+    #
+    # `agent.py` builds its text analyser from `taxonomy.known_names()`, so the
+    # real provider has to answer the same two questions the mock does. It
+    # answers them EMPTY, on purpose.
+    #
+    # The mock can list names because it owns a local fixture. Real mode has no
+    # local catalogue: GBIF and NCBI are queried per candidate, by name, after
+    # classification. There is no offline set of "names this agent knows", and
+    # inventing one would mean either shipping a fixture into real mode - the
+    # exact confusion these classes are kept separate to prevent - or calling a
+    # live service during agent construction, which must open no connection.
+    #
+    # An empty catalogue is safe by design: `RuleBasedTextAnalyzer` already
+    # treats it as "no named species recognised", so user text simply carries no
+    # name signal. It can never invent, promote or rename a candidate either
+    # way, because only the classifier produces candidates.
+
+    def known_names(self) -> dict[str, str]:
+        """No local catalogue in real mode. Always an empty mapping.
+
+        Opens no connection: this is called while the agent is being built.
+        """
+        return {}
+
+    def resolve_name(self, text: str) -> str | None:
+        """No local catalogue in real mode, so no name resolves. Always None.
+
+        Deliberately does NOT fall back to the fixture and does NOT call GBIF
+        or NCBI: a lookup here would be an unbounded network call on a path that
+        only exists to understand what the user said.
+        """
+        return None
 
     def enrich(self, candidate: SpeciesCandidate) -> SpeciesCandidate:
         enriched, _ = self.validate_candidate(candidate)

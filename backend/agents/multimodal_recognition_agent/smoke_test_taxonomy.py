@@ -5,9 +5,11 @@ Makes REAL network calls to the public GBIF and NCBI APIs. Not a pytest test on
 purpose - this is an opt-in manual check, run directly, the same way
 smoke_test_azure.py checks live Azure connectivity.
 
-Run from the agent's own venv, with .env populated (NCBI_TOOL, NCBI_EMAIL):
+It refuses to run without an explicit opt-in, so no test run, import or stray
+invocation can call an external service - the same guard smoke_test_azure.py
+uses. Run from the agent's own venv, with .env populated (NCBI_TOOL, NCBI_EMAIL):
 
-    python smoke_test_taxonomy.py
+    RECOGNITION_LIVE_SMOKE=1 python smoke_test_taxonomy.py
 """
 from __future__ import annotations
 
@@ -33,12 +35,21 @@ from agents.multimodal_recognition_agent.adapters.taxonomy import (  # noqa: E40
 )
 
 
-def main() -> None:
+# The opt-in. Absent or not exactly "1", the script exits without calling out.
+LIVE_OPT_IN_VAR = "RECOGNITION_LIVE_SMOKE"
+
+
+def main() -> int:
+    if os.getenv(LIVE_OPT_IN_VAR) != "1":
+        print(f"ABORTED: live opt-in absent; set {LIVE_OPT_IN_VAR}=1 to authorize "
+              "real GBIF/NCBI calls.")
+        return 2
+
     tool = os.getenv("NCBI_TOOL")
     email = os.getenv("NCBI_EMAIL")
     if not tool or not email:
         print("NCBI_TOOL and NCBI_EMAIL must both be set in .env - aborting.")
-        return
+        return 3
 
     gbif = RealGBIFProvider()
     ncbi = RealNCBIProvider(tool=tool, email=email)
@@ -61,6 +72,8 @@ def main() -> None:
         print(f"NCBI: available={ncbi_result.available} matched={ncbi_result.matched} "
               f"identifier={ncbi_result.identifier}")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
