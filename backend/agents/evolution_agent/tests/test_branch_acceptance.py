@@ -768,14 +768,14 @@ def test_sub_agents_are_distinct_classes_in_distinct_modules() -> None:
     from backend.agents.evolution_agent.workers.molecular_comparison.mock import (
         MolecularComparisonMock,
     )
-    from backend.agents.evolution_agent.workers.phylogenetic_tree.mock import (
-        PhylogeneticTreeMock,
+    from backend.agents.evolution_agent.workers.phylogenetic_tree.worker import (
+        PhylogeneticTreeWorker,
     )
-    assert MolecularComparisonMock is not PhylogeneticTreeMock
+    assert MolecularComparisonMock is not PhylogeneticTreeWorker
     assert (MolecularComparisonMock.__module__
-            != PhylogeneticTreeMock.__module__)
+            != PhylogeneticTreeWorker.__module__)
     assert (MolecularComparisonMock.run.__code__
-            is not PhylogeneticTreeMock.run.__code__)
+            is not PhylogeneticTreeWorker.run.__code__)
 
 
 def test_sub_agents_have_disjoint_output_schemas() -> None:
@@ -786,7 +786,7 @@ def test_sub_agents_have_disjoint_output_schemas() -> None:
 def test_sub_agents_never_import_or_call_each_other() -> None:
     mc_src = (AGENT_DIR / "workers/molecular_comparison/mock.py").read_text(
         encoding="utf-8")
-    ph_src = (AGENT_DIR / "workers/phylogenetic_tree/mock.py").read_text(
+    ph_src = (AGENT_DIR / "workers/phylogenetic_tree/worker.py").read_text(
         encoding="utf-8")
     assert "phylogenetic" not in mc_src.lower().replace(
         "phylogenetic reconstruction subagent", "")
@@ -799,10 +799,10 @@ def test_only_the_orchestrator_instantiates_the_workers() -> None:
     for py in AGENT_DIR.rglob("*.py"):
         if "__pycache__" in py.parts or py.parent.name == "tests":
             continue
-        if py.name in {"evolution_orchestrator.py", "mock.py", "__init__.py"}:
+        if py.name in {"evolution_orchestrator.py", "mock.py", "worker.py", "__init__.py"}:
             continue
         src = py.read_text(encoding="utf-8")
-        if "MolecularComparisonMock(" in src or "PhylogeneticTreeMock(" in src:
+        if "MolecularComparisonMock(" in src or "PhylogeneticTreeWorker(" in src:
             offenders.append(py.name)
     assert offenders == [], f"workers constructed outside the parent: {offenders}"
 
@@ -811,12 +811,12 @@ def test_sub_agents_are_independently_testable() -> None:
     from backend.agents.evolution_agent.workers.molecular_comparison.mock import (
         MolecularComparisonMock,
     )
-    from backend.agents.evolution_agent.workers.phylogenetic_tree.mock import (
-        PhylogeneticTreeMock,
+    from backend.agents.evolution_agent.workers.phylogenetic_tree.worker import (
+        PhylogeneticTreeWorker,
     )
     r1 = MolecularComparisonMock().run(
         AgentRequest(instruction="x", context={}, species_list=THREE))
-    r2 = PhylogeneticTreeMock().run(
+    r2 = PhylogeneticTreeWorker().run(
         AgentRequest(instruction="x", context={}, species_list=THREE))
     assert r1.status is AgentStatus.COMPLETED
     assert r2.status is AgentStatus.COMPLETED

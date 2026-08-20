@@ -1,3 +1,1 @@
-from .mock import EvolutionMock
-
-__all__ = ["EvolutionMock"]
+"""Evolution Agent — Umbrella BioHub."""

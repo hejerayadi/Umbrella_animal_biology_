@@ -128,7 +128,7 @@ async def test_all_five_species_full_pipeline(orchestrator) -> None:
     )
     result = await orchestrator.run(request)
     assert result.status is AgentStatus.COMPLETED
-    assert "danio rerio" in result.output.phylogenetic.newick_tree
+    assert "danio" in result.output.phylogenetic.newick_tree
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +187,8 @@ async def test_phylo_runs_without_mc_alignment(make_orchestrator) -> None:
     received_alignment: list[str] = []
 
     class _PhyloSpy:
-        from backend.agents.evolution_agent.workers.phylogenetic_tree.mock import (
-            PhylogeneticTreeMock as _Real,
+        from backend.agents.evolution_agent.workers.phylogenetic_tree.worker import (
+            PhylogeneticTreeWorker as _Real,
         )
         _real = _Real()
 

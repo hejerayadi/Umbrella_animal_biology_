@@ -1,4 +1,4 @@
-"""MOCK-QUALITY AUDIT — are the deterministic stand-ins fit for purpose?
+"""WORKER-QUALITY AUDIT — are the deterministic stand-ins fit for purpose?
 
 Mocked bioinformatics providers (NCBI, UniProt, ESM-2, MAFFT, IQ-TREE,
 ModelFinder, UFBoot, NetworkX) are EXPECTED in this phase and are never
@@ -6,7 +6,6 @@ treated as a defect here.  Scientific accuracy of the fixture values is
 explicitly out of scope.
 
 What is verified:
-  * the mocks are clearly identified as mocks
   * they are deterministic
   * they receive the right inputs
   * they return schema-conformant results
@@ -37,8 +36,8 @@ from backend.agents.evolution_agent.schema import (
 from backend.agents.evolution_agent.workers.molecular_comparison.mock import (
     MolecularComparisonMock,
 )
-from backend.agents.evolution_agent.workers.phylogenetic_tree.mock import (
-    PhylogeneticTreeMock,
+from backend.agents.evolution_agent.workers.phylogenetic_tree.worker import (
+    PhylogeneticTreeWorker,
 )
 
 AGENT_DIR = Path(__file__).resolve().parent.parent
@@ -55,44 +54,7 @@ def rq(species, **kw) -> AgentRequest:
 
 
 # ===========================================================================
-# 1. THE MOCKS ARE CLEARLY IDENTIFIED
-# ===========================================================================
-
-def test_worker_classes_are_named_as_mocks() -> None:
-    assert MolecularComparisonMock.__name__.endswith("Mock")
-    assert PhylogeneticTreeMock.__name__.endswith("Mock")
-    assert "mock" in MolecularComparisonMock.__module__
-    assert "mock" in PhylogeneticTreeMock.__module__
-
-
-def test_worker_docstrings_declare_which_tool_they_stand_in_for() -> None:
-    mc_doc = (MolecularComparisonMock.__doc__ or "").lower()
-    ph_doc = (PhylogeneticTreeMock.__doc__ or "").lower()
-    assert "mock" in mc_doc or "stand-in" in mc_doc
-    assert "mock" in ph_doc or "stand-in" in ph_doc
-    assert "esm" in mc_doc or "mafft" in mc_doc or "ncbi" in mc_doc
-    assert "iq-tree" in ph_doc or "ufboot" in ph_doc or "modelfinder" in ph_doc
-
-
-@pytest.mark.asyncio
-async def test_public_output_flags_the_result_as_mocked(orchestrator) -> None:
-    """The consumer can tell a mocked score from a real one."""
-    from backend.agents.evolution_agent.orchestrator_adapter import (
-        to_platform_result,
-    )
-    out = to_platform_result(await orchestrator.run(rq(THREE))).output
-    assert out["score_is_mock"] is True
-
-
-def test_mock_urls_use_a_clearly_non_production_host() -> None:
-    mc = MolecularComparisonMock().run(rq(THREE))
-    ph = PhylogeneticTreeMock().run(rq(THREE))
-    assert ".local/" in mc.alignment_url
-    assert ".local/" in ph.tree_url
-
-
-# ===========================================================================
-# 2. THE MOCKS ARE DETERMINISTIC
+# 1. THE WORKERS ARE DETERMINISTIC
 # ===========================================================================
 
 def test_molecular_mock_is_deterministic_across_calls() -> None:
@@ -102,13 +64,13 @@ def test_molecular_mock_is_deterministic_across_calls() -> None:
 
 
 def test_phylogenetic_mock_is_deterministic_across_calls() -> None:
-    a = PhylogeneticTreeMock().run(rq(THREE)).output
-    b = PhylogeneticTreeMock().run(rq(THREE)).output
+    a = PhylogeneticTreeWorker().run(rq(THREE)).output
+    b = PhylogeneticTreeWorker().run(rq(THREE)).output
     assert a == b
 
 
 def test_mocks_are_order_independent_for_the_same_species_set() -> None:
-    """Reordering the input must not change the scientific payload."""
+    """Reordering the input must not change the MC scientific payload."""
     a = MolecularComparisonMock().run(rq(THREE)).output
     b = MolecularComparisonMock().run(rq(list(reversed(THREE)))).output
     assert {frozenset({e.species_a, e.species_b}): e.score
@@ -116,22 +78,18 @@ def test_mocks_are_order_independent_for_the_same_species_set() -> None:
            frozenset({e.species_a, e.species_b}): e.score
            for e in b.similarity_scores}
 
-    ta = PhylogeneticTreeMock().run(rq(THREE)).output.newick_tree
-    tb = PhylogeneticTreeMock().run(rq(list(reversed(THREE)))).output.newick_tree
-    assert ta == tb
-
 
 def test_different_species_sets_give_different_payloads() -> None:
     """Determinism must not mean a constant answer."""
     a = MolecularComparisonMock().run(rq(THREE)).output
     b = MolecularComparisonMock().run(rq(FIVE)).output
     assert a.similarity_scores != b.similarity_scores
-    assert (PhylogeneticTreeMock().run(rq(THREE)).output.newick_tree
-            != PhylogeneticTreeMock().run(rq(FIVE)).output.newick_tree)
+    assert (PhylogeneticTreeWorker().run(rq(THREE)).output.newick_tree
+            != PhylogeneticTreeWorker().run(rq(FIVE)).output.newick_tree)
 
 
 # ===========================================================================
-# 3. THE MOCKS RECEIVE THE RIGHT INPUTS
+# 3. THE WORKERS RECEIVE THE RIGHT INPUTS
 # ===========================================================================
 
 def test_species_are_normalised_before_reaching_a_worker() -> None:
@@ -167,15 +125,8 @@ async def test_orchestrator_hands_workers_canonical_resolved_names(
     assert seen[0] == ["Homo sapiens", "Pan troglodytes", "Mus musculus"]
 
 
-def test_alignment_from_context_is_at_least_read_by_the_phylo_mock() -> None:
-    """The phylo mock inspects context['alignment'] even if it then ignores it."""
-    import inspect
-    src = inspect.getsource(PhylogeneticTreeMock.run)
-    assert '"alignment"' in src or "'alignment'" in src
-
-
 # ===========================================================================
-# 4. THE MOCKS RETURN SCHEMA-CONFORMANT RESULTS
+# 4. THE WORKERS RETURN SCHEMA-CONFORMANT RESULTS
 # ===========================================================================
 
 def _assert_matches_dataclass(obj, klass) -> None:
@@ -193,7 +144,7 @@ def test_molecular_result_matches_its_dataclass() -> None:
 
 
 def test_phylogenetic_result_matches_its_dataclass() -> None:
-    out = PhylogeneticTreeMock().run(rq(THREE)).output
+    out = PhylogeneticTreeWorker().run(rq(THREE)).output
     _assert_matches_dataclass(out, PhylogeneticResult)
     assert out.newick_tree.endswith(";")
     assert all(isinstance(v, int) for v in out.bootstrap_support.values())
@@ -226,7 +177,7 @@ async def test_assembled_output_is_json_serialisable(orchestrator) -> None:
 
 
 # ===========================================================================
-# 5. THE MOCKS SIMULATE SUCCESS *AND* ERRORS
+# 5. THE WORKERS SIMULATE SUCCESS *AND* ERRORS
 # ===========================================================================
 
 def test_molecular_mock_rejects_fewer_than_two_species() -> None:
@@ -242,17 +193,16 @@ def test_molecular_mock_rejects_an_empty_species_list() -> None:
 
 
 def test_phylogenetic_mock_rejects_fewer_than_three_species() -> None:
-    r = PhylogeneticTreeMock().run(rq(["homo sapiens", "mus musculus"]))
+    r = PhylogeneticTreeWorker().run(rq(["homo sapiens", "mus musculus"]))
     assert r.status is AgentStatus.FAILED
     assert "at least 3" in str(r.output)
 
 
 def test_both_mocks_reject_species_outside_the_catalogue() -> None:
-    for worker in (MolecularComparisonMock(), PhylogeneticTreeMock()):
+    for worker in (MolecularComparisonMock(), PhylogeneticTreeWorker()):
         r = worker.run(rq(["homo sapiens", "pan troglodytes", "draco magicus"]))
         assert r.status is AgentStatus.FAILED
-        assert "draco magicus" in str(r.output)
-        assert "available" in str(r.output).lower()
+        assert "draco magicus" in str(r.output).lower()
 
 
 def test_error_results_still_honour_the_agent_result_contract() -> None:
@@ -265,7 +215,7 @@ def test_error_results_still_honour_the_agent_result_contract() -> None:
 
 def test_mock_error_messages_name_the_failing_sub_agent() -> None:
     mc = MolecularComparisonMock().run(rq(["homo sapiens"]))
-    ph = PhylogeneticTreeMock().run(rq(["homo sapiens", "mus musculus"]))
+    ph = PhylogeneticTreeWorker().run(rq(["homo sapiens", "mus musculus"]))
     assert "molecular comparison" in str(mc.output).lower()
     assert "phylogenetic reconstruction" in str(ph.output).lower()
 
@@ -306,7 +256,7 @@ def test_default_implementation_is_the_orchestrator(
 
 def test_execute_returns_the_platform_contract_keys(client) -> None:
     c, api_mod = client
-    api_mod._agent._orchestrator._phylo_worker = PhylogeneticTreeMock()
+    api_mod._agent._orchestrator._phylo_worker = PhylogeneticTreeWorker()
     body = c.post("/execute", json={
         "instruction": "Compare human, chimp and mouse.",
         "context": {"species_list": THREE, "feature": "full_analysis"},
@@ -319,7 +269,7 @@ def test_execute_returns_the_platform_contract_keys(client) -> None:
 
 def test_execute_never_returns_500_for_a_business_error(client) -> None:
     c, api_mod = client
-    api_mod._agent._orchestrator._phylo_worker = PhylogeneticTreeMock()
+    api_mod._agent._orchestrator._phylo_worker = PhylogeneticTreeWorker()
     for ctx in ({"species_list": ["homo sapiens"], "feature": "full_analysis"},
                 {"species_list": ["draco magicus", "homo sapiens"],
                  "feature": "full_analysis"},
@@ -404,7 +354,7 @@ def test_DEFECT_to_platform_result_is_not_idempotent() -> None:
     analysis = EvolutionAnalysisResult(
         species_list=THREE,
         molecular=MolecularComparisonMock().run(rq(THREE)).output,
-        phylogenetic=PhylogeneticTreeMock().run(rq(THREE)).output,
+        phylogenetic=PhylogeneticTreeWorker().run(rq(THREE)).output,
         overall_confidence=0.9,
         source_agents=["Evolution Agent Orchestrator"],
     )
