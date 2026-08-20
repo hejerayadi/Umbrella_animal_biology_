@@ -1,148 +1,202 @@
 # Evolution Agent — Sprint 2
 
-Part of the **Umbrella BioHub** platform. Analyses evolutionary relationships between species using a two-step sequential pipeline.
+Part of the **Umbrella BioHub** platform. Analyses evolutionary relationships between species using an autonomous planner, branch-specific workers, and real bioinformatics tools.
 
 ---
 
 ## What it does
 
-Given a list of species, the Evolution Agent:
+The Evolution Agent is a **sub-orchestrator** — it classifies the user's intent, selects the right worker(s), and returns only the relevant results.
 
-1. **Molecular Comparison** — fetches protein sequences, aligns them (MAFFT), computes similarity scores (ESM-C embeddings), groups close species, builds a similarity network
-2. **Phylogenetic Reconstruction** — takes the alignment from step 1, builds an evolutionary tree (IQ-TREE), runs bootstrap validation (UFBoot), returns a Newick tree with confidence values
+| Request type | Workers called | Output fields |
+|---|---|---|
+| Molecular comparison only | MC Agent | `similarity_network`, `similarity_scores`, `species_groups` |
+| Phylogenetic tree only | Phylo Agent | `newick_tree`, `model`, `bootstrap_support` |
+| Both (full analysis) | MC Agent + Phylo Agent | All of the above |
+| Ambiguous / no feature | None | Returns `continue` with a clarification question |
 
-All tools are **mocked in Sprint 2** (`score_is_mock: true`). Real tools (NCBI, UniProt, MAFFT, ESM-C, IQ-TREE) replace the mocks in Sprint 3.
+---
+
+## Autonomy correction (9 steps)
+
+| Step | What changed |
+|---|---|
+| 1. PlannedFeature enum | `molecular_comparison`, `phylogenetic_tree`, `full_analysis`, `clarification_required` |
+| 2. Planner (LLM + guards) | GPT-5-mini classifies intent; deterministic guards prevent bad dispatch |
+| 3. Branch-specific dispatch | Orchestrator only runs the worker(s) the planner selected |
+| 4. Clarification node | Ambiguous requests return a structured follow-up question |
+| 5. No full_analysis fallback | Orchestrator/adapter reject missing or invalid features |
+| 6. Branch-specific output | Tree-only requests don't include network fields; MC-only don't include tree fields |
+| 7. Explainer (LLM) | Second LLM call writes a human-readable explanation of the results |
+| 8. Safe error handling | `try/except` in dispatch; safe species resolver for all input types |
+| 9. Dead code removed | `divergence_time` worker deleted; unused `router.py`/`aggregator.py` kept for reference |
 
 ---
 
 ## Pipeline
 
 ```
-User question
-    ↓
-GPT-5-mini (intent classification)
-    ↓
-Species Resolver  ("human" → "Homo sapiens")
-    ↓
-Subagent 1 — Molecular Comparison
-    ↓  alignment
-Subagent 2 — Phylogenetic Reconstruction
-    ↓
-EvolutionAnalysisResult
+User question (free text or structured)
+        ↓
+Planner (GPT-5-mini)  — intent classification + deterministic guards
+        ↓
+Species Resolver  — "human" → "Homo sapiens"
+        ↓
+Dispatch (feature-dependent)
+   ├── molecular_comparison  →  MC Worker (mock scores + network)
+   ├── phylogenetic_tree     →  MAFFT (EBI API / local) + IQ-TREE (local)
+   ├── full_analysis         →  both workers
+   └── clarification         →  returns follow-up question
+        ↓
+Explainer (GPT-5-mini)  — human-readable summary
+        ↓
+AgentResult (flat, branch-specific)
 ```
+
+---
+
+## Real bioinformatics tools
+
+| Tool | Role | Source |
+|---|---|---|
+| **MAFFT** | Multiple sequence alignment | EBI REST API (primary), local binary fallback (`mafft/mafft-win/mafft.bat`) |
+| **IQ-TREE** | Phylogenetic tree building + ModelFinder | Local binary (`iqtree/iqtree-2.3.6-Windows/bin/iqtree2.exe`) |
+
+**How it works:**
+1. Species sequences are fetched from the catalogue
+2. MAFFT aligns the sequences (EBI API or local)
+3. IQ-TREE runs ModelFinder to select the best substitution model, builds the tree with UFBoot bootstrap support
+4. Returns a Newick tree with bootstrap values and confidence scores
+
+**Guards:**
+- Phylogenetic tree requires **3+ species** (IQ-TREE rejects bootstrap with fewer)
+- IQ-TREE auto-selects the best model (mtMAM, mtVer, GTR, etc.)
 
 ---
 
 ## Input / Output
 
-**Input (`EvolutionInput`)**
+**Input (`AgentRequest`)**
 
-```python
-@dataclass
-class EvolutionInput:
-    species: list[str]                          # min 2, common names accepted
-    question: str                               # free-text question
-    target_gene_or_protein: Optional[str] = None
-    protein_inputs: Optional[list[str]] = None  # pre-fetched FASTA sequences
-    outgroup: Optional[str] = None              # tree root species
+```json
+{
+  "instruction": "Build a phylogenetic tree for human, chimp and mouse.",
+  "context": {
+    "species_list": ["homo sapiens", "pan troglodytes", "mus musculus"],
+    "feature": "phylogenetic_tree"
+  }
+}
 ```
 
-**Output (`EvolutionOutput`)**
+| Field | Type | Required |
+|---|---|---|
+| `instruction` | str | Yes — free-text question |
+| `context.species_list` | list[str] | Yes — min 2 for MC, min 3 for phylo |
+| `context.feature` | str | No — planner auto-detects if missing |
 
-```python
-@dataclass
-class EvolutionOutput:
-    status: str                                  # "completed" | "failed"
-    species: list[str]                           # canonical scientific names
-    molecular_comparison: Optional[str] = None  # plain-language MC summary
-    closest_species: Optional[list[str]] = None # most similar pair
-    species_groups: Optional[list[list[str]]] = None
-    similarity_network: Optional[str] = None    # JSON adjacency list
-    evolutionary_tree: Optional[str] = None     # Newick format
-    explanation: Optional[str] = None           # one-sentence summary
+**Output (`AgentResult`)**
+
+```json
+{
+  "status": "completed",
+  "output": {
+    "status": "completed",
+    "decision": "analysis_complete",
+    "explanation": "Phylogenetic tree built for 3 species using mtMAM model with 95% overall confidence.",
+    "overall_confidence": 0.95,
+    "newick_tree": "(homo:0.0000019625,pan:0.0178874652,mus:0.2409514745);",
+    "model": "mtMAM",
+    "bootstrap_support": {},
+    "similarity_network": null,
+    "source_agents": ["Evolution Agent Orchestrator", "Phylogenetic Tree Agent"]
+  }
+}
 ```
+
+Output is **flat** — tree-only requests don't include `similarity_network`; MC-only don't include `newick_tree`.
 
 ---
 
 ## Quick start
 
-### No setup needed (mock mode)
+### 1. Setup
 
-```bash
-python -m uvicorn backend.agents.evolution_agent.api:app --port 8002 --reload
+```powershell
+cd backend\agents\evolution_agent
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-Open Swagger: **http://localhost:8002/docs**
+### 2. Configure (optional — enables LLM planner)
 
-Send a request:
-
-```json
-{
-  "instruction": "Compare homo sapiens, pan troglodytes and mus musculus evolutionarily.",
-  "context": {"species_list": ["homo sapiens", "pan troglodytes", "mus musculus"]}
-}
-```
-
-### With Azure GPT-5-mini (real intent classification)
-
-1. Create `backend/agents/evolution_agent/.env`:
+Create `backend/agents/evolution_agent/.env`:
 
 ```env
 AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
 AZURE_OPENAI_API_KEY=<your-key>
 AZURE_OPENAI_DEPLOYMENT=gpt-5-mini
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
+EBI_MAFFT_EMAIL=your-email@example.com
 ```
 
-2. Start the orchestrator:
+### 3. Start the server
 
 ```powershell
 $env:EVOLUTION_AGENT_IMPL = "orchestrator"
 python -m uvicorn backend.agents.evolution_agent.api:app --port 8002 --reload
 ```
 
-3. Ask a free-text question — no `species_list` needed:
+### 4. Open Swagger
 
-```json
-{
-  "instruction": "How are humans and chimpanzees related at the molecular level?",
-  "context": {}
-}
-```
+**http://localhost:8002/docs**
 
-GPT-5-mini extracts the species and feature automatically.
+### 5. Test it
 
-### Run tests
+```powershell
+# Molecular comparison only
+curl -X POST http://localhost:8002/execute -H "Content-Type: application/json" -d '{"instruction":"How similar are humans and chimpanzees?","context":{"species_list":["homo sapiens","pan troglodytes"],"feature":"molecular_comparison"}}'
 
-```bash
-python -m pytest backend/agents/evolution_agent/tests/ -v
-```
+# Phylogenetic tree only
+curl -X POST http://localhost:8002/execute -H "Content-Type: application/json" -d '{"instruction":"Build a phylogenetic tree for human, chimp and mouse.","context":{"species_list":["homo sapiens","pan troglodytes","mus musculus"],"feature":"phylogenetic_tree"}}'
 
-75 tests, all passing. No API key required.
+# Full analysis
+curl -X POST http://localhost:8002/execute -H "Content-Type: application/json" -d '{"instruction":"Give me both a similarity network and a phylogenetic tree.","context":{"species_list":["homo sapiens","pan troglodytes","mus musculus"],"feature":"full_analysis"}}'
 
-### Run manual tests
-
-```bash
-# Pipeline only (no LLM)
-python -m backend.agents.evolution_agent.test_manual
-
-# With Azure GPT-5-mini
-$env:EVOLUTION_AGENT_IMPL="orchestrator"
-python -m backend.agents.evolution_agent.test_manual
+# Clarification (ambiguous)
+curl -X POST http://localhost:8002/execute -H "Content-Type: application/json" -d '{"instruction":"Tell me about evolution.","context":{}}'
 ```
 
 ---
 
-## Test cases (Swagger)
+## Test cases
 
-| Case | species_list | Expected |
+| Case | Input | Expected |
 |---|---|---|
-| 3 mammals | `["homo sapiens", "pan troglodytes", "mus musculus"]` | completed, confidence 0.93 |
-| 5 species | `["homo sapiens", "pan troglodytes", "mus musculus", "gallus gallus", "danio rerio"]` | completed, confidence 0.80 |
-| Common names | `["human", "chimp", "mouse"]` | completed (resolver maps them) |
-| 1 species | `["homo sapiens"]` | failed — needs at least 2 |
-| Unknown species | `["homo sapiens", "draco magicus"]` | failed — cannot resolve |
-| Non-biology question | `"What is the capital of France?"` | failed — no feature |
+| MC only (2 species) | `feature: molecular_comparison` | completed, `similarity_network` present, `newick_tree: null` |
+| Phylo only (3 species) | `feature: phylogenetic_tree` | completed, `newick_tree` present, `model`, `similarity_network: null` |
+| Full analysis | `feature: full_analysis` | completed, both present |
+| Clarification | no feature, empty context | `continue` with clarification question |
+| Guard: 2-species tree | phylo + 2 species | `failed` — needs 3+ |
+| Guard: invalid feature | `feature: banana` | `continue` with "Could you rephrase?" |
+| 5-species tree | phylo + 5 species | completed, real MAFFT + IQ-TREE, bootstrap values |
+
+---
+
+## Running tests
+
+```powershell
+python -m pytest backend\agents\evolution_agent\tests -v
+```
+
+**145 tests, all passing.** No API key required for unit tests.
+
+| Test file | Tests | Covers |
+|---|---|---|
+| `test_orchestrator_pipeline.py` | 20 | LangGraph pipeline end-to-end |
+| `test_adapter.py` | 25 | OrchestratorAdapter branch-specific output |
+| `test_mock_quality_audit.py` | 42 | Deterministic MC worker quality |
+| `test_branch_acceptance.py` | 38 | Guards, clarification, dispatch |
 
 ---
 
@@ -151,57 +205,39 @@ python -m backend.agents.evolution_agent.test_manual
 ```
 evolution_agent/
 ├── api.py                        HTTP boundary (AgentRequest → AgentResult)
-├── schema.py                     EvolutionInput, EvolutionOutput, all types
-├── intent.py                     GPT-5-mini intent classifier
-├── orchestrator_adapter.py       Intent → pipeline → flat output
-├── mock.py                       Simple mock (no pipeline, no LLM)
-├── test_manual.py                Manual test runner (terminal output)
-├── pytest.ini
-├── requirements.txt
-├── card.json                     Agent card (platform registry)
-├── .env.example                  Credentials template
-├── README.md
-├── framework/
-│   └── llm_client.py             Azure / Groq / GitHub Models priority chain
+├── schema.py                     PlannedFeature, PlannerDecision, all result types
+├── planner.py                    LLM planner + deterministic guards
+├── intent.py                     Backward-compat re-exports from planner
+├── explainer.py                  LLM explainer (human-readable summaries)
+├── orchestrator_adapter.py       Branch-specific output mapping, legacy path
 ├── orchestrator/
-│   ├── evolution_orchestrator.py LangGraph 6-node state machine
-│   ├── router.py                 Feature → worker mapping
-│   ├── aggregator.py             MC + phylo result assembly
-│   └── services/
-│       └── species_resolver.py   Common name → scientific name
+│   └── evolution_orchestrator.py LangGraph pipeline, feature-dependent dispatch
+├── framework/
+│   └── llm_client.py             Azure → Groq → GitHub Models priority chain
+├── tools/
+│   ├── __init__.py               Exports mafft_align, iqtree_build
+│   ├── mafft.py                  EBI REST API (primary) + local binary fallback
+│   └── iqtree.py                 Local IQ-TREE binary (ModelFinder + UFBoot)
 ├── workers/
-│   ├── molecular_comparison/     Subagent 1 mock (FASTA + scores + network)
-│   ├── phylogenetic_tree/        Subagent 2 mock (Newick + bootstrap)
-│   └── divergence_time/          Reserved for Sprint 3
+│   ├── molecular_comparison/
+│   │   └── mock.py               Deterministic MC mock (5 species, calibrated scores)
+│   └── phylogenetic_tree/
+│       └── worker.py             Real phylo worker: MAFFT → IQ-TREE → Newick
 ├── tests/
-│   ├── conftest.py
-│   ├── test_orchestrator_pipeline.py  22 end-to-end pipeline tests
-│   ├── test_workers.py                35 worker unit tests
-│   └── test_adapter.py                18 adapter + intent tests
-└── docs/
-    └── live_capture.json         7 captured test cases with full output
+│   ├── conftest.py               Shared fixtures
+│   ├── test_orchestrator_pipeline.py
+│   ├── test_adapter.py
+│   ├── test_mock_quality_audit.py
+│   └── test_branch_acceptance.py
+├── .env.example                  Credentials template
+├── .env                          Git-ignored: Azure + EBI credentials
+├── card.json                     Agent card (platform registry)
+├── README.md
+└── requirements.txt
 ```
-
----
-
-## Agent Framework
-
-**Why LangGraph** — the pipeline is a fixed sequence with a data dependency (alignment from step 1 → step 2). LangGraph's `StateGraph` maps directly to this: nodes are steps, edges are dependencies, conditional edges handle failures. No role-based abstraction needed (CrewAI), no manual state management needed (raw LangChain).
-
-**LLM — Azure GPT-5-mini** — used only for intent classification (one call per request, ~200 tokens). Extracts the feature type and species list from free-text. $0.25/M input tokens.
-
-**Mock species catalogue** — 5 species with biologically calibrated fixture values:
-
-| Species | Common name | Role |
-|---|---|---|
-| Homo sapiens | Human | Reference |
-| Pan troglodytes | Chimpanzee | Closest to human (0.98) |
-| Mus musculus | Mouse | Distant mammal (0.85) |
-| Gallus gallus | Chicken | Non-mammal amniote (0.72) |
-| Danio rerio | Zebrafish | Distant outgroup (0.54) |
 
 ---
 
 ## Branch
 
-`group_d_evolution_agent` on [hejerayadi/Umbrella_animal_biology_](https://github.com/hejerayadi/Umbrella_animal_biology_)
+`group_d_evolution_agent_phylogenetic_agent` on [hejerayadi/Umbrella_animal_biology_](https://github.com/hejerayadi/Umbrella_animal_biology_)

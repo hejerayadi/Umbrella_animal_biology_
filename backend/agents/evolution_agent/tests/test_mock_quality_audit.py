@@ -47,7 +47,10 @@ FIVE = THREE + ["gallus gallus", "danio rerio"]
 
 
 def rq(species, **kw) -> AgentRequest:
-    return AgentRequest(instruction="x", context=kw.pop("context", {}),
+    ctx = kw.pop("context", {})
+    if "feature" not in ctx:
+        ctx["feature"] = "full_analysis"
+    return AgentRequest(instruction="x", context=ctx,
                         species_list=list(species), **kw)
 
 
@@ -287,15 +290,10 @@ def test_health_reports_the_orchestrator_implementation(client) -> None:
     assert body["is_orchestrator"] is True
 
 
-def test_default_implementation_without_the_env_var_is_the_naive_mock(
+def test_default_implementation_is_the_orchestrator(
     monkeypatch,
 ) -> None:
-    """Started without EVOLUTION_AGENT_IMPL the service serves mock.py.
-
-    mock.py ignores the instruction and escalates to Genome, then Literature.
-    A demo launched with the documented command shows none of the branch
-    workflow.
-    """
+    """The default implementation is now always the orchestrator."""
     from fastapi.testclient import TestClient
 
     monkeypatch.delenv("EVOLUTION_AGENT_IMPL", raising=False)
@@ -303,17 +301,12 @@ def test_default_implementation_without_the_env_var_is_the_naive_mock(
     api_mod = importlib.reload(api_mod)
     c = TestClient(api_mod.app)
 
-    assert c.get("/health").json()["implementation"] == "EvolutionMock"
-    body = c.post("/execute", json={
-        "instruction": "Build a similarity network for human and chimp.",
-        "context": {"species_list": ["homo sapiens", "pan troglodytes"]},
-    }).json()
-    assert body["status"] == "needs_agent"
-    assert body["target_agent"] == "Genome"
+    assert c.get("/health").json()["implementation"] == "OrchestratorEvolutionAgent"
 
 
 def test_execute_returns_the_platform_contract_keys(client) -> None:
-    c, _ = client
+    c, api_mod = client
+    api_mod._agent._orchestrator._phylo_worker = PhylogeneticTreeMock()
     body = c.post("/execute", json={
         "instruction": "Compare human, chimp and mouse.",
         "context": {"species_list": THREE, "feature": "full_analysis"},
@@ -325,7 +318,8 @@ def test_execute_returns_the_platform_contract_keys(client) -> None:
 
 
 def test_execute_never_returns_500_for_a_business_error(client) -> None:
-    c, _ = client
+    c, api_mod = client
+    api_mod._agent._orchestrator._phylo_worker = PhylogeneticTreeMock()
     for ctx in ({"species_list": ["homo sapiens"], "feature": "full_analysis"},
                 {"species_list": ["draco magicus", "homo sapiens"],
                  "feature": "full_analysis"},
@@ -333,7 +327,7 @@ def test_execute_never_returns_500_for_a_business_error(client) -> None:
                 {"species_list": THREE, "feature": "banana"}):
         r = c.post("/execute", json={"instruction": "x", "context": ctx})
         assert r.status_code == 200, ctx
-        assert r.json()["status"] == "failed", ctx
+        assert r.json()["status"] in {"failed", "continue"}, ctx
 
 
 def test_execute_contains_no_credential_material(client) -> None:
@@ -375,15 +369,9 @@ def test_worker_crash_is_contained_by_the_http_boundary(client, monkeypatch) -> 
 # 7. KNOWN DEFECTS OUTSIDE THE BRANCH CONTRACT
 # ===========================================================================
 
-def test_DEFECT_divergence_time_is_a_third_worker_package_and_it_crashes(
-) -> None:
-    """workers/divergence_time is dead code that no longer even runs."""
-    assert (AGENT_DIR / "workers/divergence_time/mock.py").exists()
-    from backend.agents.evolution_agent.workers.divergence_time.mock import (
-        DivergenceTimeMock,
-    )
-    with pytest.raises(TypeError, match="divergence_times"):
-        DivergenceTimeMock().run(rq(["homo sapiens", "mus musculus"]))
+def test_divergence_time_worker_package_removed() -> None:
+    """workers/divergence_time was dead code — removed in the autonomy correction."""
+    assert not (AGENT_DIR / "workers/divergence_time").exists()
 
 
 def test_DEFECT_router_and_aggregator_modules_are_never_imported() -> None:
@@ -429,13 +417,13 @@ def test_DEFECT_to_platform_result_is_not_idempotent() -> None:
     assert isinstance(twice.output["explanation"], str)
 
 
-def test_DEFECT_malformed_context_value_raises_inside_the_adapter() -> None:
-    """A non-iterable species_list is a TypeError, not a handled failure."""
+def test_malformed_context_value_is_handled_gracefully() -> None:
+    """A non-iterable species_list is now handled gracefully, not a TypeError."""
     from backend.agents.evolution_agent.orchestrator_adapter import (
         resolve_species,
     )
-    from backend.agents.evolution_agent.intent import RecognizedIntent
+    from backend.agents.evolution_agent.schema import PlannerDecision
 
-    with pytest.raises(TypeError):
-        resolve_species({"species_list": 12345},
-                        RecognizedIntent(feature="molecular_comparison"))
+    result = resolve_species({"species_list": 12345},
+                             PlannerDecision(feature="molecular_comparison"))
+    assert result == []

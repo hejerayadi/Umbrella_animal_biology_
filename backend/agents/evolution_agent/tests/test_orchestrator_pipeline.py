@@ -34,7 +34,7 @@ async def test_full_pipeline_returns_evolution_analysis_result(
 ) -> None:
     request = AgentRequest(
         instruction="Full evolutionary analysis of human, chimp and mouse.",
-        context={},
+        context={"feature": "full_analysis"},
         species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
     )
     result = await orchestrator.run(request)
@@ -47,7 +47,7 @@ async def test_full_pipeline_returns_evolution_analysis_result(
 async def test_analysis_result_contains_molecular_and_phylo(orchestrator) -> None:
     request = AgentRequest(
         instruction="Compare human, chimp and mouse.",
-        context={},
+        context={"feature": "full_analysis"},
         species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
     )
     result = await orchestrator.run(request)
@@ -61,7 +61,7 @@ async def test_analysis_result_contains_molecular_and_phylo(orchestrator) -> Non
 async def test_analysis_result_species_list_matches_input(orchestrator) -> None:
     species = ["homo sapiens", "pan troglodytes", "mus musculus"]
     request = AgentRequest(
-        instruction="test", context={}, species_list=list(species)
+        instruction="test", context={"feature": "full_analysis"}, species_list=list(species)
     )
     result = await orchestrator.run(request)
     # The resolver normalises to title-cased scientific names, so compare
@@ -73,7 +73,7 @@ async def test_analysis_result_species_list_matches_input(orchestrator) -> None:
 @pytest.mark.asyncio
 async def test_convenience_fields_populated_on_result(orchestrator) -> None:
     request = AgentRequest(
-        instruction="test", context={},
+        instruction="test", context={"feature": "full_analysis"},
         species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
     )
     result = await orchestrator.run(request)
@@ -89,7 +89,7 @@ async def test_convenience_fields_populated_on_result(orchestrator) -> None:
 @pytest.mark.asyncio
 async def test_overall_confidence_is_mean_of_mc_and_phylo(orchestrator) -> None:
     request = AgentRequest(
-        instruction="test", context={},
+        instruction="test", context={"feature": "full_analysis"},
         species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
     )
     result = await orchestrator.run(request)
@@ -106,7 +106,7 @@ async def test_overall_confidence_is_mean_of_mc_and_phylo(orchestrator) -> None:
 @pytest.mark.asyncio
 async def test_source_agents_lists_both_workers(orchestrator) -> None:
     request = AgentRequest(
-        instruction="test", context={},
+        instruction="test", context={"feature": "full_analysis"},
         species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
     )
     result = await orchestrator.run(request)
@@ -120,7 +120,7 @@ async def test_source_agents_lists_both_workers(orchestrator) -> None:
 @pytest.mark.asyncio
 async def test_all_five_species_full_pipeline(orchestrator) -> None:
     request = AgentRequest(
-        instruction="test", context={},
+        instruction="test", context={"feature": "full_analysis"},
         species_list=[
             "homo sapiens", "pan troglodytes", "mus musculus",
             "gallus gallus", "danio rerio",
@@ -173,7 +173,7 @@ async def test_both_workers_are_called_in_parallel(make_orchestrator) -> None:
     orch = make_orchestrator(mc_worker=_MCSpy(), phylo_worker=_PhyloSpy())
     await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
         )
     )
@@ -201,7 +201,7 @@ async def test_phylo_runs_without_mc_alignment(make_orchestrator) -> None:
     orch = make_orchestrator(phylo_worker=_PhyloSpy())
     result = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
         )
     )
@@ -221,7 +221,7 @@ async def test_mc_failure_fails_pipeline(make_orchestrator) -> None:
     orch = make_orchestrator()
     result = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens"],  # < 2 → MC fails
         )
     )
@@ -233,7 +233,7 @@ async def test_mc_failure_fails_pipeline(make_orchestrator) -> None:
 async def test_mc_failure_message_surfaces_in_result(orchestrator) -> None:
     result = await orchestrator.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens"],
         )
     )
@@ -253,7 +253,7 @@ async def test_unknown_species_fails_before_mc_runs(make_orchestrator) -> None:
     orch = make_orchestrator(mc_worker=_MCSpy())
     result = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "draco magicus"],
         )
     )
@@ -280,7 +280,7 @@ async def test_phylo_failure_surfaces_correctly(make_orchestrator) -> None:
     orch    = make_orchestrator(phylo_worker=_PhyloFail())
     result  = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
         )
     )
@@ -304,7 +304,7 @@ async def test_phylo_failure_includes_mc_source_agent(make_orchestrator) -> None
     orch   = make_orchestrator(phylo_worker=_PhyloFail())
     result = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
         )
     )
@@ -319,7 +319,7 @@ async def test_phylo_failure_includes_mc_source_agent(make_orchestrator) -> None
 @pytest.mark.asyncio
 async def test_no_species_fails_with_helpful_message(orchestrator) -> None:
     result = await orchestrator.run(
-        AgentRequest(instruction="analyse evolution", context={})
+        AgentRequest(instruction="analyse evolution", context={"feature": "full_analysis"})
     )
     assert result.status is AgentStatus.FAILED
     assert "species" in result.output.lower()
@@ -329,7 +329,7 @@ async def test_no_species_fails_with_helpful_message(orchestrator) -> None:
 async def test_partially_unknown_species_list_fails(orchestrator) -> None:
     result = await orchestrator.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "unicornus fabulus"],
         )
     )
@@ -346,7 +346,7 @@ async def test_common_names_resolve_to_scientific(orchestrator) -> None:
     result = await orchestrator.run(
         AgentRequest(
             instruction="compare human, chimp and mouse",
-            context={},
+            context={"feature": "full_analysis"},
             species_list=["human", "chimp", "mouse"],
         )
     )
@@ -361,7 +361,7 @@ async def test_common_names_resolve_to_scientific(orchestrator) -> None:
 async def test_mixed_common_and_scientific_names(orchestrator) -> None:
     result = await orchestrator.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["human", "Mus musculus", "zebrafish"],
         )
     )
@@ -387,7 +387,7 @@ async def test_mc_needs_agent_propagates_to_caller(make_orchestrator) -> None:
     orch   = make_orchestrator(mc_worker=_MCEscalate())
     result = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "mus musculus"],
         )
     )
@@ -412,7 +412,7 @@ async def test_phylo_needs_agent_propagates_to_caller(make_orchestrator) -> None
     orch   = make_orchestrator(phylo_worker=_PhyloEscalate())
     result = await orch.run(
         AgentRequest(
-            instruction="test", context={},
+            instruction="test", context={"feature": "full_analysis"},
             species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
         )
     )

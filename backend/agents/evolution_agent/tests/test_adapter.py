@@ -25,6 +25,7 @@ from backend.agents.evolution_agent.schema import (
     AgentResult,
     AgentStatus,
     EvolutionAnalysisResult,
+    PlannedFeature,
 )
 
 
@@ -111,7 +112,7 @@ def test_invented_feature_is_rejected() -> None:
     intent = _to_intent(
         {"feature": "protein_folding", "species_list": ["Homo sapiens"]}
     )
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
     assert not intent.is_usable
 
 
@@ -126,7 +127,7 @@ def test_null_species_entries_are_dropped() -> None:
 def test_divergence_time_rejected_as_unknown() -> None:
     """divergence_time was removed in Sprint 2 — must not be a valid feature."""
     intent = _to_intent({"feature": "divergence_time", "species_list": []})
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
 
 
 # ---------------------------------------------------------------------------
@@ -136,14 +137,14 @@ def test_divergence_time_rejected_as_unknown() -> None:
 @pytest.mark.asyncio
 async def test_backend_failure_never_raises() -> None:
     intent = await classify_intent("anything", llm=_StubLLM(RuntimeError("down")))
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
     assert intent.source == "error"
 
 
 @pytest.mark.asyncio
 async def test_unparsable_output_returns_none_feature() -> None:
     intent = await classify_intent("anything", llm=_StubLLM("no json"))
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
     assert intent.source == "unparsable"
 
 
@@ -153,9 +154,10 @@ async def test_full_analysis_parsed() -> None:
         "feature": "full_analysis",
         "species_list": ["Homo sapiens", "Mus musculus"],
         "reference_species": None,
+        "explicitly_requested_both": True,
     })
     intent = await classify_intent("compare", llm=_StubLLM(reply))
-    assert intent.feature == "full_analysis"
+    assert intent.feature == PlannedFeature.FULL_ANALYSIS
     assert intent.is_usable
     assert intent.species_list == ["Homo sapiens", "Mus musculus"]
 
@@ -168,7 +170,7 @@ async def test_molecular_comparison_parsed() -> None:
         "reference_species": None,
     })
     intent = await classify_intent("how similar", llm=_StubLLM(reply))
-    assert intent.feature == "molecular_comparison"
+    assert intent.feature == PlannedFeature.MOLECULAR_COMPARISON
 
 
 @pytest.mark.asyncio
@@ -179,7 +181,7 @@ async def test_phylogenetic_tree_parsed() -> None:
         "reference_species": "Gallus gallus",
     })
     intent = await classify_intent("show tree", llm=_StubLLM(reply))
-    assert intent.feature == "phylogenetic_tree"
+    assert intent.feature == PlannedFeature.PHYLOGENETIC_TREE
     assert intent.reference_species == "Gallus gallus"
 
 
@@ -301,8 +303,8 @@ async def test_unclassifiable_prompt_fails_with_useful_message(
     monkeypatch.setattr(mod, "classify_intent", _no)
     agent  = OrchestratorEvolutionAgent(orchestrator=object())
     result = await agent.run(AgentRequest(instruction="hello", context={}))
-    assert result.status is AgentStatus.FAILED
-    assert "evolution" in result.output.lower()
+    assert result.status is AgentStatus.CONTINUE
+    assert "clarification" in str(result.output).lower()
 
 
 @pytest.mark.asyncio

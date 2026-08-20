@@ -42,11 +42,10 @@ from __future__ import annotations
 
 import inspect
 import logging
-import os
 
 from fastapi import FastAPI
 
-from .mock import EvolutionMock
+from .orchestrator_adapter import OrchestratorEvolutionAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
 
 _logger = logging.getLogger(__name__)
@@ -57,7 +56,7 @@ app = FastAPI(
         "Analyses evolutionary relationships between species.\n\n"
         "Pipeline: **Molecular Comparison** (MAFFT + ESM-C) "
         "→ **Phylogenetic Reconstruction** (IQ-TREE + UFBoot).\n\n"
-        "All tools are mocked in Sprint 2 (`score_is_mock: true`)."
+        "Uses MAFFT and the configured IQ-TREE service for reconstruction."
     ),
     version="2.0.0",
 )
@@ -68,29 +67,8 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 
 def _build_agent():
-    impl = os.getenv("EVOLUTION_AGENT_IMPL", "mock").strip().lower()
-
-    if impl != "orchestrator":
-        print(
-            f"[Evolution] serving MOCK (EVOLUTION_AGENT_IMPL={impl!r}). "
-            "Set EVOLUTION_AGENT_IMPL=orchestrator for the real orchestrator.",
-            flush=True,
-        )
-        return EvolutionMock()
-
-    try:
-        from .orchestrator_adapter import OrchestratorEvolutionAgent
-        agent = OrchestratorEvolutionAgent()
-        print("[Evolution] serving the LangGraph ORCHESTRATOR", flush=True)
-        return agent
-    except Exception as exc:  # noqa: BLE001
-        print(
-            f"[Evolution] orchestrator failed to build "
-            f"({type(exc).__name__}: {exc}); falling back to MOCK.",
-            flush=True,
-        )
-        _logger.warning("orchestrator build failed", exc_info=True)
-        return EvolutionMock()
+    print("[Evolution] serving the LangGraph ORCHESTRATOR", flush=True)
+    return OrchestratorEvolutionAgent()
 
 
 _agent = _build_agent()

@@ -1,25 +1,19 @@
-"""Evolution Agent Orchestrator — Sprint 2 parallel pipeline.
+"""Evolution Agent Orchestrator — feature-dependent pipeline.
 
-Sprint 2 design
----------------
-The orchestrator runs two subagents concurrently:
+The orchestrator runs the correct worker(s) based on what the Planner
+decided:
 
-    1. molecular_comparison   — fetch sequences, align, embed, score, cluster
-    2. phylogenetic_tree      — build tree from the species list
-
-This is a *fan-out* pipeline, not a sequential handoff:
-  • Both workers are dispatched together via ``asyncio.gather``.
-  • Each worker is offloaded to a thread (``asyncio.to_thread``) so the two
-    synchronous mocks genuinely run at the same time.
-  • The phylo worker does NOT consume MC's alignment — it reconstructs its
-    own alignment from the species list (see mock's ``alignment_source``).
-  • A failure at either step short-circuits the whole pipeline.
+    • molecular_comparison  → Molecular Comparison Agent only
+    • phylogenetic_tree     → Phylogenetic Tree Agent only
+    • full_analysis         → both in parallel
+    • clarification_required → clarify_node (ask the user a question)
 
 LangGraph graph shape
 ---------------------
     START
       → plan_node
             "resolve"    → species_resolver_node
+            "clarify"    → clarify_node
             "no_feature" → fail_node
       species_resolver_node
             "run"        → dispatch_node
@@ -28,6 +22,7 @@ LangGraph graph shape
             "assemble"   → assemble_node
             "failed"     → fail_node
       assemble_node → END
+      clarify_node  → END
       fail_node     → END
 
 State transitions
@@ -40,6 +35,7 @@ the previous node produced.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -53,15 +49,17 @@ from ..schema import (
     EvolutionaryFeature,
     MolecularComparisonResult,
     PhylogeneticResult,
+    PlannedFeature,
+    PlannerDecision,
 )
 from ..workers.molecular_comparison.mock import MolecularComparisonMock
 from ..workers.phylogenetic_tree.worker import PhylogeneticTreeWorker
 from .services.species_resolver import SpeciesResolverService
 
+_logger = logging.getLogger(__name__)
 
 
 # Graph state
-
 
 
 @dataclass
@@ -69,14 +67,17 @@ class EvolutionState:
     """Object passed through every LangGraph node.
 
     Fields are populated incrementally as the pipeline advances.
-    ``result`` is the terminal field — set by either assemble_node or
-    fail_node and read by the caller.
+    ``result`` is the terminal field — set by assemble_node, clarify_node,
+    or fail_node and read by the caller.
     """
 
     request: AgentRequest
 
-    # Set by _plan_node: the normalised feature string, or "__invalid__"
+    # Set by plan_node: the PlannedFeature enum value as a string
     planned_feature: str = ""
+
+    # Set by plan_node (when clarification is needed)
+    clarification_question: str = ""
 
     # Set by species_resolver_node
     resolved_species:   list[str] = field(default_factory=list)
@@ -84,13 +85,13 @@ class EvolutionState:
 
     # Set by the dispatch step (parallel fan-out)
     mc_result:    MolecularComparisonResult | None = None
-    mc_error:     str | None = None            # non-None → pipeline aborts
+    mc_error:     str | None = None
 
     # Set by the dispatch step (parallel fan-out)
     phylo_result: PhylogeneticResult | None = None
-    phylo_error:  str | None = None            # non-None → pipeline aborts
+    phylo_error:  str | None = None
 
-    # Terminal result — set by assemble_node or fail_node
+    # Terminal result — set by assemble_node, clarify_node, or fail_node
     result: AgentResult | None = None
 
 
@@ -103,9 +104,8 @@ class EvolutionOrchestrator:
     """Domain orchestrator: accepts an AgentRequest, returns an AgentResult.
 
     Wires the Molecular Comparison and Phylogenetic Tree subagents into a
-    parallel LangGraph pipeline (``asyncio.gather`` fan-out).  The pipeline is
-    recompiled once at construction time — cheap for mocks, important for
-    real workers that open network connections.
+    LangGraph pipeline that runs the correct workers based on the Planner's
+    decision.
     """
 
     def __init__(
@@ -137,18 +137,23 @@ class EvolutionOrchestrator:
     def _build_graph(self):
         g = StateGraph(EvolutionState)
 
-        g.add_node("plan",                    self._plan_node)
-        g.add_node("species_resolver",        self._species_resolver_node)
-        g.add_node("dispatch",                self._dispatch_node)
-        g.add_node("assemble",                self._assemble_node)
-        g.add_node("fail",                    self._fail_node)
+        g.add_node("plan",             self._plan_node)
+        g.add_node("species_resolver", self._species_resolver_node)
+        g.add_node("dispatch",         self._dispatch_node)
+        g.add_node("assemble",         self._assemble_node)
+        g.add_node("clarify",          self._clarify_node)
+        g.add_node("fail",             self._fail_node)
 
         g.add_edge(START, "plan")
 
         g.add_conditional_edges(
             "plan",
             self._route_after_plan,
-            {"resolve": "species_resolver", "no_feature": "fail"},
+            {
+                "resolve":   "species_resolver",
+                "clarify":   "clarify",
+                "no_feature": "fail",
+            },
         )
         g.add_conditional_edges(
             "species_resolver",
@@ -162,6 +167,7 @@ class EvolutionOrchestrator:
         )
 
         g.add_edge("assemble", END)
+        g.add_edge("clarify",  END)
         g.add_edge("fail",     END)
 
         return g.compile()
@@ -170,36 +176,46 @@ class EvolutionOrchestrator:
     # Nodes
     # ------------------------------------------------------------------
 
-    # Features the plan node accepts.
-    _VALID_FEATURES = (
-        {f.value for f in EvolutionaryFeature} | {"full_analysis"}
-    )
-
     def _plan_node(self, state: EvolutionState) -> dict:
-        """Validate the requested feature and store it in planned_feature.
+        """Read the planned feature from request.
 
-        An absent or empty feature is treated as 'full_analysis' — run
-        the whole pipeline.  Returns a non-empty dict so LangGraph accepts
-        the update.
+        Priority:
+        1. ``request.context["planner_decision"]`` (new path via adapter)
+        2. ``request.context["feature"]`` or ``request.feature`` (legacy path)
         """
-        req     = state.request
-        feature = (req.context or {}).get("feature") or req.feature or ""
-        if feature and feature not in self._VALID_FEATURES:
+        req = state.request
+        ctx = req.context or {}
+        decision: PlannerDecision | None = ctx.get("planner_decision")
+
+        if decision is not None:
+            feature = decision.feature
+            if feature == PlannedFeature.CLARIFICATION_REQUIRED:
+                return {
+                    "planned_feature": "clarification_required",
+                    "clarification_question": decision.clarification_question or "Could you rephrase your question?",
+                }
+            if feature in {PlannedFeature.MOLECULAR_COMPARISON, PlannedFeature.PHYLOGENETIC_TREE, PlannedFeature.FULL_ANALYSIS}:
+                return {"planned_feature": feature.value}
             return {"planned_feature": "__invalid__"}
-        return {"planned_feature": feature or "full_analysis"}
+
+        # Legacy path: read feature string directly from request
+        feature = (ctx.get("feature") or req.feature or "").strip()
+        if not feature:
+            return {"planned_feature": "__invalid__"}
+        valid = {f.value for f in PlannedFeature} | {"full_analysis"}
+        if feature not in valid:
+            return {"planned_feature": "__invalid__"}
+        return {"planned_feature": feature}
 
     def _route_after_plan(self, state: EvolutionState) -> str:
-        return "resolve" if state.planned_feature != "__invalid__" else "no_feature"
+        if state.planned_feature == "clarification_required":
+            return "clarify"
+        if state.planned_feature in {PlannedFeature.MOLECULAR_COMPARISON.value, PlannedFeature.PHYLOGENETIC_TREE.value, PlannedFeature.FULL_ANALYSIS.value}:
+            return "resolve"
+        return "no_feature"
 
     def _species_resolver_node(self, state: EvolutionState) -> dict:
-        """Normalise raw species names to canonical scientific names.
-
-        Source priority: request.species_list > context["species_list"]
-        > context["species"].
-
-        Any unresolvable name causes a hard stop — we never pass a partial
-        species list to workers.
-        """
+        """Normalise raw species names to canonical scientific names."""
         req = state.request
         ctx = req.context or {}
 
@@ -216,8 +232,16 @@ class EvolutionOrchestrator:
                 "unresolved_species": ["<none provided>"],
             }
 
-        canonical, unresolved = self._resolver.resolve_all(raw)
-        req.species_list = canonical          # mutate in-place for workers
+        try:
+            canonical, unresolved = self._resolver.resolve_all(raw)
+        except Exception as exc:
+            _logger.warning("[Resolve] species resolution failed: %s", exc)
+            return {
+                "resolved_species":   [],
+                "unresolved_species": list(raw),
+            }
+
+        req.species_list = canonical
         return {
             "resolved_species":   canonical,
             "unresolved_species": unresolved,
@@ -229,120 +253,139 @@ class EvolutionOrchestrator:
         return "run"
 
     async def _dispatch_node(self, state: EvolutionState) -> dict:
-        """Fan out to both subagents in parallel via ``asyncio.gather``.
+        """Dispatch the correct worker(s) based on planned_feature.
 
-        Mock workers are synchronous — offload each to a thread so the two
-        run concurrently.  A failure or escalation in either short-circuits
-        the pipeline via ``fail_node``; otherwise both results are stored for
-        the assembler.
+        Only dispatches the worker(s) needed for the planned feature.
+        Each worker is offloaded to a thread via asyncio.to_thread.
         """
         req = state.request
+        feature = state.planned_feature
 
         async def call(worker: Any) -> AgentResult:
             return await asyncio.to_thread(worker.run, req)
 
-        mc_result, phylo_result = await asyncio.gather(
-            call(self._mc_worker),
-            call(self._phylo_worker),
-        )
+        results: dict[str, Any] = {}
 
-        # NEEDS_AGENT wins over a sibling failure: it is the actionable
-        # signal (the pipeline pauses to fetch help from another agent),
-        # whereas the sibling's failure is often just a side-effect of the
-        # same missing input.
-        if mc_result.status is AgentStatus.NEEDS_AGENT:
-            # Propagate escalation immediately — pack it as the terminal result.
+        try:
+            if feature in (PlannedFeature.MOLECULAR_COMPARISON.value, PlannedFeature.FULL_ANALYSIS.value):
+                _logger.info("[Dispatch] running molecular_comparison")
+                mc_result = await call(self._mc_worker)
+                results["mc_result"] = mc_result.output
+                if mc_result.status is AgentStatus.NEEDS_AGENT:
+                    return {"result": mc_result}
+                if mc_result.status is AgentStatus.FAILED:
+                    results["mc_error"] = mc_result.output
+
+            if feature in (PlannedFeature.PHYLOGENETIC_TREE.value, PlannedFeature.FULL_ANALYSIS.value):
+                _logger.info("[Dispatch] running phylogenetic_tree")
+                phylo_result = await call(self._phylo_worker)
+                results["phylo_result"] = phylo_result.output
+                if phylo_result.status is AgentStatus.NEEDS_AGENT:
+                    return {"result": phylo_result}
+                if phylo_result.status is AgentStatus.FAILED:
+                    results["phylo_error"] = phylo_result.output
+
+        except Exception as exc:
+            _logger.warning("[Dispatch] worker call failed: %s", exc)
             return {
-                "result": AgentResult(
-                    status=AgentStatus.NEEDS_AGENT,
-                    target_agent=mc_result.target_agent,
-                    prompt_to_target_agent=mc_result.prompt_to_target_agent,
-                    output=mc_result.output,
-                    source_agents=["Evolution Agent Orchestrator",
-                                   *mc_result.source_agents],
-                )
+                "mc_error":    "Dispatch failed: " + str(exc) if feature in (PlannedFeature.MOLECULAR_COMPARISON.value, PlannedFeature.FULL_ANALYSIS.value) else None,
+                "phylo_error": "Dispatch failed: " + str(exc) if feature in (PlannedFeature.PHYLOGENETIC_TREE.value, PlannedFeature.FULL_ANALYSIS.value) else None,
             }
 
-        if phylo_result.status is AgentStatus.NEEDS_AGENT:
-            return {
-                "result": AgentResult(
-                    status=AgentStatus.NEEDS_AGENT,
-                    target_agent=phylo_result.target_agent,
-                    prompt_to_target_agent=phylo_result.prompt_to_target_agent,
-                    output=phylo_result.output,
-                    source_agents=["Evolution Agent Orchestrator",
-                                   *phylo_result.source_agents],
-                )
-            }
-
-        if mc_result.status is AgentStatus.FAILED:
-            return {"mc_error": mc_result.output}
-
-        if phylo_result.status is AgentStatus.FAILED:
-            return {"phylo_error": phylo_result.output}
-
-        return {"mc_result": mc_result.output, "phylo_result": phylo_result.output}
+        return results
 
     def _route_after_dispatch(self, state: EvolutionState) -> str:
-        # NEEDS_AGENT path sets result directly; we still reach this router.
         if state.result is not None:
-            return "failed"          # re-route to fail to surface the result
+            return "failed"
         if state.mc_error or state.phylo_error:
             return "failed"
         return "assemble"
 
     def _assemble_node(self, state: EvolutionState) -> dict:
-        """Combine MC and phylo outputs into an EvolutionAnalysisResult."""
+        """Combine worker outputs into an EvolutionAnalysisResult.
+
+        Branch-specific: no tree fields for molecular_comparison,
+        no network fields for phylogenetic_tree.
+        """
         mc    = state.mc_result
         phylo = state.phylo_result
+        feature = state.planned_feature
 
-        overall_confidence = round(
-            (self._mc_mean(mc) + phylo.overall_confidence) / 2, 4
-        )
+        overall_confidence = 0.0
+        if mc and phylo:
+            overall_confidence = round(
+                (self._mc_mean(mc) + phylo.overall_confidence) / 2, 4
+            )
+        elif mc:
+            overall_confidence = round(self._mc_mean(mc), 4)
+        elif phylo:
+            overall_confidence = phylo.overall_confidence
+
+        source_agents = ["Evolution Agent Orchestrator"]
+        if mc:
+            source_agents.append("Molecular Comparison Agent")
+        if phylo:
+            source_agents.append("Phylogenetic Tree Agent")
 
         analysis = EvolutionAnalysisResult(
             species_list=state.resolved_species,
             molecular=mc,
             phylogenetic=phylo,
             overall_confidence=overall_confidence,
-            source_agents=[
-                "Evolution Agent Orchestrator",
-                "Molecular Comparison Agent",
-                "Phylogenetic Tree Agent",
-            ],
+            source_agents=source_agents,
         )
+
+        # Branch-specific top-level fields
+        newick_tree: str | None = None
+        tree_url: str | None = None
+        similarity_scores: list[dict] | None = None
+        alignment_url: str | None = None
+
+        if phylo:
+            newick_tree = phylo.newick_tree
+            tree_url    = phylo.tree_url
+        if mc:
+            similarity_scores = [
+                {
+                    "species_a": e.species_a,
+                    "species_b": e.species_b,
+                    "score":     e.score,
+                }
+                for e in mc.similarity_scores
+            ]
+            alignment_url = mc.alignment_url
 
         return {
             "result": AgentResult(
                 status=AgentStatus.COMPLETED,
                 output=analysis,
-                newick_tree=phylo.newick_tree,
-                tree_url=phylo.tree_url,
-                similarity_scores=[
-                    {
-                        "species_a": e.species_a,
-                        "species_b": e.species_b,
-                        "score":     e.score,
-                    }
-                    for e in mc.similarity_scores
-                ],
-                alignment_url=mc.alignment_url,
+                newick_tree=newick_tree,
+                tree_url=tree_url,
+                similarity_scores=similarity_scores,
+                alignment_url=alignment_url,
                 confidence=overall_confidence,
-                source_agents=analysis.source_agents,
+                source_agents=source_agents,
+            )
+        }
+
+    def _clarify_node(self, state: EvolutionState) -> dict:
+        """Return a clarification question to the user."""
+        return {
+            "result": AgentResult(
+                status=AgentStatus.CONTINUE,
+                output={
+                    "decision": "clarification_required",
+                    "clarification_question": state.clarification_question or "Could you rephrase your question?",
+                },
+                source_agents=["Evolution Agent Orchestrator"],
             )
         }
 
     def _fail_node(self, state: EvolutionState) -> dict:
-        """Produce a FAILED AgentResult describing what went wrong.
-
-        If a NEEDS_AGENT result was set by a worker node it passes through
-        unchanged — the fail_node is also the escalation exit.
-        """
-        # NEEDS_AGENT was set by a worker node → pass it straight through.
+        """Produce a FAILED AgentResult describing what went wrong."""
         if state.result is not None:
             return {"result": state.result}
 
-        # Species resolution failed.
         if state.unresolved_species:
             names = ", ".join(
                 f"'{s}'" for s in state.unresolved_species
@@ -363,7 +406,6 @@ class EvolutionOrchestrator:
                 )
             }
 
-        # Molecular comparison step failed.
         if state.mc_error:
             return {
                 "result": AgentResult(
@@ -376,7 +418,6 @@ class EvolutionOrchestrator:
                 )
             }
 
-        # Phylogenetic reconstruction step failed.
         if state.phylo_error:
             return {
                 "result": AgentResult(
@@ -389,15 +430,13 @@ class EvolutionOrchestrator:
                 )
             }
 
-        # No valid feature supplied.
         return {
             "result": AgentResult(
                 status=AgentStatus.FAILED,
                 output=(
                     "Evolution Orchestrator: no valid feature to run. "
-                    "Expected one of: "
-                    + ", ".join(f.value for f in EvolutionaryFeature)
-                    + ", or 'full_analysis'."
+                    "Expected one of: molecular_comparison, phylogenetic_tree, "
+                    "or full_analysis."
                 ),
                 source_agents=["Evolution Agent Orchestrator"],
             )

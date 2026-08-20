@@ -144,18 +144,19 @@ class PhylogeneticTreeWorker:
         # Step 1: MAFFT alignment
         aligned_fasta = mafft_align(
             sequences,
-            mafft_path=self._mafft_path,
         )
         aligned_dict = _parse_fasta(aligned_fasta)
         _logger.info("[Phylo] alignment complete (%d columns)", len(next(iter(aligned_dict.values()))))
 
         # Step 2: IQ-TREE (ModelFinder + UFBoot)
-        _logger.info("[Phylo] building tree with IQ-TREE (ModelFinder + UFBoot)...")
+        num_species = len(aligned_dict)
+        bootstrap_val = 1000 if num_species >= 4 else 0
+        _logger.info("[Phylo] building tree with IQ-TREE (ModelFinder%s)...",
+                     " + UFBoot" if bootstrap_val > 0 else "")
         phylo = iqtree_build(
             alignment=aligned_dict,
-            iqtree_path=self._iqtree_path,
             model="MFP",
-            bootstrap=1000,
+            bootstrap=bootstrap_val,
         )
         _logger.info("[Phylo] tree built: model=%s, confidence=%.2f", phylo.model, phylo.overall_confidence)
 
@@ -176,8 +177,9 @@ class PhylogeneticTreeWorker:
         """Fetch sequences for species. Currently uses local catalogue."""
         result = {}
         for s in species:
-            if s in _SEQUENCES:
-                result[s] = _SEQUENCES[s]
+            key = s.strip().lower()
+            if key in _SEQUENCES:
+                result[s] = _SEQUENCES[key]
             else:
                 _logger.warning("[Phylo] no sequence for '%s' in local catalogue", s)
         return result

@@ -5,27 +5,25 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .intent import RecognizedIntent, classify_intent
+from .planner import plan
 from .orchestrator import EvolutionOrchestrator
 from .schema import (
     AgentRequest,
     AgentResult,
     AgentStatus,
     EvolutionAnalysisResult,
+    PlannedFeature,
+    PlannerDecision,
 )
+
+# Backward-compatible alias (tests monkeypatch this name on the module)
+classify_intent = plan
 
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # User-facing error messages
 # ---------------------------------------------------------------------------
-
-_NO_FEATURE_MESSAGE = (
-    "The Evolution Agent could not determine what this question is asking for. "
-    "It can run a full evolutionary analysis (sequence similarity + phylogenetic "
-    "tree), a molecular comparison only, or a phylogenetic tree only. "
-    "Could you rephrase the question?"
-)
 
 _NO_SPECIES_MESSAGE = (
     "The Evolution Agent needs at least 2 species to work with, but none were "
@@ -44,32 +42,38 @@ _TOO_FEW_SPECIES_MESSAGE = (
 
 def resolve_species(
     context: dict[str, Any],
-    intent:  RecognizedIntent,
+    decision: PlannerDecision,
 ) -> list[str]:
     ctx_species = (
         context.get("species_list")
         or context.get("species")
-        or intent.species_list
+        or decision.species_list
         or []
     )
     if isinstance(ctx_species, str):
         ctx_species = [ctx_species]
-    return [s for s in ctx_species if s]
+    if not isinstance(ctx_species, list):
+        ctx_species = []
+    return [s for s in ctx_species if isinstance(s, str) and s]
 
 
 def to_orchestrator_request(
     request: AgentRequest,
-    intent:  RecognizedIntent,
+    decision: PlannerDecision,
 ) -> AgentRequest:
     context = dict(request.context or {})
-    species = resolve_species(context, intent)
+    species = resolve_species(context, decision)
     return AgentRequest(
         instruction=request.instruction,
-        context={**context, "feature": intent.feature or "full_analysis"},
-        feature=intent.feature or "full_analysis",
+        context={
+            **context,
+            "planner_decision": decision,
+            "feature": decision.feature.value,
+        },
+        feature=decision.feature.value,
         species_list=species,
         reference_species=(
-            context.get("reference_species") or intent.reference_species
+            context.get("reference_species") or decision.reference_species
         ),
         session_id=request.session_id,
         target_gene_or_protein=request.target_gene_or_protein,
@@ -78,43 +82,69 @@ def to_orchestrator_request(
 
 
 # ---------------------------------------------------------------------------
-# Plain-language summary
+# Branch-specific summaries
 # ---------------------------------------------------------------------------
 
-def _build_summary(analysis: EvolutionAnalysisResult) -> str:
+def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
     species = analysis.species_list
     mc      = analysis.molecular
     phylo   = analysis.phylogenetic
     n       = len(species)
 
-    if mc.similarity_scores:
-        top     = max(mc.similarity_scores, key=lambda e: e.score)
-        closest = (
-            f"{top.species_a.capitalize()} and {top.species_b} "
-            f"are the most closely related (similarity {top.score:.2f})"
+    if feature == PlannedFeature.PHYLOGENETIC_TREE.value and phylo:
+        conf = f"{analysis.overall_confidence * 100:.0f}%"
+        return (
+            f"Phylogenetic tree built for {n} species "
+            f"using {phylo.model} model with {conf} overall confidence."
         )
-    else:
-        closest = "Similarity scores unavailable"
 
-    groups    = len(mc.species_groups)
-    group_str = f"forming {groups} evolutionary group" + ("s" if groups != 1 else "")
-    conf      = f"{analysis.overall_confidence * 100:.0f}%"
+    if feature == PlannedFeature.MOLECULAR_COMPARISON.value and mc:
+        if mc.similarity_scores:
+            top     = max(mc.similarity_scores, key=lambda e: e.score)
+            closest = (
+                f"{top.species_a.capitalize()} and {top.species_b} "
+                f"are the most closely related (similarity {top.score:.2f})"
+            )
+        else:
+            closest = "Similarity scores unavailable"
 
-    return (
-        f"Analysed {n} species. "
-        f"{closest}. "
-        f"The {n} species are {group_str}. "
-        f"Phylogenetic tree built using {phylo.model} model "
-        f"with {conf} overall confidence."
-    )
+        groups    = len(mc.species_groups)
+        group_str = f"forming {groups} evolutionary group" + ("s" if groups != 1 else "")
+        conf      = f"{analysis.overall_confidence * 100:.0f}%"
+
+        return (
+            f"Analysed {n} species. "
+            f"{closest}. "
+            f"The {n} species are {group_str}. "
+            f"Overall confidence: {conf}."
+        )
+
+    # full_analysis: both
+    parts: list[str] = []
+    if mc:
+        if mc.similarity_scores:
+            top = max(mc.similarity_scores, key=lambda e: e.score)
+            parts.append(
+                f"{top.species_a.capitalize()} and {top.species_b} "
+                f"are the most closely related (similarity {top.score:.2f})"
+            )
+        groups = len(mc.species_groups)
+        parts.append(f"forming {groups} evolutionary group" + ("s" if groups != 1 else ""))
+    if phylo:
+        parts.append(f"Phylogenetic tree built using {phylo.model} model")
+    conf = f"{analysis.overall_confidence * 100:.0f}%"
+    return f"Analysed {n} species. {'. '.join(parts)}. Overall confidence: {conf}."
 
 
 # ---------------------------------------------------------------------------
 # Result reshaping — flat output matching EvolutionOutput
 # ---------------------------------------------------------------------------
 
-def to_platform_result(result: AgentResult) -> AgentResult:
-    """Flatten the pipeline result into a clean, readable response."""
+def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> AgentResult:
+    """Flatten the pipeline result into a clean, readable response.
+
+    Branch-specific: only includes fields relevant to the executed feature.
+    """
     if result.status is not AgentStatus.COMPLETED:
         return result
 
@@ -141,51 +171,47 @@ def to_platform_result(result: AgentResult) -> AgentResult:
     phylo = analysis.phylogenetic
 
     output: dict[str, Any] = {
-        # Headline fields
         "status":             "completed",
         "decision":           "analysis_complete",
-        "explanation":        _build_summary(analysis),
+        "explanation":        _build_summary(analysis, feature),
         "score_is_mock":      True,
-
-        # Species
         "species_list":       analysis.species_list,
         "overall_confidence": analysis.overall_confidence,
+    }
 
-        # Molecular comparison
-        "similarity_scores": [
+    # Branch-specific: molecular comparison fields
+    if mc:
+        output["similarity_scores"] = [
             {"species_a": e.species_a, "species_b": e.species_b, "score": e.score}
             for e in mc.similarity_scores
-        ],
-        "species_groups": [
+        ]
+        output["species_groups"] = [
             {"group_id": g.group_id, "species": g.species, "mean_score": g.mean_score}
             for g in mc.species_groups
-        ],
-        "similarity_network": mc.similarity_network,
+        ]
+        output["similarity_network"] = mc.similarity_network
+        output["alignment_url"]      = mc.alignment_url
 
-        # Phylogenetic tree
-        "newick_tree":        phylo.newick_tree,
-        "model":              phylo.model,
-        "bootstrap_support":  phylo.bootstrap_support,
-        "confidence_values":  phylo.confidence_values,
+    # Branch-specific: phylogenetic tree fields
+    if phylo:
+        output["newick_tree"]       = phylo.newick_tree
+        output["model"]             = phylo.model
+        output["bootstrap_support"] = phylo.bootstrap_support
+        output["confidence_values"] = phylo.confidence_values
+        output["tree_url"]          = phylo.tree_url
 
-        # URLs
-        "alignment_url":      mc.alignment_url,
-        "tree_url":           phylo.tree_url,
-
-        # Provenance
-        "source_agents":      analysis.source_agents,
-    }
+    output["source_agents"] = analysis.source_agents
 
     return AgentResult(
         status=AgentStatus.COMPLETED,
         output=output,
-        newick_tree=phylo.newick_tree,
-        tree_url=phylo.tree_url,
+        newick_tree=phylo.newick_tree if phylo else None,
+        tree_url=phylo.tree_url if phylo else None,
         similarity_scores=[
             {"species_a": e.species_a, "species_b": e.species_b, "score": e.score}
             for e in mc.similarity_scores
-        ],
-        alignment_url=mc.alignment_url,
+        ] if mc else None,
+        alignment_url=mc.alignment_url if mc else None,
         confidence=analysis.overall_confidence,
         source_agents=analysis.source_agents,
     )
@@ -204,7 +230,7 @@ def _failed(message: str) -> AgentResult:
 # ---------------------------------------------------------------------------
 
 class OrchestratorEvolutionAgent:
-    """Serves the parallel fan-out orchestrator behind the agent's HTTP endpoint."""
+    """Serves the feature-dependent orchestrator behind the agent's HTTP endpoint."""
 
     def __init__(
         self, orchestrator: EvolutionOrchestrator | None = None
@@ -214,22 +240,49 @@ class OrchestratorEvolutionAgent:
     async def run(self, request: AgentRequest) -> AgentResult:
         context = request.context or {}
 
-        has_feature = bool(
-            context.get("feature")
-            or context.get("features")
-            or request.feature
-        )
-        if has_feature:
+        # Check if a planner decision was already made (e.g. by tests)
+        existing_decision: PlannerDecision | None = context.get("planner_decision")
+
+        if existing_decision is not None:
+            _logger.info("[Evolution] planner_decision supplied; skipping planning")
+            decision = existing_decision
+        elif context.get("feature") or context.get("features") or request.feature:
+            # Legacy path: feature supplied directly (tests, direct callers)
             _logger.info("[Evolution] feature supplied; skipping classification")
-            result = await self._orchestrator.run(request)
-            return to_platform_result(result)
+            feature_str = context.get("feature") or context.get("features") or request.feature or "full_analysis"
+            species_from_ctx = context.get("species_list") or context.get("species") or request.species_list or []
+            if isinstance(species_from_ctx, str):
+                species_from_ctx = [species_from_ctx]
+            decision = PlannerDecision(
+                feature=feature_str,
+                species_list=species_from_ctx,
+                reference_species=context.get("reference_species") or request.reference_species,
+                source="caller",
+            )
+        else:
+            try:
+                decision = await classify_intent(request.instruction)
+            except Exception as exc:
+                _logger.warning("[Evolution] planner call failed: %s", exc)
+                return _failed(
+                    "The Evolution Agent could not process your request. "
+                    "Could you rephrase your question about evolutionary analysis?"
+                )
 
-        intent = await classify_intent(request.instruction)
-        if not intent.is_usable:
-            _logger.info("[Evolution] no feature resolved (%s)", intent.source)
-            return _failed(_NO_FEATURE_MESSAGE)
+        # Clarification needed
+        if not decision.is_usable:
+            _logger.info("[Evolution] clarification required (%s)", decision.source)
+            return AgentResult(
+                status=AgentStatus.CONTINUE,
+                output={
+                    "decision": "clarification_required",
+                    "clarification_question": decision.clarification_question or "Could you rephrase your question?",
+                    "source": decision.source,
+                },
+                source_agents=["Evolution Agent Orchestrator"],
+            )
 
-        orchestrator_request = to_orchestrator_request(request, intent)
+        orchestrator_request = to_orchestrator_request(request, decision)
 
         species = orchestrator_request.species_list
         if not species:
@@ -245,5 +298,13 @@ class OrchestratorEvolutionAgent:
                 )
             )
 
-        result = await self._orchestrator.run(orchestrator_request)
-        return to_platform_result(result)
+        try:
+            result = await self._orchestrator.run(orchestrator_request)
+        except Exception as exc:
+            _logger.warning("[Evolution] orchestrator failed: %s", exc)
+            return _failed(
+                f"The Evolution Agent encountered an error: {exc}"
+            )
+
+        feature_value = decision.feature.value if isinstance(decision.feature, PlannedFeature) else str(decision.feature)
+        return to_platform_result(result, feature=feature_value)

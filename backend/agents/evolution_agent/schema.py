@@ -41,6 +41,51 @@ class EvolutionaryFeature(str, Enum):
     PHYLOGENETIC_TREE    = "phylogenetic_tree"
 
 
+class PlannedFeature(str, Enum):
+    """Planner decision — what the agent should execute.
+
+    This is the planner's contract (4 values).
+    EvolutionaryFeature is the workers' contract (2 values).
+    They are intentionally separate.
+    """
+    MOLECULAR_COMPARISON  = "molecular_comparison"
+    PHYLOGENETIC_TREE     = "phylogenetic_tree"
+    FULL_ANALYSIS         = "full_analysis"
+    CLARIFICATION_REQUIRED = "clarification_required"
+
+
+@dataclass(frozen=True)
+class PlannerDecision:
+    """Output of the Planner LLM call.
+
+    ``feature`` accepts both ``PlannedFeature`` enum values and plain strings.
+    Strings are normalised to ``PlannedFeature`` on construction.
+    """
+    feature: PlannedFeature | str = PlannedFeature.CLARIFICATION_REQUIRED
+    species_list: list[str]            = field(default_factory=list)
+    reference_species: str | None      = None
+    clarification_question: str | None = None
+    explicitly_requested_both: bool    = False
+    source: str                        = "llm"
+
+    def __post_init__(self) -> None:
+        if isinstance(self.feature, PlannedFeature):
+            pass
+        elif self.feature is None or self.feature == "":
+            object.__setattr__(self, "feature", PlannedFeature.CLARIFICATION_REQUIRED)
+        elif isinstance(self.feature, str):
+            try:
+                object.__setattr__(self, "feature", PlannedFeature(self.feature))
+            except ValueError:
+                object.__setattr__(self, "feature", PlannedFeature.CLARIFICATION_REQUIRED)
+        else:
+            object.__setattr__(self, "feature", PlannedFeature.CLARIFICATION_REQUIRED)
+
+    @property
+    def is_usable(self) -> bool:
+        return self.feature != PlannedFeature.CLARIFICATION_REQUIRED
+
+
 # ---------------------------------------------------------------------------
 # PUBLIC CONTRACT — exactly as defined in the presentation
 # ---------------------------------------------------------------------------
@@ -194,10 +239,13 @@ class PhylogeneticResult:
 
 @dataclass
 class EvolutionAnalysisResult:
-    """Final assembled result — input to the adapter's to_platform_result()."""
+    """Final assembled result — input to the adapter's to_platform_result().
+
+    In feature-dependent runs only one of molecular/phylogenetic is populated.
+    """
 
     species_list:       list[str]
-    molecular:          MolecularComparisonResult
-    phylogenetic:       PhylogeneticResult
-    overall_confidence: float
+    molecular:          MolecularComparisonResult | None = None
+    phylogenetic:       PhylogeneticResult | None = None
+    overall_confidence: float = 0.0
     source_agents:      list[str] = field(default_factory=list)
