@@ -14,10 +14,12 @@
     "3D Protein Structure Agent"
   ],
   "managed_services": [
-    "BioCLIP-2 label classification (officially selected; execution mocked in Sprint 2)",
-    "GBIF (mocked in Sprint 2)",
-    "NCBI Taxonomy (mocked in Sprint 2)"
+    "BioCLIP-2 label classification, executed remotely on the official public Space imageomics/bioclip-2-demo (model target imageomics/bioclip-2); a fixture-backed mock remains available for offline development and is disclosed as mock whenever it runs",
+    "GBIF Species API, queried live per candidate; annotation only, and it never selects, reorders or rescores a species",
+    "NCBI Taxonomy via Entrez E-utilities, queried live per candidate under a request-rate safety margin; annotation only",
+    "Azure OpenAI GPT-5 mini as a bounded planner and grounded explainer, at most two calls per request; it decides nothing scientific"
   ],
+  "delegation": "When a request asks for a capability this agent does not own, it returns a needs_agent result naming the capability. It never calls another agent itself; routing is the Global Orchestrator's responsibility, and that integration does not exist yet.",
   "capabilities": [
     "Species recognition from an image",
     "Top-K taxonomic classification of one photograph"

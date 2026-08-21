@@ -1,5 +1,35 @@
 # Sprint 3 Completion Plan — Multimodal Species Recognition Agent
 
+> ## FINAL STATUS — recorded at Phase 8 closure
+>
+> | Phase | Status |
+> |---|---|
+> | Phase 0 — branch and baseline | **PASS** |
+> | Phase 1 — configuration and provider-selection hardening | **PASS** |
+> | Phase 2 — GPT-5 mini as the real reasoning brain | **PASS** |
+> | Phase 3 — real BioCLIP-2 inference (remote Space) | **PASS** |
+> | Phase 4 — live GBIF and NCBI taxonomy | **PASS** |
+> | Phase 5 — complete real standalone flow | **PASS** (after the F1–F3 provenance corrections) |
+> | Phase 6 — revalidate the integrated Global Orchestrator chain | **N/A — The phase was defined as revalidation of an existing integration, but that prerequisite does not exist.** |
+> | Phase 7 — resilience, security, privacy, operational quality | **PASS** (after the P7-F1–F3 corrections) |
+> | Phase 8 — closure, documentation, demo, PR readiness | **PASS — Standalone Recognition Agent Sprint 3 complete** (after the P8-F1 correction) — see `docs/SPRINT_3_FINAL_REPORT.md` |
+>
+> **Correction to Section 1 below.** This plan opens by stating the agent is
+> "already implemented, tested, integrated with the Global Orchestrator, and
+> validated". The first three are true. **The integration claim is not.**
+> Repository reality is authoritative: the Recognition Agent is standalone, it
+> emits `needs_agent` capability hints, and nothing routes them. Every statement
+> in this plan that assumes an existing orchestrator integration is corrected in
+> the traceability matrix in Section 8.
+>
+> **Two distinct scopes must not be conflated:**
+>
+> 1. **Standalone Recognition Agent Sprint 3 scope** — **complete**.
+> 2. **Full-platform orchestration integration** — *not started*, and owned by
+>    the orchestrator/integration team. It is future external work.
+>
+> The complete platform integration is **not** finished.
+
 ## 1. Purpose
 
 This document is the execution plan for completing Sprint 3 for the Multimodal Species Recognition Agent owned by Group D.
@@ -8,7 +38,9 @@ The agent workflow is already implemented, tested, integrated with the Global Or
 
 The required final state is:
 
-> A real Recognition Agent that receives one animal image plus a non-empty instruction, uses GPT-5 mini as its reasoning brain, obtains real visual candidates from BioCLIP-2, enriches those candidates through live GBIF and NCBI taxonomy services, preserves all deterministic safety gates, and returns the validated `AgentResult` contract through the already-integrated Global Orchestrator.
+> A real Recognition Agent that receives one animal image plus a non-empty instruction, uses GPT-5 mini as its reasoning brain, obtains real visual candidates from BioCLIP-2, enriches those candidates through live GBIF and NCBI taxonomy services, preserves all deterministic safety gates, and returns the validated `AgentResult` contract.
+>
+> *Corrected at Phase 8 closure: this sentence originally ended "…through the already-integrated Global Orchestrator". That integration does not exist. The agent returns the validated contract from its own `POST /execute` endpoint; consuming it is future external work.*
 
 Sprint 3 presentation deadline: **23 August 2026**.
 
@@ -563,6 +595,12 @@ Do not change confidence thresholds merely to make the demonstration pass. If re
 
 ## Phase 6 — Revalidate the already-integrated Global Orchestrator chain
 
+> **STATUS: N/A — The phase was defined as revalidation of an existing
+> integration, but that prerequisite does not exist.** Recognition is not
+> registered with, routed by, or invoked through the Global Orchestrator.
+> There is no integration to revalidate. Nothing in this phase was run, and
+> no orchestrator E2E result is claimed anywhere in the Sprint 3 evidence.
+
 ### Objective
 
 Verify that replacing external mocks with real providers did not break the existing, already-completed direct Global Orchestrator integration.
@@ -713,28 +751,28 @@ Sprint 3 is complete for Recognition only when all applicable items in Section 8
 |---|---|---|
 | Prepare training data | **N/A** | Pre-trained BioCLIP-2; no training/fine-tuning in scope |
 | Train or fine-tune a model | **N/A** | Fixed architecture decision |
-| Evaluate selected model | **PASS after Phase 5** | Real-image evaluation report |
-| Configure model for inference | **PASS after Phase 3** | Real provider, pinned version, provider-mode tests |
-| Integrate model into agent | **PASS after Phase 3** | `Agent → BioCLIP-2 → candidates` evidence |
+| Evaluate selected model | **PASS** | `docs/PHASE5_CERTIFICATION.md` real-image evaluation matrix |
+| Configure model for inference | **PASS** | Remote `imageomics/bioclip-2-demo`, pinned revision, provider-mode tests |
+| Integrate model into agent | **PASS** | `Agent → remote BioCLIP-2 → candidates`, verified live |
 | Define when agent uses model | **Already PASS; revalidated** | Existing workflow and Phase 3 tests |
-| Test Agent → Model → Result | **PASS after Phase 5** | Real standalone scenario suite |
-| Pass model result to orchestrator | **PASS after Phase 6** | Direct Global Orchestrator E2E evidence |
+| Test Agent → Model → Result | **PASS** | Real standalone scenario suite, seven real images, live providers |
+| Pass model result to orchestrator | **NOT IMPLEMENTED — future Global Orchestrator/integration-team task** | The agent returns the validated seven-key `AgentResult`; no orchestrator consumes it yet |
 | Define agent objective/responsibilities | **Already PASS** | Current code and final reference |
 | Configure agent framework | **Already PASS** | Compiled LangGraph eight-node graph |
-| Connect LLM | **PASS after Phase 2** | Live Azure GPT-5 mini evidence |
+| Connect LLM | **PASS** | Live Azure GPT-5 mini, two-call budget, `store=False`, no retry |
 | Define prompts/instructions | **Already PASS; revalidated** | Planner/explainer prompts and guards |
-| Implement agent tools | **PASS after Phases 3–4** | Real BioCLIP-2, GBIF, NCBI providers |
-| Connect required knowledge/API sources | **PASS after Phase 4** | Live GBIF/NCBI evidence |
+| Implement agent tools | **PASS** | Real remote BioCLIP-2, live GBIF, live NCBI |
+| Connect required knowledge/API sources | **PASS** | Live GBIF Species API and NCBI Entrez, verified live |
 | Retrieval pipeline | **N/A** | No Qdrant/retrieval/similarity by final decision |
 | Define input/output schemas | **Already PASS** | Preserved shared contracts |
 | Implement reasoning workflow | **Already PASS** | Existing graph and tests |
-| Handle invalid inputs/tool failures | **Already PASS; hardened in Phase 7** | Failure matrix |
-| Test agent independently | **PASS after Phase 5** | Offline plus opt-in live tests |
+| Handle invalid inputs/tool failures | **PASS** | Phase 7 timeout, malformed-payload and partial-availability matrices |
+| Test agent independently | **PASS** | 1178 offline tests plus opt-in live smokes |
 | Finalize workflow | **Already PASS** | Protected node sequence and finalizer |
-| Integrate with orchestration layer | **Already completed; revalidated in Phase 6** | E2E evidence |
+| Integrate with orchestration layer | **NOT IMPLEMENTED — future Global Orchestrator/integration-team task** | Never implemented in this or any prior sprint; the opening claim in Section 1 was incorrect |
 | Create Group D sub-orchestrator | **N/A** | Direct Global Orchestrator architecture is current |
-| Implement delegation/context/results | **Already completed; revalidated in Phase 6** | Delegation/resume E2E evidence |
-| Validate agent-orchestrator communication | **PASS after Phase 6** | Routing/context/aggregation/failure report |
+| Implement delegation/context/results | **PARTIAL — agent side READY FOR FUTURE INTEGRATION** | The agent emits `needs_agent` with a capability hint and completes on resume when the helper key is present (verified live, standalone). Routing, context aggregation and specialist invocation are NOT implemented |
+| Validate agent-orchestrator communication | **N/A — revalidation prerequisite absent** | No integration exists to validate |
 | Frontend | **N/A** | Explicitly outside this plan |
 
 ---
@@ -756,13 +794,13 @@ The Recognition Agent is Sprint 3 complete when all of the following are true:
 - [ ] Mock/fake providers remain only as explicit offline test doubles and can never be silently used in production mode.
 - [ ] Real and degraded execution are accurately represented in provenance.
 - [ ] The standalone agent passes real-image, invalid-input, delegation, and dependency-failure scenarios.
-- [ ] The direct Global Orchestrator chain passes routing, context, aggregation, delegation, resume, and failure tests.
+- [ ] **NOT APPLICABLE TO THIS SPRINT — future external work.** The direct Global Orchestrator chain passes routing, context, aggregation, delegation, resume, and failure tests. *No such chain exists; this item was written on the incorrect premise that Recognition was already integrated. It is owned by the orchestrator/integration team and is explicitly out of the standalone Recognition Sprint 3 scope.*
 - [ ] The seven output keys and all shared schemas remain compatible.
 - [ ] No frontend or sub-orchestrator is added.
 - [ ] All offline tests pass without network, credentials, model downloads, or external services.
 - [ ] Opt-in live integration tests pass with local `.env` values.
 - [ ] No secret, Base64, image bytes, raw context, raw provider error, model weight, or local dataset is committed or leaked.
-- [ ] Documentation reflects the final code and contains no obsolete mock claims for real mode.
+- [x] Documentation reflects the final code and contains no obsolete mock claims for real mode. *Finding P8-F1 — a stale "Sprint 2 classifier" string in `domain/confidence.py`, reachable in real mode — was corrected; the sentence is now provider-neutral and verified live.*
 - [ ] Sprint 3 evidence and traceability are complete and presentation-ready.
 
 ---

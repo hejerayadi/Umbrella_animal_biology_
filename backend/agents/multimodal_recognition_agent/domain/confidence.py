@@ -80,10 +80,18 @@ def clarification_for(decision: Decision, candidates: list[SpeciesCandidate]) ->
         return None
 
     if decision == "not_identified":
+        # Provider-neutral on purpose. This used to name "the Sprint 2 classifier",
+        # which was false the moment real remote BioCLIP-2 inference started
+        # running - and this is the sentence a user sees precisely when their
+        # photograph could not be identified. Describing the EVIDENCE rather than
+        # the component that produced it is true in every mode, so no mode branch
+        # is needed: it holds for remote BioCLIP-2, for the mock, for no
+        # candidates at all, for weak candidates, and for candidates too close
+        # together to separate.
         return (
-            "The Sprint 2 classifier did not return a taxon confident enough to name a "
-            "species for this image. Could you supply a clearer photograph of the animal, "
-            "or tell me where the observation was made?"
+            "The available visual evidence was not strong enough to identify a species "
+            "confidently. Could you supply a clearer photograph of the animal, or tell me "
+            "where the observation was made?"
         )
 
     names = ", ".join(candidate.scientific_name for candidate in candidates[:3])
