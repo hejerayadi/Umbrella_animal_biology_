@@ -36,7 +36,7 @@ from ..adapters.reasoning_llm import (
     sanitize_plan,
 )
 from ..adapters.taxonomy import MockTaxonomyProvider
-from ..config import RecognitionConfig
+from ..config import RECOGNITION_MODE_MOCK_CLASSIFICATION, RecognitionConfig
 from ..domain import confidence, ranking
 from ..domain.errors import RecognitionError
 from ..domain.models import RecognitionDecision
@@ -57,6 +57,66 @@ UNSUPPORTED_SIMILARITY_CAPABILITY = "visual_similarity_search"
 
 def _failed(exc: RecognitionError) -> dict:
     return {"error_code": exc.code.value, "error_message": exc.message}
+
+
+# --- what the taxonomy sources actually were --------------------------------
+
+def taxonomy_source_modes(state: RecognitionState) -> tuple[str, str, bool]:
+    """`(gbif_mode, ncbi_mode, executed)`, from what actually ran.
+
+    Runtime evidence first: every provider - mock or real - records the mode of
+    each source in the per-species `taxonomy_report` it returns, so that report
+    is the truth about which services answered this request. Configuration is
+    never consulted, which is what makes an injected or swapped provider report
+    honestly.
+
+    When the classifier named nothing there is no candidate to validate, so the
+    report is empty and no lookup happened. That is reported as `executed=False`
+    alongside the mode the wired provider declares about *itself* - saying which
+    sources would have been consulted is honest; claiming they answered is not.
+    A provider that declares nothing yields `"unknown"` rather than a guess.
+    """
+    report = state.taxonomy_report or {}
+
+    def modes_for(source: str) -> set[str]:
+        found = set()
+        for entry in report.values():
+            if isinstance(entry, dict) and isinstance(entry.get(source), dict):
+                mode = entry[source].get("mode")
+                if isinstance(mode, str) and mode:
+                    found.add(mode)
+        return found
+
+    gbif_modes, ncbi_modes = modes_for("gbif"), modes_for("ncbi")
+    executed = bool(gbif_modes or ncbi_modes)
+
+    if not executed:
+        declared = (state.config_snapshot or {}).get("taxonomy_provider_mode")
+        declared = declared if isinstance(declared, str) and declared else "unknown"
+        return declared, declared, False
+
+    def one(found: set[str]) -> str:
+        if len(found) == 1:
+            return next(iter(found))
+        # Two sources of the same name reporting different modes in one request
+        # is not something to average away - it is stated as what it is.
+        return "mixed" if found else "unknown"
+
+    return one(gbif_modes), one(ncbi_modes), True
+
+
+def _source_label(source: str, mode: str, *, sentence_start: bool = False) -> str:
+    """How to name one taxonomy source in prose, given the mode that ran.
+
+    `sentence_start` capitalises only the article. `str.capitalize()` would
+    lowercase the rest of the string and turn "NCBI" into "ncbi".
+    """
+    article = "The" if sentence_start else "the"
+    if mode == "mock":
+        return f"{article} mocked {source} source"
+    if mode == "real":
+        return f"{article} live {source} lookup"
+    return f"{article} {source} source"
 
 
 # --- 1. validate_image_and_text --------------------------------------------
@@ -302,11 +362,18 @@ def make_taxonomy_node(provider: MockTaxonomyProvider) -> Node:
             "taxonomy_report": report,
         }
         if degraded:
+            # Named for the sources that actually ran. Calling a live GBIF
+            # outage "a mocked taxonomy source" was false on every real request.
+            mode = getattr(provider, "mode", None)
+            which = {
+                "mock": "A mocked taxonomy source",
+                "real": "A live taxonomy source",
+            }.get(mode, "A taxonomy source")
             updates["warnings"] = [
                 *state.warnings,
-                "A mocked taxonomy source was unavailable for at least one candidate; "
-                "those candidates are reported as unverified and no identifier was "
-                "inferred to fill the gap.",
+                f"{which} was unavailable for at least one candidate; those candidates "
+                "are reported as unverified and no identifier was inferred to fill the "
+                "gap.",
             ]
 
         # Carry the annotations into the decision that was already made. The
@@ -393,9 +460,14 @@ def make_explain_node(llm: Any, config: RecognitionConfig) -> Node:
             elif produced is not None:
                 _logger.info("[Recognition] explanation rejected as ungrounded; using rules.")
 
+        gbif_mode, ncbi_mode, taxonomy_executed = taxonomy_source_modes(state)
+
         source = "llm" if text else "deterministic"
         body = text or _deterministic_explanation(state, request)
-        body = f"{body} {_safety_footer()}"
+        # Appended outside whatever the model wrote, and built from runtime
+        # evidence rather than a fixed string: the disclosure is a fact about
+        # this run, so neither the model nor a stale constant may author it.
+        body = f"{body} {_safety_footer(state, gbif_mode, ncbi_mode, taxonomy_executed)}"
 
         return {
             "decision": decision.model_copy(update={"explanation": body}),
@@ -408,12 +480,64 @@ def make_explain_node(llm: Any, config: RecognitionConfig) -> Node:
     return _node
 
 
+def _classifier_phrase(state: RecognitionState) -> str:
+    """How to name the thing that produced the labels, given what actually ran."""
+    if state.classification_mode == RECOGNITION_MODE_MOCK_CLASSIFICATION:
+        return "The Sprint 2 BioCLIP-2 classification mock"
+    return "Remote BioCLIP-2 inference"
+
+
+def _taxonomy_sentence(candidate, gbif_mode: str, ncbi_mode: str,
+                       taxonomy_executed: bool) -> str:
+    """What the taxonomy sources actually said about this candidate.
+
+    Driven by the identifiers on the candidate rather than by the status label
+    alone, so the sentence cannot contradict `gbif_id` and `ncbi_taxid` in the
+    same response. This used to branch on `mock_verified` / `partial` / else;
+    Phase 4 added the real-mode status `verified`, which matched neither, so a
+    fully verified candidate fell through and was described as having no
+    identifier at all - the exact opposite of the evidence beside it.
+    """
+    if not taxonomy_executed:
+        return " No taxonomy lookup was performed for it."
+
+    gbif_label = _source_label("GBIF", gbif_mode)
+    ncbi_label = _source_label("NCBI", ncbi_mode)
+    has_gbif = candidate.gbif_id is not None
+    has_ncbi = candidate.ncbi_taxid is not None
+
+    if has_gbif and has_ncbi:
+        return (
+            f" Both taxonomy sources supplied an identifier for it: {gbif_label} returned "
+            f"{candidate.gbif_id} and {ncbi_label} returned taxid {candidate.ncbi_taxid}."
+        )
+    if has_gbif:
+        return (
+            f" {_source_label('GBIF', gbif_mode, sentence_start=True)} supplied identifier "
+            f"{candidate.gbif_id}; {ncbi_label} supplied none, and its identifier is "
+            "reported as null rather than filled in."
+        )
+    if has_ncbi:
+        return (
+            f" {_source_label('NCBI', ncbi_mode, sentence_start=True)} supplied taxid "
+            f"{candidate.ncbi_taxid}; {gbif_label} supplied none, and its identifier is "
+            "reported as null rather than filled in."
+        )
+    return (
+        f" Neither {gbif_label} nor {ncbi_label} supplied an identifier for it; both are "
+        "reported as null rather than filled in."
+    )
+
+
 def _deterministic_explanation(state: RecognitionState, request: ExplainRequest) -> str:
     """A grounded sentence built only from what the workflow actually computed."""
+    gbif_mode, ncbi_mode, taxonomy_executed = taxonomy_source_modes(state)
+    classifier = _classifier_phrase(state)
+
     if request.decision == "not_identified":
         body = (
-            "The Sprint 2 BioCLIP-2 classification mock returned no taxonomic label for "
-            "this image confident enough to name a species."
+            f"{classifier} returned no taxonomic label for this image confident enough "
+            "to name a species."
         )
     else:
         score = "unknown" if request.top_score is None else round(request.top_score, 4)
@@ -421,19 +545,11 @@ def _deterministic_explanation(state: RecognitionState, request: ExplainRequest)
         verb = "supports" if request.decision == "identified" else "does not conclusively support"
         top = state.candidates[0]
         body = (
-            f"The Sprint 2 BioCLIP-2 classification mock {verb} {top.scientific_name} as the "
+            f"{classifier} {verb} {top.scientific_name} as the "
             f"highest-ranked taxonomic label (classification score {score}, margin over the "
             f"next label {margin})."
         )
-        if top.taxonomy_status == "mock_verified":
-            body += " Both mocked taxonomy sources held a record for it."
-        elif top.taxonomy_status == "partial":
-            body += (
-                " Only one of the two mocked taxonomy sources supplied an identifier; the "
-                "other is reported as null rather than filled in."
-            )
-        else:
-            body += " Neither mocked taxonomy source supplied an identifier for it."
+        body += _taxonomy_sentence(top, gbif_mode, ncbi_mode, taxonomy_executed)
 
     if request.text_alignment == "agree":
         body += " The instruction names the same species as the classifier."
@@ -446,19 +562,58 @@ def _deterministic_explanation(state: RecognitionState, request: ExplainRequest)
     return body
 
 
-def _safety_footer() -> str:
+def _safety_footer(state: RecognitionState, gbif_mode: str, ncbi_mode: str,
+                   taxonomy_executed: bool) -> str:
     """Appended to every explanation, whoever wrote it.
 
     Bolting this on outside the model's text is deliberate: the provenance
     disclaimer is a fact about the system, so it must not depend on the model
-    having remembered to include it.
+    having remembered to include it - and the model may not author it either.
+
+    It used to be a fixed string asserting a Sprint 2 mock and mocked taxonomy
+    no matter what had run, so every live answer carried a disclaimer denying
+    the very providers that produced it. Both halves are now chosen from the
+    runtime evidence, and each describes only what is actually proven.
     """
-    return (
-        "Species classification is produced by a deterministic Sprint 2 mock of BioCLIP-2, "
-        "not by real BioCLIP-2 inference; the classification score is a test value, not a "
-        "probability. GBIF and NCBI validation are mocked and were not checked against the "
-        "live databases."
-    )
+    if state.classification_mode == RECOGNITION_MODE_MOCK_CLASSIFICATION:
+        classification = (
+            "Species classification is produced by a deterministic Sprint 2 mock of "
+            "BioCLIP-2, not by real BioCLIP-2 inference; the classification score is a "
+            "test value, not a probability."
+        )
+    else:
+        classification = (
+            "Species classification is produced by real remote BioCLIP-2 inference; the "
+            "classification score is a ranking score over the model's label set, not a "
+            "calibrated probability."
+        )
+
+    if not taxonomy_executed:
+        taxonomy = (
+            "No GBIF or NCBI lookup was performed for this request, so no taxonomic "
+            "identifier is reported."
+        )
+    elif gbif_mode == "mock" and ncbi_mode == "mock":
+        taxonomy = (
+            "GBIF and NCBI validation are mocked and were not checked against the live "
+            "databases."
+        )
+    elif gbif_mode == "real" and ncbi_mode == "real":
+        taxonomy = (
+            "GBIF and NCBI identifiers come from live lookups against the public GBIF and "
+            "NCBI services; a source that was unavailable or did not match leaves its "
+            "identifier null rather than filled in."
+        )
+    else:
+        # Mixed or undeclared. Name each source separately rather than picking
+        # one word that would be wrong about the other.
+        taxonomy = (
+            f"Taxonomy identifiers come from {_source_label('GBIF', gbif_mode)} and "
+            f"{_source_label('NCBI', ncbi_mode)}; a source that was unavailable or did "
+            "not match leaves its identifier null rather than filled in."
+        )
+
+    return f"{classification} {taxonomy}"
 
 
 # --- 7. delegate_if_needed --------------------------------------------------

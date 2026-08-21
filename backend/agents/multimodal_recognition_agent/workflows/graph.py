@@ -170,6 +170,13 @@ def _provenance(state: RecognitionState) -> dict:
     # itself, not a configured value, so provenance cannot outlive a swap.
     is_mock = state.classification_mode == RECOGNITION_MODE_MOCK_CLASSIFICATION
 
+    # Derived from what actually ran, never from configuration. These used to be
+    # the literal "mock", with no real-mode branch, so a live GBIF/NCBI answer
+    # was reported as mocked while the nested taxonomy_report said "real" - the
+    # two halves of the same dict contradicted each other. The nested report is
+    # now the source of truth, so they cannot disagree by construction.
+    gbif_mode, ncbi_mode, taxonomy_executed = nodes.taxonomy_source_modes(state)
+
     provenance = {
         "model_target": MODEL_TARGET,
         "recognition_provider": state.classification_provider,
@@ -182,8 +189,13 @@ def _provenance(state: RecognitionState) -> dict:
             if is_mock else None
         ),
         "top_k_requested": state.requested_top_k,
-        "gbif_mode": "mock",
-        "ncbi_mode": "mock",
+        "gbif_mode": gbif_mode,
+        "ncbi_mode": ncbi_mode,
+        # Whether a lookup was actually performed. False when the classifier
+        # named nothing, so there was no candidate to validate: the modes above
+        # then describe the provider that was wired in, and this says plainly
+        # that it was never asked anything.
+        "taxonomy_executed": taxonomy_executed,
         "taxonomy_degraded": state.taxonomy_degraded,
         "taxonomy_report": state.taxonomy_report,
         # False in both modes. The remote score is a softmax over ~867k labels,
@@ -283,4 +295,10 @@ class RecognitionWorkflow:
             "text_analysis_mode": self._text_analyzer.mode,
             "reasoning_llm_enabled": bool(getattr(self._reasoning_llm, "enabled", False)),
             "reasoning_llm_provider": getattr(self._reasoning_llm, "name", "disabled"),
+            # The mode the taxonomy provider OBJECT that was actually wired in
+            # declares about itself - not the configured value, so an injected
+            # or swapped provider is reported as what it really is. Used only
+            # when no candidate was validated and the per-species report is
+            # therefore empty; runtime evidence wins whenever it exists.
+            "taxonomy_provider_mode": getattr(self._taxonomy, "mode", None),
         }
