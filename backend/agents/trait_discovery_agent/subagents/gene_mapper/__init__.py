@@ -1,4 +1,23 @@
+"""
+Gene Mapper Agent — GO biological-process annotation with LLM-guided
+disambiguation.
 
+For each gene:
+  1. List all QuickGO biological_process candidates for the gene's UniProt
+     accession (with one retry on transient QuickGO errors, §9).
+  2. If 0 candidates → unmatched (no LLM call).
+  3. If 1 candidate  → straight through (no real decision needed).
+  4. If >1 candidates → LLM holds list_go_candidates/resolve_go_term_name as
+                         bound tools via a bind_tools loop (llm_pick.py) and
+                         picks the most trait-relevant GO term itself, with
+                         deterministic fallback on LLM failure (§9).
+
+Everything that gets monkeypatched by name in tests (list_go_candidates,
+resolve_go_term_name, fetch_go_annotation, _llm_pick_candidate) is imported
+directly into this module's namespace, and gene_mapper_agent() — which looks
+those names up as bare globals — lives here too, so patching this module's
+attributes actually changes what gene_mapper_agent() calls.
+"""
 from __future__ import annotations
 
 import logging

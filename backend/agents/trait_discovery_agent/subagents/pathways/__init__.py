@@ -1,4 +1,22 @@
+"""
+Pathways Agent — KEGG pathway selection with LLM-guided relevance ranking.
 
+For each gene:
+  1. List all KEGG pathways linked to the gene (not just the first).
+  2. If 0 links   → malformed_ids (no LLM call).
+  3. If 1 link    → straight through (no real decision needed).
+  4. If >1 links  → LLM holds list_pathway_candidates/fetch_pathway_name as
+                    bound tools via a bind_tools loop (llm_pick.py) and picks
+                    the most trait-relevant pathway itself, with
+                    deterministic fallback on LLM failure (§9).
+
+Everything that gets called/monkeypatched by name in tests (list_pathway_
+candidates, fetch_pathway_name, fetch_pathway, _llm_pick_pathway) is imported
+directly into this module's namespace, and pathways_agent()/
+_select_pathway_for_gene() — which look those names up as bare globals —
+live here too, so patching this module's attributes actually changes what
+they call.
+"""
 from __future__ import annotations
 
 import logging

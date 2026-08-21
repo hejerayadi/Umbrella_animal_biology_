@@ -1,4 +1,11 @@
+"""
+Multi-candidate KEGG pathway selection for the Pathways agent (§8, multi-link
+branch only — single-link and malformed cases never reach this module).
 
+Implements the bind_tools loop required by §2/§5: the model holds
+list_pathway_candidates/fetch_pathway_name as bound tools and calls them
+itself to resolve any names it needs before answering.
+"""
 from __future__ import annotations
 
 import logging

@@ -9,7 +9,8 @@ from subagents.protein_data import protein_data_agent
 
 async def main():
     out = await protein_data_agent(ProteinDataInput(
-        gene_list=["FGF5"], instruction="test", context={"tax_id": 9606}
+        gene_list=["FGF5"], trait_name="hair growth", instruction="test",
+        context={"tax_id": 9606},
     ))
     print(out)
 
