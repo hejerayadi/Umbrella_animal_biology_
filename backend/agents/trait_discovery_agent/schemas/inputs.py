@@ -35,6 +35,7 @@ class PathwaysInput:
 @dataclass
 class ProteinDataInput:
     gene_list: List[str]
+    trait_name: str                # NEW — needed for relevance judgment
     instruction: str
     context: dict = field(default_factory=dict)
 

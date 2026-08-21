@@ -129,3 +129,84 @@ services:
     volumes:
       - .:/app
     command: python -m scripts.pathways_scenarios --scenario all --verbose
+
+  # -------------------------------------------------------------------------
+  # Protein Data Agent services
+  # -------------------------------------------------------------------------
+  protein-data-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.check_protein_data
+
+  test-protein-data:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_protein_data.py -v -s
+
+  test-kb-integration:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_kb_integration.py -v -s
+
+  protein-data-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.protein_data_scenarios --scenario all --verbose
+
+  # -------------------------------------------------------------------------
+  # Functional Evidence sub-orchestrator services
+  # -------------------------------------------------------------------------
+  test-functional-evidence-merge:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_functional_evidence_merge.py -v -s
+
+  test-suborchestrator-to-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/integration/test_suborchestrator_to_agent.py -v -s
+
+  functional-evidence-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.functional_evidence_scenarios --scenario all --verbose
+
+  # -------------------------------------------------------------------------
+  # Literature Support Agent services
+  # -------------------------------------------------------------------------
+  test-literature-support:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_literature_support.py -v -s
+
+  literature-support-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.literature_support_scenarios --scenario all --verbose

@@ -1,4 +1,11 @@
+"""
+Multi-candidate GO-term selection for the Gene Mapper agent (§8, multi-link
+branch only — single-link and malformed cases never reach this module).
 
+Implements the bind_tools loop required by §2/§5: the model holds
+list_go_candidates/resolve_go_term_name as bound tools and calls them itself
+to resolve any names it needs before answering.
+"""
 from __future__ import annotations
 
 import logging
@@ -12,7 +19,14 @@ from workflows.llm import invoke_tool_loop_with_fallback, MAX_TOOL_TURNS
 
 logger = logging.getLogger(__name__)
 
-
+# §2/§5: the tools the model holds via bind_tools and calls itself for a
+# multi-candidate decision. These are the *same* QuickGO calls the node uses
+# for branching (§8) and the deterministic fallback (§9) — just wrapped with
+# @tool so the LLM can invoke them directly instead of being handed a
+# pre-resolved answer. resolve_go_term_names (plural) lets the model resolve
+# every unresolved candidate in one turn instead of one per turn — a gene can
+# have a dozen+ real GO annotations, and paying a full LLM round-trip per
+# name doesn't scale.
 _GENE_MAPPER_TOOLS = [
     _list_go_candidates_tool,
     _resolve_go_term_name_tool,

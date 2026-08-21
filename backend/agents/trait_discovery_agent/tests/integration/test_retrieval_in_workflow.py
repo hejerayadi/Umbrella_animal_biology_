@@ -15,7 +15,9 @@ async def test_protein_data_agent_reembeds_nothing_on_repeat_run(monkeypatch, em
     log = CallLog()
     monkeypatch.setattr(protein_data_module, "fetch_uniprot", make_fake_uniprot_client(log))
 
-    request = ProteinDataInput(gene_list=["FGF5"], instruction="x", context={"tax_id": 9606})
+    request = ProteinDataInput(
+        gene_list=["FGF5"], trait_name="test", instruction="x", context={"tax_id": 9606}
+    )
 
     first = await protein_data_module.protein_data_agent(request)
     second = await protein_data_module.protein_data_agent(request)
@@ -49,10 +51,10 @@ async def test_metadata_filter_isolates_gene_after_two_workflow_runs(monkeypatch
     monkeypatch.setattr(protein_data_module, "fetch_uniprot", make_fake_uniprot_client(CallLog()))
 
     await protein_data_module.protein_data_agent(
-        ProteinDataInput(gene_list=["FGF5"], instruction="x", context={"tax_id": 9606})
+        ProteinDataInput(gene_list=["FGF5"], trait_name="test", instruction="x", context={"tax_id": 9606})
     )
     await protein_data_module.protein_data_agent(
-        ProteinDataInput(gene_list=["UCP1"], instruction="x", context={"tax_id": 9606})
+        ProteinDataInput(gene_list=["UCP1"], trait_name="test", instruction="x", context={"tax_id": 9606})
     )
 
     hits = await semantic_search(

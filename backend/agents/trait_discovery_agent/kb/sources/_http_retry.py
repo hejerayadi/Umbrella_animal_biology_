@@ -1,3 +1,13 @@
+"""
+Shared retry helper for the external REST clients (KEGG, QuickGO, UniProt).
+
+These are public, rate-limited APIs (KEGG documents ~3 req/sec; QuickGO is
+similarly limited) and the LLM tool loops in subagents/*/llm_pick.py can fire
+several back-to-back lookups in quick succession while resolving names for
+every unresolved candidate — exactly the burst pattern that trips a 429. A
+transient rate-limit or 5xx here shouldn't kill an otherwise-working LLM
+decision and force the deterministic fallback; it should just be retried.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +24,13 @@ RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, httpx.TimeoutException):
+    # httpx.TransportError covers TimeoutException *and* the other
+    # connection-level failures (ConnectError, ReadError, RemoteProtocolError,
+    # PoolTimeout, ...) that show up as transient blips in Docker/WSL
+    # networking — a dropped connection is just as retryable as a timeout,
+    # but was previously falling through uncaught below and killing the
+    # deterministic fallback outright instead of getting retried.
+    if isinstance(exc, httpx.TransportError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in RETRYABLE_STATUS_CODES
@@ -53,7 +69,7 @@ async def request_with_retry(
             resp = await client.request(method, url, **kwargs)
             resp.raise_for_status()
             return resp
-        except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
             last_exc = exc
             if not _is_retryable(exc) or attempt == attempts - 1:
                 raise

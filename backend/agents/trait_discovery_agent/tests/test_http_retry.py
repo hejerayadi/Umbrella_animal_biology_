@@ -117,3 +117,37 @@ async def test_timeout_is_still_retried():
     )
     assert resp.status_code == 200
     assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_connect_error_is_retried():
+    """Regression: a dropped/reset connection (httpx.ConnectError / other
+    httpx.TransportError subclasses that aren't a TimeoutException) is just
+    as transient as a timeout in Docker/WSL networking, but used to fall
+    through the except clause uncaught entirely — no retry, no warning log,
+    instant failure that silently killed the deterministic UniProt fallback
+    even though a retry would have succeeded."""
+    client = _FlakyClient([
+        httpx.ConnectError("connection reset by peer"),
+        _FakeResponse(200),
+    ])
+    resp = await request_with_retry(
+        client, "GET", "https://rest.uniprot.org/uniprotkb/search", backoff_base=0.01,
+    )
+    assert resp.status_code == 200
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_connect_error_exhausts_attempts_and_raises():
+    client = _FlakyClient([
+        httpx.ConnectError("connection reset by peer"),
+        httpx.ConnectError("connection reset by peer"),
+        httpx.ConnectError("connection reset by peer"),
+    ])
+    with pytest.raises(httpx.ConnectError):
+        await request_with_retry(
+            client, "GET", "https://rest.uniprot.org/uniprotkb/search",
+            attempts=3, backoff_base=0.01,
+        )
+    assert client.calls == 3

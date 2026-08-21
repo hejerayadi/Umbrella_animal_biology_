@@ -1,3 +1,4 @@
+"""Mock Gene Mapper agent kept for offline / CI tests (unchanged contract)."""
 from schemas.inputs import GeneMapperInput
 from schemas.outputs import GeneMapperOutput, GOAnnotation
 from schemas.common import AgentStatus

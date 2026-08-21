@@ -1,3 +1,4 @@
+"""Mock Pathways agent kept for offline / CI tests (unchanged contract)."""
 from schemas.inputs import PathwaysInput
 from schemas.outputs import PathwayEntry, PathwaysOutput
 from schemas.common import AgentStatus

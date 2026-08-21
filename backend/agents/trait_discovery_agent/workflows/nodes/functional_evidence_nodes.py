@@ -19,9 +19,12 @@ async def pathways_node(state: FunctionalEvidenceState) -> dict:
     return {"pathway_data": out.pathways, "pathways_status": out.status}
 
 async def protein_data_node(state: FunctionalEvidenceState) -> dict:
-    logger.info("protein_data input gene list=%s", state.gene_list)
+    logger.info("protein_data input gene list=%s trait=%s", state.gene_list, state.trait_name)
     out = await protein_data_agent(ProteinDataInput(
-        gene_list=state.gene_list, instruction=state.instruction, context=state.context,
+        gene_list=state.gene_list,
+        trait_name=state.trait_name,      # NEW
+        instruction=state.instruction,
+        context=state.context,
     ))
     logger.info("protein_data output=%s", out)
     return {"protein_data": out.proteins, "protein_data_status": out.status}
