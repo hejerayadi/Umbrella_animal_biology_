@@ -25,6 +25,7 @@ orchestration across the four workers.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import html
 import json
@@ -34,6 +35,7 @@ from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import pandas as pd
 import streamlit as st
@@ -42,7 +44,18 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backend.agents.biodiversity_agent.schema import AgentRequest  # noqa: E402
+from backend.agents.biodiversity_agent.schema import (  # noqa: E402
+    AgentRequest,
+    AgentStatus,
+    BiodiversityFeature,
+)
+from backend.agents.biodiversity_agent.intent import (  # noqa: E402
+    RecognizedIntent,
+    classify_intent,
+)
+from backend.agents.biodiversity_agent.orchestrator import (  # noqa: E402
+    BiodiversityOrchestrator,
+)
 from backend.agents.biodiversity_agent.workers.hotspots.followup import (  # noqa: E402
     looks_like_a_new_question,
     resolve_choice,
@@ -163,6 +176,25 @@ _CSS = (
     f"monospace;color:{MUTED};}}"
     f".m3-foot{{font:400 11.5px 'JetBrains Mono',monospace;color:{MUTED};"
     "text-align:center;margin-top:22px;opacity:.75;}"
+    ".m3-services{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px;}"
+    f".m3-chip{{display:flex;align-items:center;gap:6px;padding:6px 12px;"
+    f"border-radius:100px;background:{PANEL};border:1px solid {LINE};"
+    f"font:500 11.5px 'JetBrains Mono',monospace;color:{MUTED};"
+    "transition:all .35s ease;}"
+    f".m3-chip.on{{background:rgba(143,209,79,0.14);border-color:{LEAF};"
+    f"color:{LEAF};box-shadow:0 0 0 1px {LEAF} inset;}}"
+    ".m3-chip .m3-emoji{font-size:14px;line-height:1;}"
+    f".m3-route{{font:400 11px 'JetBrains Mono',monospace;color:{MUTED};"
+    "margin:0 0 12px 38px;letter-spacing:.02em;opacity:.8;}"
+    f".m3-route b{{color:{LEAF};font-weight:600;}}"
+    f".m3-mini-card{{background:{RAISED};border:1px solid {LINE};"
+    "border-radius:10px;padding:14px 16px;margin:10px 0;}"
+    f".m3-mini-card h4{{margin:0 0 6px;font:600 14px 'Space Grotesk',sans-serif;"
+    f"color:{TEXT};}}"
+    f".m3-mini-card .lbl{{font:400 11px 'JetBrains Mono',monospace;"
+    f"color:{MUTED};margin-right:6px;}}"
+    f".m3-mini-card .val{{font:600 12px 'JetBrains Mono',monospace;"
+    f"color:{AMBER};}}"
     "</style>"
 )
 
@@ -173,9 +205,41 @@ st.markdown(
     '<div class="m3-head">'
     '<div class="m3-badge">M3</div>'
     '<div><div class="m3-title">Agent 6 &mdash; Biodiversity Agent</div>'
-    '<div class="m3-sub">Module M3 · Biodiversity Hotspots</div></div>'
-    '</div><div class="m3-rule"></div>',
+    '<div class="m3-sub">One chat &middot; 4 services &middot; LLM routing</div></div>'
+    '</div>',
     unsafe_allow_html=True)
+
+
+# ------------------------------------------------- 4-service badge strip
+# Each badge = one BiodiversityFeature the orchestrator can route to. The
+# active one glows in leaf-green so the reader sees which worker was
+# picked *before* the answer arrives. The set matches the four values in
+# ``BiodiversityFeature`` verbatim: species distribution (Aziz, real
+# GBIF), habitat (mock, awaiting Miriam), hotspots (Ouissale, real M3
+# pipeline), migration (mock, awaiting Miriam).
+_SERVICES = [
+    (BiodiversityFeature.SPECIES_DISTRIBUTION_MAP, "Species Distribution", "&#128205;"),
+    (BiodiversityFeature.HABITAT_VISUALIZATION,    "Habitat",              "&#127795;"),
+    (BiodiversityFeature.BIODIVERSITY_HOTSPOTS,    "Hotspots",             "&#128293;"),
+    (BiodiversityFeature.MIGRATION_ANALYSIS,       "Migration",            "&#128038;"),
+]
+
+
+def render_service_badges(active: BiodiversityFeature | None) -> None:
+    """The 4-service strip. ``active`` glows green when the LLM routed here."""
+
+    chips = []
+    for feature, label, emoji in _SERVICES:
+        klass = "m3-chip on" if active == feature else "m3-chip"
+        chips.append(
+            f'<div class="{klass}"><span class="m3-emoji">{emoji}</span>'
+            f'{html.escape(label)}</div>'
+        )
+    st.markdown(
+        '<div class="m3-services">' + "".join(chips) + '</div>'
+        '<div class="m3-rule"></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ----------------------------------------------------------------- helpers
@@ -452,6 +516,221 @@ def settings_table(payload) -> list[dict]:
             for name, note in _SETTING_NOTES]
 
 
+@st.cache_resource(show_spinner=False)
+def get_orchestrator() -> BiodiversityOrchestrator:
+    """One orchestrator per Streamlit process. Building the LangGraph and
+    resolving Qdrant (or its dict fallback) is measurable, and it is
+    stateless between requests - so a cached singleton is safe."""
+
+    return BiodiversityOrchestrator()
+
+
+def route_via_llm(question: str) -> RecognizedIntent:
+    """Ask the intent classifier which of the four features to run.
+
+    ``classify_intent`` is ``async``; Streamlit is sync. Wrap once, so the
+    caller stays a one-liner and errors turn into an unroutable intent
+    rather than a 500 in the UI."""
+
+    try:
+        return asyncio.run(classify_intent(question))
+    except RuntimeError:
+        # Nested loop (rare, in tests) - build our own loop.
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(classify_intent(question))
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001 - classifier promises never to raise, this is belt-and-braces
+        return RecognizedIntent(source="error")
+
+
+def run_orch(request: AgentRequest):
+    """Sync wrapper around ``BiodiversityOrchestrator.run``."""
+
+    orch = get_orchestrator()
+    try:
+        return asyncio.run(orch.run(request))
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(orch.run(request))
+        finally:
+            loop.close()
+
+
+def _map_html_from_url(map_url: str | None) -> str | None:
+    """Turn a ``file://`` (or plain path) map URL into the HTML we can embed.
+
+    The three non-hotspots workers return a rendered folium file on disk;
+    the hotspots worker returns the same via ``payload.render_spec``. The
+    hotspots path already has its own reader in ``render_answer``, so this
+    helper is only for the mini-cards below."""
+
+    if not map_url:
+        return None
+    parsed = urlparse(map_url)
+    if parsed.scheme in ("", "file"):
+        # ``file:///C:/...`` on Windows leaves the drive letter in netloc/path.
+        raw = parsed.path or map_url
+        raw = unquote(raw)
+        if raw.startswith("/") and len(raw) > 2 and raw[2] == ":":
+            raw = raw[1:]
+        candidate = Path(raw)
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+    return None
+
+
+# --------------------------- mini-renderers (non-hotspots) -----------------
+# One per BiodiversityFeature that Aziz owns or that ships as a mock. Each
+# renders inside the same bubble/card visual language Ouissale set up for
+# hotspots, so the four services feel like one dashboard rather than four.
+
+
+def _unwrap_aggregated(payload):
+    """The domain orchestrator's aggregator wraps a single-worker output
+    as ``{feature_value: real_output}`` on the FAILED path (and on any
+    multi-worker path). Peel that wrapper so the mini-renderers see the
+    same shape the worker returned directly."""
+
+    if isinstance(payload, dict) and len(payload) == 1:
+        only = next(iter(payload.values()))
+        return only
+    return payload
+
+
+def render_species_distribution(result, *, stream: bool) -> None:
+    """SpeciesDistributionOutput (Aziz, real GBIF)."""
+
+    payload = _unwrap_aggregated(result.output)
+
+    # Real payload is a dataclass; a FAILED path is a string (an error
+    # message like "GBIF returned no occurrences for '...'"). Render it
+    # as a proper bubble + amber card, not as a raw dict repr.
+    if not hasattr(payload, "species_name"):
+        message = str(payload) if payload else "I could not complete that request."
+        bubble(
+            f"I could not find distribution data. <b>{html.escape(message)}</b>. "
+            "GBIF only indexes scientifically named occurrences &mdash; try a "
+            "canonical name (e.g. <i>Loxodonta africana</i>, "
+            "<i>Panthera tigris</i>, <i>Ursus maritimus</i>).",
+            stream=stream,
+        )
+        return
+
+    common = ""
+    obs = getattr(result, "observation_count", None) or payload.observation_count
+    confidence = getattr(result, "confidence", None)
+    conf_txt = f"{confidence:.0%}" if isinstance(confidence, float) else "-"
+
+    bubble(
+        f"I pulled {obs:,} GBIF occurrence records for "
+        f"<i>{html.escape(payload.species_name)}</i>{(' (' + common + ')') if common else ''} "
+        f"and plotted every cleaned coordinate. Confidence <b>{conf_txt}</b> "
+        "reflects how many records the total pool holds.",
+        stream=stream,
+    )
+
+    map_html = _map_html_from_url(getattr(payload, "map_url", None))
+    if map_html:
+        st.components.v1.html(map_html, height=520, scrolling=False)
+    st.markdown(
+        '<div class="m3-caption">Each dot is one cleaned occurrence &middot; '
+        'hover for country, region, year &middot; the &#9906; button top-right '
+        'enlarges the map.</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="m3-mini-card">'
+        f'<h4>{html.escape(payload.species_name)}</h4>'
+        f'<div><span class="lbl">records:</span><span class="val">{obs:,}</span>'
+        f'&nbsp;&nbsp;<span class="lbl">points on map:</span>'
+        f'<span class="val">{len(payload.coordinates):,}</span>'
+        f'&nbsp;&nbsp;<span class="lbl">confidence:</span>'
+        f'<span class="val">{conf_txt}</span></div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_habitat(result, *, stream: bool) -> None:
+    """Habitat mock payload - a small dict with regions and conservation status."""
+
+    payload = _unwrap_aggregated(result.output)
+    if not isinstance(payload, dict):
+        bubble(str(payload) or "I could not complete that request.", stream=stream)
+        return
+
+    species = payload.get("species_name", "this species")
+    status = payload.get("conservation_status", "-")
+    regions = payload.get("habitat_regions") or payload.get("regions") or []
+
+    bubble(
+        f"Habitat characterisation for <i>{html.escape(str(species))}</i>. "
+        f"IUCN status: <b>{html.escape(str(status))}</b>. "
+        f"{len(regions)} habitat region(s) identified. "
+        "(Mock worker &mdash; awaits Sprint 3 real integration.)",
+        stream=stream,
+    )
+
+    map_html = _map_html_from_url(getattr(result, "map_url", None) or payload.get("map_url"))
+    if map_html:
+        st.components.v1.html(map_html, height=460, scrolling=False)
+
+    for region in regions[:6]:
+        name = region.get("name", "-") if isinstance(region, dict) else str(region)
+        biome = region.get("biome", "") if isinstance(region, dict) else ""
+        st.markdown(
+            '<div class="m3-mini-card">'
+            f'<h4>{html.escape(str(name))}</h4>'
+            + (f'<div><span class="lbl">biome:</span><span class="val">'
+               f'{html.escape(str(biome))}</span></div>' if biome else '')
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_migration(result, *, stream: bool) -> None:
+    """Migration mock payload - a route with waypoints and a pattern."""
+
+    payload = _unwrap_aggregated(result.output)
+    if not isinstance(payload, dict):
+        bubble(str(payload) or "I could not complete that request.", stream=stream)
+        return
+
+    species = payload.get("species_name", "this species")
+    pattern = payload.get("migration_pattern") or payload.get("pattern") or "-"
+    route = (payload.get("migration_route") or payload.get("route") or [])
+
+    bubble(
+        f"Migration analysis for <i>{html.escape(str(species))}</i>. "
+        f"Pattern: <b>{html.escape(str(pattern))}</b>. "
+        f"Route has {len(route)} waypoint(s). "
+        "(Mock worker &mdash; awaits Miriam's Sprint 3 delivery.)",
+        stream=stream,
+    )
+
+    map_html = _map_html_from_url(getattr(result, "map_url", None) or payload.get("map_url"))
+    if map_html:
+        st.components.v1.html(map_html, height=460, scrolling=False)
+
+    for i, waypoint in enumerate(route[:8], start=1):
+        if not isinstance(waypoint, dict):
+            continue
+        st.markdown(
+            '<div class="m3-mini-card">'
+            f'<h4>#{i} &middot; {html.escape(str(waypoint.get("region", waypoint.get("name", "-"))))}</h4>'
+            f'<div><span class="lbl">season:</span><span class="val">'
+            f'{html.escape(str(waypoint.get("season", "-")))}</span>'
+            f'&nbsp;&nbsp;<span class="lbl">month:</span><span class="val">'
+            f'{html.escape(str(waypoint.get("month", "-")))}</span></div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+
 def render_answer(result, key: str = "live", *, stream: bool = False) -> None:
     """Render one worker result as an assistant turn.
 
@@ -464,6 +743,30 @@ def render_answer(result, key: str = "live", *, stream: bool = False) -> None:
     # --- the paths that carry no analysis: ask, or explain, and stop.
     if outcome_of(result) is M3Outcome.NEEDS_CLARIFICATION:
         ask_for_a_region(payload, key)
+        return
+
+    # --- non-hotspots services routed through the orchestrator. Two
+    # signals get us to the right renderer:
+    #   1. The aggregator's dict wrapper ``{feature_value: ...}`` names the
+    #      feature outright - most reliable on the FAILED path.
+    #   2. ``source_agents`` names the worker that produced the payload -
+    #      reliable on the COMPLETED path (aggregator unwraps single).
+    agents = " ".join(getattr(result, "source_agents", []) or []).lower()
+    wrapped_feature = None
+    if isinstance(payload, dict) and len(payload) == 1:
+        wrapped_feature = next(iter(payload.keys()))
+
+    if (wrapped_feature == BiodiversityFeature.SPECIES_DISTRIBUTION_MAP.value
+            or "species distribution" in agents):
+        render_species_distribution(result, stream=stream)
+        return
+    if (wrapped_feature == BiodiversityFeature.HABITAT_VISUALIZATION.value
+            or "habitat" in agents):
+        render_habitat(result, stream=stream)
+        return
+    if (wrapped_feature == BiodiversityFeature.MIGRATION_ANALYSIS.value
+            or "migration" in agents):
+        render_migration(result, stream=stream)
         return
 
     if not hasattr(payload, "quality"):
@@ -708,18 +1011,25 @@ with st.sidebar:
 if "turns" not in st.session_state:
     st.session_state.turns = []          # list[(role, payload)]
     st.session_state.greeted = False
+    # The last feature the orchestrator routed to. Drives the badge glow so
+    # the reader sees which of the four workers is producing the answer.
+    st.session_state.active_feature = None
 
 if not st.session_state.greeted:
     st.session_state.greeted = True
 
+# The 4-service strip - always visible, glow reflects the last routed feature.
+render_service_badges(st.session_state.get("active_feature"))
+
 # Replay the conversation so far. Results are re-rendered from the stored
 # AgentResult, not recomputed - the worker is called once per question.
-bubble("Hi — I'm the Biodiversity Hotspots module. Name any place — a country, "
-       "region, island or park — and I'll show you where species concentrate "
-       "most, with a map. Name an animal instead and I'll show where its records "
-       "concentrate. Answers come from a live GBIF query: about half a minute the "
-       "first time a place is asked for, a few seconds after that. Each step is "
-       "shown as it runs.")
+bubble("Hi &mdash; I'm the Biodiversity Agent. One chat, four services: "
+       "<b>Species Distribution</b> (where a species is seen), <b>Habitat</b> "
+       "(its conservation status), <b>Hotspots</b> (where richness peaks) and "
+       "<b>Migration</b>. Ask any question in plain language &mdash; the "
+       "orchestrator picks the right worker with an LLM, and the badge lights "
+       "up in green so you can see who answered. Live GBIF: about half a "
+       "minute the first time a place is asked for, a few seconds after that.")
 
 for position, (role, item) in enumerate(st.session_state.turns):
     if role == "user":
@@ -788,16 +1098,34 @@ if question:
     st.session_state.turns.append(("user", question))
     bubble(question, "user")
 
-    # The worker is the whole module: it resolves the region from the question
-    # itself, so nothing is pre-decided here.
-    request = AgentRequest(
-        instruction=question,
-        # Only set when a click or a follow-up answer already decided it; a typed
-        # question is left for the worker to read, as before.
-        region=region,
-        # No settings to pass: the worker applies the documented defaults and
-        # tunes eps and min_samples itself, per question.
-        context={})
+    # ---- LLM intent detection: pick one of the 4 features from free text.
+    # ``classify_intent`` never raises - a missing LLM, a network error or a
+    # model that answered with prose all come back as ``feature=None`` and
+    # we default to hotspots (the historical behaviour of this dashboard).
+    with st.spinner(""):
+        intent = route_via_llm(question)
+
+    if intent.is_usable:
+        picked = BiodiversityFeature(intent.feature)
+    else:
+        picked = BiodiversityFeature.BIODIVERSITY_HOTSPOTS
+
+    st.session_state.active_feature = picked
+
+    # A one-line trace above the answer, so the reader can see the routing
+    # decision without opening dev tools. ``intent.source`` records how it
+    # was arrived at: llm / llm_unavailable / unparsable / error.
+    label_by_feature = {feature: label for feature, label, _ in _SERVICES}
+    route_line = (
+        f"routed to <b>{html.escape(label_by_feature[picked])}</b> "
+        f"&middot; source: {intent.source}"
+        + (f" &middot; species: <i>{html.escape(intent.species_name)}</i>"
+           if intent.species_name else "")
+        + (f" &middot; region: <i>{html.escape(intent.region)}</i>"
+           if intent.region and intent.region != "global" else "")
+    )
+    st.markdown(f'<div class="m3-route">&#8618; {route_line}</div>',
+                unsafe_allow_html=True)
 
     trace = []
     slot = st.empty()
@@ -807,8 +1135,35 @@ if question:
         trace.append((time.time() - began, message))
         slot.markdown(status_html(trace, running=True), unsafe_allow_html=True)
 
-    report("reading the question")
-    result = HotspotsWorker().run(request, progress=report)
+    report(f"routing &rarr; {label_by_feature[picked]}")
+
+    # ---- dispatch. Hotspots keeps the direct call with its progress
+    # callback so Ouissale's live step timeline stays readable during the
+    # 30-45 s GBIF wait. The three other features are fast enough that a
+    # spinner suffices, so they go through the domain orchestrator (which
+    # normalises species names via Qdrant and routes cleanly).
+    if picked is BiodiversityFeature.BIODIVERSITY_HOTSPOTS:
+        request = AgentRequest(
+            instruction=question,
+            feature=picked.value,
+            region=region or intent.region or "global",
+            species_name=intent.species_name,
+            context={},
+        )
+        report("reading the question")
+        result = HotspotsWorker().run(request, progress=report)
+    else:
+        request = AgentRequest(
+            instruction=question,
+            feature=picked.value,
+            region=intent.region or "global",
+            species_name=intent.species_name,
+            context={},
+        )
+        report(f"dispatching to {label_by_feature[picked]}")
+        result = run_orch(request)
+        report("worker returned")
+
     trace.append((time.time() - began, "done"))
     slot.markdown(status_html(trace, running=False), unsafe_allow_html=True)
 

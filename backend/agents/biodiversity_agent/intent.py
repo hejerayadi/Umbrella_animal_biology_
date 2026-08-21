@@ -52,7 +52,7 @@ fences, no extra keys:
 
 {
   "feature": "species_distribution_map" | "habitat_visualization" | "biodiversity_hotspots" | "migration_analysis",
-  "species_name": "<scientific or common name, or null>",
+  "species_name": "<scientific Latin binomial only, or null>",
   "region": "<continent or country, default 'global'>"
 }
 
@@ -61,6 +61,13 @@ Rules:
 - habitat_visualization: user asks about a species HABITAT / conservation status.
 - biodiversity_hotspots: user asks about REGIONS with many species (no single species).
 - migration_analysis: user asks about MIGRATION / seasonal movement of a species.
+- species_name MUST be the scientific Latin binomial only (e.g. "Loxodonta africana",
+  "Panthera tigris", "Ursus maritimus", "Sterna paradisaea"). Never a common name,
+  never a plural, never a parenthetical, never a disjunction "A / B". If the user
+  gave a common name, translate it. If the user named a broader group with no
+  single accepted binomial (e.g. "elephants", "tigers", "bears"), pick the most
+  representative canonical species (savanna elephant -> Loxodonta africana,
+  tiger -> Panthera tigris, brown bear -> Ursus arctos).
 - If the user asks about hotspots, species_name is null.
 - If the question is not about any of these four, set "feature" to null.
 - Output ONLY the JSON. No markdown."""

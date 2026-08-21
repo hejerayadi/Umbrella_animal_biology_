@@ -43,6 +43,15 @@ class SpeciesDistributionWorker:
         if not species:
             return self._failed("species_name is required")
 
+        # Sanitize the species name. GPT-5-mini sometimes returns compound
+        # explanations like ``"African elephants (Loxodonta africana /
+        # Loxodonta cyclotis)"`` in the ``species_name`` slot. GBIF cannot
+        # search on that. Strip any ``(...)`` gloss and, if the remainder
+        # is a ``A / B`` disjunction, pick the first Latin binomial - it
+        # is the safer bet (savanna elephant is far more numerous than
+        # forest elephant in GBIF, tiger subspecies rank the same way).
+        species = self._sanitize_species(species)
+
         # Lazy imports break the circular dependency between the
         # orchestrator package and its worker packages.
         try:
@@ -130,6 +139,63 @@ class SpeciesDistributionWorker:
         )
 
     # ---------- helpers ----------
+
+    @staticmethod
+    def _sanitize_species(raw: str) -> str:
+        """Clean an LLM-supplied species name for GBIF.
+
+        GPT-5-mini has been observed to return, in the ``species_name``
+        slot, any of: ``"African elephant"`` (a common name); ``"African
+        elephants (Loxodonta africana / Loxodonta cyclotis)"`` (a common
+        name with a parenthetical Latin gloss); ``"Loxodonta africana /
+        Loxodonta cyclotis"`` (a disjunction of two binomials);
+        ``"Panthera tigris (Bengal tiger)"`` (a binomial with a common
+        name gloss). GBIF ``search_occurrences`` only accepts a single
+        Latin binomial.
+
+        Strategy: prefer any Latin binomial found anywhere in the string
+        (``Genus species`` - capitalised genus, lowercase species). If
+        several, keep the first. If none, fall back to the string with
+        parentheticals stripped and any disjunction split. Never returns
+        empty - if sanitising empties the string, the raw input is
+        returned so the downstream ``NoResults`` message is meaningful.
+        """
+
+        import re
+
+        # A word that starts with a capital + English adjective is not a
+        # Latin genus. Kept short: Latin genera are 8k+ words and blocking
+        # a real one is worse than accepting an English one as long as the
+        # blocked set stays tiny and uncontroversial.
+        _NOT_LATIN = {
+            "African", "American", "Arctic", "Asian", "Atlantic", "Australian",
+            "Bengal", "Black", "Blue", "Brown", "Common", "Eastern",
+            "European", "Giant", "Gray", "Great", "Grey", "Indian", "Little",
+            "Northern", "Pacific", "Polar", "Red", "Siberian", "Southern",
+            "Sumatran", "Western", "White", "Yellow",
+        }
+
+        def _binomials(text: str) -> list[str]:
+            hits = re.findall(r"\b[A-Z][a-z]+ [a-z]+\b", text)
+            return [h for h in hits if h.split()[0] not in _NOT_LATIN]
+
+        # 1. Prefer a Latin binomial inside parens: "African elephants
+        # (Loxodonta africana / ...)" -> "Loxodonta africana".
+        for paren in re.findall(r"\(([^)]+)\)", raw):
+            inner = _binomials(paren)
+            if inner:
+                return inner[0]
+
+        # 2. Otherwise look outside parens.
+        outside = re.sub(r"\s*\([^)]*\)\s*", " ", raw).strip()
+        binomials = _binomials(outside)
+        if binomials:
+            return binomials[0]
+
+        # 3. Fallback: keep the left side of any ``A / B`` disjunction.
+        if "/" in outside:
+            outside = outside.split("/", 1)[0].strip()
+        return outside or raw
 
     @staticmethod
     def _resolve_species_name(request: AgentRequest) -> str | None:
