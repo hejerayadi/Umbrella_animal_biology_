@@ -1,0 +1,28 @@
+{
+  "name": "Pathways",
+  "type": "worker",
+  "description": "For a list of candidate genes, retrieves all associated KEGG pathways and returns pathway IDs and names.",
+  "reports_to": "Functional Evidence",
+  "may_need": [
+    {
+      "agent": "Gene Mapper",
+      "note": "data dependency only: gene_list originates here, passed down via Functional Evidence"
+    }
+  ],
+  "managed_agents": [],
+  "managed_services": ["KEGG REST API (gene-to-pathway link endpoint)"],
+  "capabilities": [
+    "Pathway lookup by gene list",
+    "Malformed-ID validation"
+  ],
+  "input": [
+    { "name": "gene_list", "type": "list[str]", "source": "from Gene Mapper, via Functional Evidence" }
+  ],
+  "output": {
+    "fields": [
+      { "name": "pathways", "type": "list[PathwayEntry]" },
+      { "name": "malformed_ids", "type": "list[str]" }
+    ],
+    "control_fields": ["status", "target_agent", "prompt_to_target_agent"]
+  }
+}

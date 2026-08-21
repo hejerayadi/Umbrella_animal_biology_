@@ -1,0 +1,212 @@
+services:
+  trait-discovery-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_llm_smoke.py -v
+
+  create-collections:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python scripts/create_collections.py
+
+  retrieval-quality:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python scripts/test_retrieval_quality.py
+
+  test-retrieval:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_retrieval.py -v -s
+
+  test-integration:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/integration -v -s
+
+  orchestration-retrieval-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.orchestration_retrieval_scenarios --scenario all --verbose
+
+  demo-full-integration:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.demo_full_integration --verbose
+
+  demo-live-integration:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.demo_live_integration --verbose
+
+  # -------------------------------------------------------------------------
+  # NEW: Pathways Agent services
+  # -------------------------------------------------------------------------
+  pathways-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.check_pathways
+
+  test-pathways:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_pathways.py -v -s
+
+
+  # -------------------------------------------------------------------------
+  # Gene Mapper Agent service
+  # -------------------------------------------------------------------------
+  gene-mapper-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.check_gene_mapper
+
+  test-gene-mapper:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_gene_mapper.py -v -s
+
+  test-tool-loop:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_tool_loop.py -v -s
+
+  # -------------------------------------------------------------------------
+  # Live --scenario runners (real QuickGO/KEGG/Qdrant, LLM patched where
+  # needed for determinism — see the module docstring in each script)
+  # -------------------------------------------------------------------------
+  gene-mapper-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.gene_mapper_scenarios --scenario all --verbose
+
+  pathways-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.pathways_scenarios --scenario all --verbose
+
+  # -------------------------------------------------------------------------
+  # Protein Data Agent services
+  # -------------------------------------------------------------------------
+  protein-data-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.check_protein_data
+
+  test-protein-data:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_protein_data.py -v -s
+
+  test-kb-integration:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_kb_integration.py -v -s
+
+  protein-data-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.protein_data_scenarios --scenario all --verbose
+
+  # -------------------------------------------------------------------------
+  # Functional Evidence sub-orchestrator services
+  # -------------------------------------------------------------------------
+  test-functional-evidence-merge:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_functional_evidence_merge.py -v -s
+
+  test-suborchestrator-to-agent:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/integration/test_suborchestrator_to_agent.py -v -s
+
+  functional-evidence-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.functional_evidence_scenarios --scenario all --verbose
+
+  # -------------------------------------------------------------------------
+  # Literature Support Agent services
+  # -------------------------------------------------------------------------
+  test-literature-support:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: pytest tests/test_literature_support.py -v -s
+
+  literature-support-scenarios:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    command: python -m scripts.literature_support_scenarios --scenario all --verbose
