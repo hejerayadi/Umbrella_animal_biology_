@@ -7,198 +7,79 @@ services:
       - .:/app
     command: pytest tests/test_llm_smoke.py -v
 
-  create-collections:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python scripts/create_collections.py
-
-  retrieval-quality:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python scripts/test_retrieval_quality.py
-
-  test-retrieval:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_retrieval.py -v -s
 
   test-integration:
     build: .
     env_file:
       - .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
     volumes:
       - .:/app
     command: pytest tests/integration -v -s
 
-  orchestration-retrieval-scenarios:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.orchestration_retrieval_scenarios --scenario all --verbose
-
-  demo-full-integration:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.demo_full_integration --verbose
-
-  demo-live-integration:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.demo_live_integration --verbose
-
-  # -------------------------------------------------------------------------
-  # NEW: Pathways Agent services
-  # -------------------------------------------------------------------------
-  pathways-agent:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.check_pathways
-
-  test-pathways:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_pathways.py -v -s
-
-
-  # -------------------------------------------------------------------------
-  # Gene Mapper Agent service
-  # -------------------------------------------------------------------------
-  gene-mapper-agent:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.check_gene_mapper
-
-  test-gene-mapper:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_gene_mapper.py -v -s
-
-  test-tool-loop:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_tool_loop.py -v -s
-
-  # -------------------------------------------------------------------------
-  # Live --scenario runners (real QuickGO/KEGG/Qdrant, LLM patched where
-  # needed for determinism — see the module docstring in each script)
-  # -------------------------------------------------------------------------
-  gene-mapper-scenarios:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.gene_mapper_scenarios --scenario all --verbose
-
-  pathways-scenarios:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.pathways_scenarios --scenario all --verbose
-
-  # -------------------------------------------------------------------------
-  # Protein Data Agent services
-  # -------------------------------------------------------------------------
-  protein-data-agent:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.check_protein_data
-
-  test-protein-data:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_protein_data.py -v -s
-
-  test-kb-integration:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_kb_integration.py -v -s
-
-  protein-data-scenarios:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.protein_data_scenarios --scenario all --verbose
-
-  # -------------------------------------------------------------------------
-  # Functional Evidence sub-orchestrator services
-  # -------------------------------------------------------------------------
-  test-functional-evidence-merge:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/test_functional_evidence_merge.py -v -s
-
-  test-suborchestrator-to-agent:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: pytest tests/integration/test_suborchestrator_to_agent.py -v -s
-
-  functional-evidence-scenarios:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-    command: python -m scripts.functional_evidence_scenarios --scenario all --verbose
-
+  
   # -------------------------------------------------------------------------
   # Literature Support Agent services
   # -------------------------------------------------------------------------
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      # Single source of truth: pulled from the same .env the client driver
+      # reads (see kb/neo4j_store.py / NEO4J_USER, NEO4J_PASSWORD in
+      # .env.example) via docker compose's automatic .env-file substitution,
+      # rather than a value hardcoded here that has to be kept in sync by
+      # hand — that's exactly what caused a client/server auth mismatch
+      # (Neo.ClientError.Security.Unauthorized) when this was hardcoded.
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-change-me-in-real-envs}
+    # No `ports:` mapping — every service here reaches Neo4j via the
+    # internal Docker network (NEO4J_URI=bolt://neo4j:7687 in .env.example),
+    # never through the host, so publishing to 127.0.0.1 only risks
+    # colliding with anything else on your machine already using 7474/7687
+    # (including a leftover orphaned container from an earlier run — see
+    # `docker compose down --remove-orphans`). Uncomment below only if you
+    # want to poke at this instance from Neo4j Browser/Desktop on the host.
+    # ports:
+    #   - "7474:7474"
+    #   - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    healthcheck:
+      # Same substitution as above, for the same reason — one source of
+      # truth for these credentials, not two hardcoded copies that can drift.
+      # Checks bolt directly (what neo4j_store.py actually connects on),
+      # not the HTTP browser port — those two can come up at slightly
+      # different times, and bolt readiness is the only thing that matters
+      # here. cypher-shell ships in every Neo4j image, unlike wget/curl,
+      # which isn't guaranteed to stick around across image variants.
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-change-me-in-real-envs} 'RETURN 1' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  test-neo4j-store:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: pytest tests/test_neo4j_store.py tests/integration/test_neo4j_store.py -v -s
+
   test-literature-support:
     build: .
     env_file:
       - .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
     volumes:
       - .:/app
     command: pytest tests/test_literature_support.py -v -s
@@ -207,6 +88,12 @@ services:
     build: .
     env_file:
       - .env
+    depends_on:
+      neo4j:
+        condition: service_healthy
     volumes:
       - .:/app
     command: python -m scripts.literature_support_scenarios --scenario all --verbose
+
+volumes:
+  neo4j_data:

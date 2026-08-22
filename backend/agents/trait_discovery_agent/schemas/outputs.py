@@ -50,6 +50,10 @@ class FunctionalEvidenceOutput:
     status: AgentStatus
     pathway_data: List[PathwayEntry] = field(default_factory=list)
     protein_data: List[ProteinEntry] = field(default_factory=list)
+    # §8: partial-failure detail from Pathways / Protein Data respectively,
+    # passed upward rather than dropped when one child fails.
+    malformed_ids: List[str] = field(default_factory=list)
+    missing_genes: List[str] = field(default_factory=list)
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None
 
@@ -75,5 +79,9 @@ class TraitDiscoveryOutput:
     protein_data: List[ProteinEntry] = field(default_factory=list)
     evidence: List[LiteratureRecord] = field(default_factory=list)
     explanation: str = ""
+    # §8: surfaced from the sub-orchestrators.
+    malformed_ids: List[str] = field(default_factory=list)
+    missing_genes: List[str] = field(default_factory=list)
+    unmatched_genes: List[str] = field(default_factory=list)
     target_agent: Optional[str] = None
     prompt_to_target_agent: Optional[str] = None

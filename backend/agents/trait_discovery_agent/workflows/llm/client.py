@@ -15,6 +15,27 @@ FALLBACK_MODELS = (DEFAULT_MODEL,)
 MAX_CAPACITY_RETRIES = 3
 CAPACITY_RETRY_BASE_SECONDS = 1.5
 
+# 429s (request-rate quota) are a fundamentally different failure than 503s
+# (momentary worker-pool saturation): a free-tier NIM key's quota window is
+# typically per-minute, not per-request, so retrying after 1-2s (the 503
+# backoff) just burns the retry budget for no benefit — it needs a much more
+# patient wait, and more attempts, before the quota actually clears.
+# Configurable via env since the right amount of patience depends entirely
+# on your tier/quota, which this code has no way to introspect.
+MAX_RATE_LIMIT_RETRIES = int(os.getenv("NIM_MAX_RATE_LIMIT_RETRIES", "5"))
+RATE_LIMIT_RETRY_BASE_SECONDS = float(os.getenv("NIM_RATE_LIMIT_RETRY_BASE_SECONDS", "10"))
+RATE_LIMIT_RETRY_MAX_SECONDS = float(os.getenv("NIM_RATE_LIMIT_RETRY_MAX_SECONDS", "60"))
+
+# Optional proactive throttle: a minimum gap enforced between the *start* of
+# consecutive NIM calls, process-wide, regardless of which subagent issues
+# them. Off by default (0s) since most deployments aren't quota-constrained
+# and shouldn't pay a latency tax for it — but for a free-tier key that's
+# already hitting 429s, spacing requests out can avoid tripping the limit in
+# the first place rather than only reacting to it after the fact.
+MIN_CALL_INTERVAL_SECONDS = float(os.getenv("NIM_MIN_CALL_INTERVAL_SECONDS", "0"))
+_last_call_started_at: float = 0.0
+_throttle_lock = asyncio.Lock()
+
 
 def _get_api_key() -> str | None:
     return os.getenv("NVIDIA_NIM_API_KEY") or os.getenv("NIM_API_KEY")
@@ -52,23 +73,67 @@ def _is_capacity_error(exc: Exception) -> bool:
     )
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """429s — a request-quota rate limit, distinct from worker-pool
+    exhaustion (_is_capacity_error above) and needing a much longer backoff.
+    langchain_nvidia_ai_endpoints raises a bare Exception (see its
+    _common.py:_try_raise) with no structured status code or Retry-After
+    header exposed to the caller — only this string — so string matching is
+    all that's available here."""
+    message = str(exc).lower()
+    return "429" in message or "too many requests" in message
+
+
+async def _throttle() -> None:
+    """Optional proactive spacing between NIM calls (see
+    MIN_CALL_INTERVAL_SECONDS). No-op unless explicitly configured."""
+    if MIN_CALL_INTERVAL_SECONDS <= 0:
+        return
+    global _last_call_started_at
+    async with _throttle_lock:
+        wait = _last_call_started_at + MIN_CALL_INTERVAL_SECONDS - asyncio.get_event_loop().time()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_call_started_at = asyncio.get_event_loop().time()
+
+
 async def _retry_on_capacity(coro_fn):
     """Call coro_fn() (a zero-arg async callable), retrying with jittered
-    exponential backoff on transient worker-pool exhaustion (503)."""
+    exponential backoff on transient worker-pool exhaustion (503) or
+    request-rate limiting (429) — the latter gets a much longer backoff and
+    a larger retry budget since it's a slower-clearing condition than the
+    former (see MAX_RATE_LIMIT_RETRIES vs MAX_CAPACITY_RETRIES)."""
     last_error: Exception | None = None
-    for attempt in range(MAX_CAPACITY_RETRIES + 1):
+    attempt = 0
+    while True:
+        await _throttle()
         try:
             return await coro_fn()
         except Exception as exc:
-            if not _is_capacity_error(exc) or attempt == MAX_CAPACITY_RETRIES:
+            is_rate_limited = _is_rate_limit_error(exc)
+            is_capacity = (not is_rate_limited) and _is_capacity_error(exc)
+            if not (is_rate_limited or is_capacity):
+                raise
+            max_retries = MAX_RATE_LIMIT_RETRIES if is_rate_limited else MAX_CAPACITY_RETRIES
+            if attempt >= max_retries:
                 raise
             last_error = exc
-            delay = CAPACITY_RETRY_BASE_SECONDS * (2 ** attempt) + random.uniform(0, 0.5)
-            logger.warning(
-                "NIM worker pool exhausted (attempt %d/%d), retrying in %.1fs: %s",
-                attempt + 1, MAX_CAPACITY_RETRIES, delay, exc,
-            )
+            if is_rate_limited:
+                delay = min(
+                    RATE_LIMIT_RETRY_BASE_SECONDS * (2 ** attempt), RATE_LIMIT_RETRY_MAX_SECONDS
+                ) + random.uniform(0, 1.0)
+                logger.warning(
+                    "NIM rate limited [429] (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1, max_retries, delay, exc,
+                )
+            else:
+                delay = CAPACITY_RETRY_BASE_SECONDS * (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    "NIM worker pool exhausted (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1, max_retries, delay, exc,
+                )
             await asyncio.sleep(delay)
+            attempt += 1
     raise last_error  # pragma: no cover - unreachable
 
 

@@ -44,7 +44,13 @@ async def join_and_route_node(state: TraitDiscoveryState) -> dict:
     it there are no genes to explain anything about. Functional Evidence is
     supplementary; even a total Functional Evidence failure (both Pathways
     and Protein Data failed, per merge_node) must NOT hard-fail the run, so
-    functional_evidence_status is deliberately not checked here."""
+    functional_evidence_status is deliberately not checked here.
+
+    This is also the fan-in point for Functional Evidence and Literature
+    Support, which run in parallel off Gene Mapper's output (see
+    build_trait_discovery_graph) — LangGraph runs this node once per
+    superstep, after both parallel branches have completed, not once per
+    branch."""
     logger.info(
         "join_and_route statuses gene_mapper=%s functional_evidence=%s literature=%s",
         state.gene_mapper_status,
@@ -84,6 +90,11 @@ def build_trait_discovery_graph():
             "pathway_data": sub_result.get("pathway_data", []),
             "protein_data": sub_result.get("protein_data", []),
             "functional_evidence_status": sub_result.get("status"),
+            # §8: partial-failure detail from the sub-orchestrator's children
+            # — surfaced at the top level rather than swallowed at the
+            # Functional Evidence boundary.
+            "malformed_ids": sub_result.get("malformed_ids", []),
+            "missing_genes": sub_result.get("missing_genes", []),
         }
 
     graph.add_node("check_gene_list", check_gene_list_node)
@@ -101,8 +112,14 @@ def build_trait_discovery_graph():
         "escalate_genome_agent": "escalate_genome_agent",
         "gene_mapper": "gene_mapper",
     })
+    # Gene Mapper must finish first (Functional Evidence and Literature
+    # Support both consume its output). From there the two are independent —
+    # neither needs the other's result — so they fan out in parallel and
+    # fan back in at join_and_route, the same pattern Functional Evidence
+    # itself uses internally for Pathways/Protein Data.
     graph.add_edge("gene_mapper", "functional_evidence")
-    graph.add_edge("functional_evidence", "literature_support")
+    graph.add_edge("gene_mapper", "literature_support")
+    graph.add_edge("functional_evidence", "join_and_route")
     graph.add_edge("literature_support", "join_and_route")
     graph.add_conditional_edges("join_and_route", route_after_join, {
         "escalate_literature_agent": "escalate_literature_agent",

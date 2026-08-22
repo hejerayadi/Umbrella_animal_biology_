@@ -13,10 +13,10 @@ Two independent pieces live here:
   - request_literature_evidence: the actual cross-agent HTTP call.
   - dedupe_by_pmid: a deterministic, exact pre-pass (no LLM) that both the
     node and the bind_tools loop can call.
-  - write_trait_gene_relationship: the Neo4j knowledge-graph write. NOT YET
-    IMPLEMENTED (see literature_support.py §1/§6 in the design guide) — this
-    is a documented stub, not a bug. Per §9, a failure here must not fail the
-    whole subagent; the evidence itself is still valid.
+  - write_trait_gene_relationship: the Neo4j knowledge-graph write
+    (kb/neo4j_store.py). Scalar-only signature (trait_name, gene_symbol,
+    pmid) — never evidence content. Fails soft per §9: a write failure must
+    not fail the whole subagent; the evidence itself is still valid.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from langchain_core.tools import tool
 
 from schemas.outputs import LiteratureRecord
 from kb.sources._http_retry import request_with_retry
+from kb.neo4j_store import upsert_trait_gene_relationship
 
 logger = logging.getLogger(__name__)
 
@@ -127,16 +128,14 @@ async def _write_trait_gene_relationship_raw(
     trait_name: str, gene_symbol: str, pmid: str
 ) -> bool:
     """Writes a trait->gene edge backed by a pmid to the Neo4j knowledge
-    graph. NOT YET IMPLEMENTED (design guide §1/§6): no Neo4j driver/upsert
-    query has been wired up in this repo yet. Per §9, this must fail soft —
-    the caller treats a False return as a warning, not a reason to downgrade
-    the subagent's status, since the evidence itself is still valid."""
-    logger.warning(
-        "write_trait_gene_relationship(%s, %s, %s) — Neo4j KG write is not "
-        "implemented yet; evidence is still returned to the caller.",
-        trait_name, gene_symbol, pmid,
-    )
-    return False
+    graph (kb/neo4j_store.py). This function's own signature is part of the
+    "never cache evidence content" guarantee (design guide §6): it accepts
+    only trait_name/gene_symbol/pmid, so there is no parameter through which
+    a title or short_summary could reach the graph, even after future edits.
+    Per §9, this fails soft — the caller treats a False return as a warning,
+    not a reason to downgrade the subagent's status, since the evidence
+    itself is still valid and already returned to the caller."""
+    return await upsert_trait_gene_relationship(trait_name, gene_symbol, pmid)
 
 
 # --------------------------------------------------------------------------- #

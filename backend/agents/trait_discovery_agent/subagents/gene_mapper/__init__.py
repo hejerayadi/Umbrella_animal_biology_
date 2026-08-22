@@ -46,6 +46,24 @@ async def gene_mapper_agent(input: GeneMapperInput) -> GeneMapperOutput:
     annotations: list[GOAnnotation] = []
     unmatched: list[str] = []
 
+    # §7 (insufficient info): an empty gene_list is a distinct case from
+    # "every gene failed to match" — neither QuickGO nor the LLM is ever
+    # invoked here. Handled as its own branch (rather than falling through
+    # the loop into the same empty annotations=[]/unmatched=[] shape) so the
+    # log line makes the reason legible instead of looking identical to a
+    # full-batch match failure.
+    if not input.gene_list:
+        logger.info(
+            "gene_mapper_agent received an empty gene_list (trait=%s) — "
+            "nothing to map, returning empty result without contacting QuickGO/LLM.",
+            input.trait_name,
+        )
+        return GeneMapperOutput(
+            status=AgentStatus.FAILED,
+            go_annotations=annotations,
+            unmatched_genes=unmatched,
+        )
+
     for gene in input.gene_list:
         uniprot_accession = input.context.get("uniprot_accessions", {}).get(gene)
         if not uniprot_accession:

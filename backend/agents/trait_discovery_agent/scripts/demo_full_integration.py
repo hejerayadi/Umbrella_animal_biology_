@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import subagents.pathways as pathways_module
 import subagents.protein_data as protein_data_module
+import subagents.literature_support as literature_support_module
 import workflows.capability_resolver as resolver_module
 import workflows.trait_discovery_graph as td_graph_module
 from kb.qdrant_store import ensure_collections, get_client, COLLECTIONS
@@ -51,8 +52,13 @@ from workflows.state import FunctionalEvidenceState, TraitDiscoveryState
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# The only faked boundaries: outbound HTTP (KEGG/UniProt) and outbound LLM
-# (NIM). Everything downstream of these two calls is real production code.
+# The only faked boundaries: outbound HTTP (KEGG/UniProt/Literature Agent) and
+# outbound LLM (NIM). Everything downstream of these calls is real production
+# code. Literature Agent is faked here (rather than requiring a real running
+# service) because no docker-compose service exists for it in this repo — per
+# kb/sources/literature_agent_client.py, it's "owned/deployed by another
+# team" — so a real run needs LITERATURE_AGENT_URL pointed at that team's
+# instance instead of this fake.
 # ---------------------------------------------------------------------------
 KEGG_DB = {
     "hsa:FGF5": dict(pathway_id="hsa04010", pathway_name="MAPK signaling pathway"),
@@ -66,6 +72,15 @@ UNIPROT_DB = {
                           function_summary="Mitochondrial proton channel, generates heat.",
                           source_accession="P25874"),
 }
+# Two records — comfortably above literature_support/mock.py's
+# _THIN_EVIDENCE_THRESHOLD (1), so this doesn't accidentally exercise the
+# escalation path this demo isn't testing.
+LITERATURE_DB = [
+    {"pmid": "18408757", "title": "A missense mutation in FGF5 causes a hair growth disorder.",
+     "year": 2008, "short_summary": "FGF5 loss-of-function is linked to inhibited hair elongation."},
+    {"pmid": "23459857", "title": "UCP1 and adaptive non-shivering thermogenesis in brown fat.",
+     "year": 2013, "short_summary": "UCP1 uncouples respiration to generate heat instead of ATP."},
+]
 
 
 def make_fake_kegg(log: list):
@@ -82,6 +97,13 @@ def make_fake_uniprot(log: list):
         row = UNIPROT_DB.get((gene_symbol, tax_id))
         return ProteinEntry(**row) if row else None
     return fake_fetch_uniprot
+
+
+def make_fake_literature(log: list):
+    async def fake_request_literature_evidence(trait_name: str, gene_list: list[str]):
+        log.append((trait_name, tuple(gene_list)))
+        return LITERATURE_DB
+    return fake_request_literature_evidence
 
 
 def make_fake_explain(log: list):
@@ -169,6 +191,7 @@ async def phase_1_orchestrator_to_suborchestrator(verbose: bool) -> tuple[dict, 
         context={
             "gene_list": ["FGF5", "UCP1"],
             "kegg_gene_ids": {"FGF5": "hsa:FGF5", "UCP1": "hsa:UCP1"},
+            "uniprot_accessions": {"FGF5": "P12034", "UCP1": "P25874"},
             "tax_id": 9606,
         },
     )
@@ -322,6 +345,7 @@ async def phase_4_end_to_end_data_flow(explain_log: list, verbose: bool) -> list
         context={
             "gene_list": ["FGF5", "UCP1"],
             "kegg_gene_ids": {"FGF5": "hsa:FGF5", "UCP1": "hsa:UCP1"},
+            "uniprot_accessions": {"FGF5": "P12034", "UCP1": "P25874"},
             "tax_id": 9606,
         },
     ))
@@ -362,7 +386,10 @@ async def main(verbose: bool) -> int:
 
     print("Trait Discovery Agent — full-stack integration demo")
     print("Real orchestrator + real sub-orchestrator + real agents + real Qdrant KB.")
-    print("Faked: outbound HTTP to KEGG/UniProt, outbound calls to the NIM LLM.")
+    print("Faked: outbound HTTP to KEGG/UniProt/Literature Agent, plus the resolver's and")
+    print("explanation-writer's LLM calls. NOT faked: GO/QuickGO calls (real), and Gene")
+    print("Mapper's/Literature Support's own bind_tools LLM disambiguation calls (real NIM")
+    print("calls — each can take up to ~60s+ on a cold/queued request).")
 
     await ensure_collections()
     print("\nPurging kegg_pathways / uniprot_proteins for a clean, deterministic run ...")
@@ -370,6 +397,7 @@ async def main(verbose: bool) -> int:
 
     kegg_log: list = []
     uniprot_log: list = []
+    literature_log: list = []
     explain_log: list = []
     resolve_log: list = []
 
@@ -377,6 +405,7 @@ async def main(verbose: bool) -> int:
 
     with _Patch(pathways_module, "fetch_pathway", make_fake_kegg(kegg_log)), \
          _Patch(protein_data_module, "fetch_uniprot", make_fake_uniprot(uniprot_log)), \
+         _Patch(literature_support_module, "request_literature_evidence", make_fake_literature(literature_log)), \
          _Patch(td_graph_module, "write_explanation", make_fake_explain(explain_log)), \
          _Patch(resolver_module, "resolve_capability", make_fake_resolve(resolve_log)):
 
@@ -394,6 +423,7 @@ async def main(verbose: bool) -> int:
 
     _hr("SUMMARY")
     print(f"external calls made -> kegg: {len(kegg_log)}, uniprot: {len(uniprot_log)}, "
+          f"literature: {len(literature_log)}, "
           f"llm explain: {len(explain_log)}, llm resolve: {len(resolve_log)}")
     ok = True
     for name, failures in all_failures.items():
