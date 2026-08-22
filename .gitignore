@@ -1,15 +1,5 @@
-# Local environment files
-.env
-.env.*
-!.env.example
-
-# Local tool configuration
-# `.claude/` in full, as main has it - narrowing this to
-# settings.local.json would start tracking the rest of the directory.
-.claude/
-docker/.env
-
-# Python
+.venv/
+.pytest_cache/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -47,3 +37,4 @@ build/
 # Biodiversity Agent: generated folium maps (regenerated per request)
 backend/agents/biodiversity_agent/outputs/
 
+.env

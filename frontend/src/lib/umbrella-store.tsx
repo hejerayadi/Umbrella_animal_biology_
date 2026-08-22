@@ -15,6 +15,7 @@ import {
   imageUrlFor,
   parseExecutionHistory,
   proteinViewerFrom,
+  recognitionFrom,
   type UploadedImage,
 } from "./orchestrator-client";
 import type { AgentActivity, Conversation, Message } from "./umbrella-types";
@@ -172,6 +173,10 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 ...(() => {
                   const generated = generatedImageFrom(response);
                   return generated ? { generatedImageUrl: generated } : {};
+                })(),
+                ...(() => {
+                  const recognition = recognitionFrom(response.context);
+                  return recognition ? { recognition } : {};
                 })(),
               },
             ],

@@ -121,6 +121,9 @@ class ToolSelector:
                 # retrieves the subject region: the missing segment sits
                 # between the flanks and is in no HSP.
                 gap_length=context.gap.length,
+                # And where the flanks meet, so each hit can be measured on
+                # whether it carries bases across the gap at all.
+                left_flank_length=len(context.left_flank),
                 **arguments,
             ),
         )
@@ -136,17 +139,14 @@ class ToolSelector:
             return None
 
         available = (state.get("references") or {}).get(context.identifier, [])
-        ranked = self._ranker.rank(
-            # A retry admits the references the first pass filtered out as too
-            # divergent. They are weaker evidence, but a second identical
-            # alignment of the same rows cannot produce a different answer -
-            # the only thing left to change is which rows go in.
-            available if relaxed else self._ranker.filter_usable(available),
-            limit=_MAX_ALIGNMENT_REFERENCES,
-        )
-        usable = [
+
+        # A retry admits the references the first pass filtered out as too
+        # divergent. They are weaker evidence, but a second identical alignment
+        # of the same rows cannot produce a different answer - the only thing
+        # left to change is which rows go in.
+        candidates = [
             reference
-            for reference in ranked
+            for reference in (available if relaxed else self._ranker.filter_usable(available))
             # A reference with no residues cannot be aligned, however well it
             # scored on the BLAST metadata alone. A pseudogene can be aligned
             # and should not be: it diverges from the functional copy at
@@ -154,8 +154,47 @@ class ToolSelector:
             if reference.has_sequence
             and _QUALITY.is_usable(reference, expected_length=context.gap.length)
         ]
-        if not usable:
+        if not candidates:
             return None
+
+        # Keep only the references that actually carry bases across the gap,
+        # when any do. This is not a preference - it is what makes the
+        # alignment work at all.
+        #
+        # MAFFT builds one multiple alignment over every row it is given. A
+        # reference homologous to the flanks but stopping short of the gap has
+        # no bases to place there, and it pulls the alignment towards the shape
+        # with no inserted columns at the junction. The target row then has no
+        # gap columns, the mapper reports `spans_gap=False`, and the run ends
+        # "no reference contributed bases across the gap" - while the donors
+        # sat in the very same input, carrying the correct fill.
+        #
+        # Measured, not guessed: on a 21-base gap in human mtDNA COI, one hit
+        # covering a single flank at 0.979 identity ranked top and broke the
+        # alignment for all seven rows. Dropping it recovered the true bases
+        # exactly. High identity over half the query is precisely the profile
+        # that both ranks well and carries nothing.
+        #
+        # Applied before the limit, not after: the limit keeps the best few
+        # rows, and filtering afterwards would let a handful of non-carriers at
+        # the top starve the aligner of the donors further down.
+        carriers = [reference for reference in candidates if reference.carries_gap]
+        if carriers:
+            candidates = carriers
+        elif any(reference.gap_bases is not None for reference in candidates):
+            # Every hit was measured and none reaches across the gap. The
+            # alignment is still worth running - it is what tells the critic
+            # the evidence is absent rather than untried - but say so, because
+            # this is the difference between "no homologues" and "homologues
+            # that stop at the gap", and the two need different retries.
+            _log.info(
+                "no_reference_carries_gap",
+                gap_id=context.identifier,
+                references=len(candidates),
+                detail="Every reference stops short of the gap; alignment cannot fill it.",
+            )
+
+        usable = self._ranker.rank(candidates, limit=_MAX_ALIGNMENT_REFERENCES)
 
         if relaxed:
             _log.info(
@@ -173,6 +212,7 @@ class ToolSelector:
             references_sent_to_mafft=len(usable),
             available=len(available),
             with_sequence=sum(1 for reference in available if reference.has_sequence),
+            carrying_gap=sum(1 for reference in available if reference.carries_gap),
         )
 
         return ToolInvocation(

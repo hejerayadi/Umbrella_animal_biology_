@@ -4,6 +4,9 @@ import type {
   ProteinDomain,
   ProteinSelection,
   ProteinViewerSpec,
+  RecognitionCandidate,
+  RecognitionProvenance,
+  RecognitionResult,
 } from "./umbrella-types";
 import { apiRequest, apiUrl } from "./api-client";
 
@@ -160,6 +163,97 @@ export function proteinViewerFrom(
             isRecord(domain) && typeof domain.label === "string",
         ) as unknown as ProteinDomain[])
       : [],
+  };
+}
+
+/** The context keys the Multimodal Recognition Agent publishes under. */
+const RECOGNITION_KEY = "recognition";
+const RECOGNITION_CANDIDATES_KEY = "recognition_candidates";
+const RECOGNITION_PROVENANCE_KEY = "recognition_provenance";
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * Reads the Recognition agent's ranked candidates out of the shared context.
+ *
+ * Same defensiveness as `proteinViewerFrom`: `context` is a free-form bag that
+ * every agent writes into, so every key can be absent or a different shape
+ * than this build expects. A dropped panel costs the user the score table; a
+ * malformed one thrown at the renderer would take down the whole message.
+ *
+ * Returns undefined when the agent did not run. It deliberately does NOT
+ * return undefined for `not_identified` - "no species is strong enough" is a
+ * real scientific answer and the user should still see what was considered.
+ */
+export function recognitionFrom(
+  context: Record<string, unknown>,
+): RecognitionResult | undefined {
+  const recognition = context[RECOGNITION_KEY];
+  if (!isRecord(recognition)) return undefined;
+
+  const decision = asString(recognition.decision);
+  if (!decision) return undefined;
+
+  const rawCandidates = Array.isArray(context[RECOGNITION_CANDIDATES_KEY])
+    ? (context[RECOGNITION_CANDIDATES_KEY] as unknown[])
+    : [];
+
+  const candidates: RecognitionCandidate[] = rawCandidates
+    .filter(isRecord)
+    .map((raw) => ({
+      speciesId: asString(raw.species_id) ?? "",
+      scientificName: asString(raw.scientific_name) ?? "",
+      commonName: asString(raw.common_name),
+      rank: asString(raw.rank),
+      classificationScore: asNumber(raw.classification_score) ?? 0,
+      gbifId: asNumber(raw.gbif_id),
+      ncbiTaxId: asNumber(raw.ncbi_taxid),
+      taxonomyStatus: asString(raw.taxonomy_status),
+    }))
+    // A row with no name is not renderable and not informative.
+    .filter((candidate) => candidate.scientificName !== "");
+
+  const raw = isRecord(context[RECOGNITION_PROVENANCE_KEY])
+    ? (context[RECOGNITION_PROVENANCE_KEY] as Record<string, unknown>)
+    : {};
+
+  // Only the fields this panel displays are carried over. `taxonomy_report`
+  // in particular is a per-candidate nested dict that nothing here renders,
+  // and these messages are persisted to localStorage.
+  const provenance: RecognitionProvenance = {
+    modelTarget: asString(raw.model_target),
+    modelVersion: asString(raw.model_version),
+    provider: asString(raw.recognition_provider),
+    recognitionMode: asString(raw.recognition_mode),
+    mockProviderVersion: asString(raw.mock_provider_version),
+    remoteSpaceId: asString(raw.remote_space_id),
+    remoteSpaceRevision: asString(raw.remote_space_revision),
+    gbifMode: asString(raw.gbif_mode),
+    ncbiMode: asString(raw.ncbi_mode),
+    taxonomyExecuted: raw.taxonomy_executed === true,
+    taxonomyDegraded: raw.taxonomy_degraded === true,
+    // Absent means "no promise was made", which must not read as "yes".
+    scoreIsProbability: raw.score_is_probability === true,
+    scoreKind: asString(raw.score_kind),
+    reasoningLlmProvider: asString(raw.reasoning_llm_provider),
+    reasoningLlmCalls: asNumber(raw.reasoning_llm_calls),
+  };
+
+  return {
+    decision,
+    species: asString(context.species),
+    speciesId: asString(context.species_id),
+    gbifId: asNumber(context.gbif_id),
+    ncbiTaxId: asNumber(context.ncbi_taxid),
+    candidates,
+    provenance,
+    clarificationQuestion: asString(recognition.clarification_question),
   };
 }
 

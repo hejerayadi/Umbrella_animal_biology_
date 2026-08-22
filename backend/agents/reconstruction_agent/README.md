@@ -299,7 +299,7 @@ Current settings and what produced them:
 
 | Setting | Value | Evidence |
 | --- | --- | --- |
-| `RECONSTRUCTION_MIN_CONFIDENCE` | 0.65 | Lowest threshold with precision 1.000 over the 360-scenario grid (recall 0.31). |
+| `RECONSTRUCTION_MIN_CONFIDENCE` | 0.15 | Lowest threshold with precision 1.000 over the 360-scenario grid (recall 0.93). Was 0.65 against the old score, which needed a high threshold to compensate for ranking correct above incorrect at only 0.575. |
 | `LLM_TEMPERATURE` | 0.0 | 100% parse rate at every temperature tried; 0.0–0.3 gave 0.92 plan repeatability vs 0.83 at 0.7–1.0. |
 
 ## Prompts

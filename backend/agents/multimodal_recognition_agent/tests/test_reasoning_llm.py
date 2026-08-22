@@ -106,13 +106,13 @@ def test_malformed_output_is_rejected_entirely(raw):
 
 def test_unknown_keys_are_dropped():
     result = sanitize_result({
-        "intent": "similarity",
+        "intent": "scientific_follow_up",
         "taxon_hint": "lion",
         "species": "Panthera leo",      # not part of the schema
         "gbif_id": 5219404,             # not part of the schema
         "similarity_score": 0.99,       # not part of the schema
     })
-    assert result == ReasoningResult(intent="similarity", taxon_hint="lion")
+    assert result == ReasoningResult(intent="scientific_follow_up", taxon_hint="lion")
 
 
 def test_overlong_hints_are_dropped():

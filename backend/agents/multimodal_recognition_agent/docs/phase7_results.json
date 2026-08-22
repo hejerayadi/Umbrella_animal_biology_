@@ -1,0 +1,695 @@
+{
+  "phase": 7,
+  "title": "Resilience, security, privacy and operational quality",
+  "generated_utc": "2026-08-21T15:41:45+00:00",
+  "final_status": "PASS",
+  "status_reason": "All three findings are corrected and verified, offline and live. The complete offline suite is green with zero xfails, and a live run at DEBUG - the level that previously exposed the Azure endpoint, the deployment name and the NCBI email - now emits six log lines, all of them the agent's own.",
+  "phase_6": "N/A - Global Orchestrator integration does not currently exist.",
+  "baseline": {
+    "branch": "group-d-recognition-sprint3",
+    "head_sha": "83ae275f0208f7475b155228e7a6785ea5bc1fce",
+    "head_subject": "phase 5",
+    "phase5_present_in_head": true,
+    "working_tree_clean_at_start": true,
+    "offline_suite_at_baseline": {
+      "passed": 923,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 0
+    }
+  },
+  "read_only_audit": {
+    "conclusion": "Phase 7's resilience requirements were already implemented. The audit found no missing bound, no retry loop and no unbounded wait. It DID find three disclosure defects, all on failure or logging paths rather than in the scientific flow.",
+    "azure_timeout": "AzureSettings.timeout_seconds reaches the OpenAI client constructor",
+    "azure_retries": "max_retries=SDK_MAX_RETRIES, and SDK_MAX_RETRIES == 0",
+    "bioclip_deadline": "One deadline spans client construction, upload, queue wait and result retrieval; httpx_kwargs={'timeout': N} bounds construction itself",
+    "bioclip_cancellation": "finally: cancels a job that is not done, then unlinks the temp file",
+    "gbif_timeout": "passed per request to session.get(timeout=...)",
+    "ncbi_timeout": "passed per request to session.get(timeout=...)",
+    "ncbi_rate_limiter": "_RateLimiter sleeps BEFORE sending; monotonic and sleep are injectable, so the pacing maths is testable with no real time passing",
+    "startup_validation": "RecognitionConfig.from_env and both provider factories refuse an unimplemented or unconfigured mode rather than degrading to a mock",
+    "structured_errors": "RecognitionError takes an ErrorCode and nothing else",
+    "runtime_logs": "the agent logs exception TYPE only; no instruction, image or credential",
+    "provenance": "derived from runtime evidence (corrected in Phase 5)",
+    "api_error_mapping": "see findings P7-F1 and P7-F2",
+    "request_state_isolation": "no checkpointer, no store; state built fresh per invoke"
+  },
+  "test_counts": {
+    "offline_suite_baseline": {
+      "passed": 923,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "offline_suite_before_correction": {
+      "passed": 1120,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 2
+    },
+    "offline_suite_after_correction": {
+      "passed": 1140,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "phase7_module_after_correction": {
+      "passed": 217,
+      "failed": 0,
+      "xfailed": 0
+    },
+    "phase3_regression": {
+      "passed": 141,
+      "failed": 0
+    },
+    "phase4_regression": {
+      "passed": 172,
+      "failed": 0
+    },
+    "phase5_regression": {
+      "passed": 113,
+      "failed": 0
+    },
+    "architecture_and_no_leak_gates": {
+      "passed": 63,
+      "failed": 0
+    },
+    "xfail_note": "Zero xfails remain. The two strict xfails encoding P7-F1 and P7-F2 were converted into ordinary passing regression tests; the P7-F3 test that documented the gap was replaced by tests asserting the policy. None of the tests that discovered the findings was weakened, skipped or deleted."
+  },
+  "timeout_matrix": {
+    "1_azure_connection_timeout": {
+      "result": "PASS",
+      "outcome": "deterministic plan fallback, request completes"
+    },
+    "2_azure_response_timeout": {
+      "result": "PASS",
+      "outcome": "deterministic explanation, decision unchanged"
+    },
+    "3_bioclip_client_construction_timeout": {
+      "result": "PASS",
+      "outcome": "httpx_kwargs={'timeout': 12.5} asserted on the constructed client; download_files=False"
+    },
+    "4_bioclip_upload_submit_timeout": {
+      "result": "PASS",
+      "outcome": "CLASSIFICATION_UNAVAILABLE"
+    },
+    "5_bioclip_queue_result_timeout": {
+      "result": "PASS",
+      "outcome": "CLASSIFICATION_UNAVAILABLE"
+    },
+    "5b_result_wait_is_bounded": {
+      "result": "PASS",
+      "outcome": "job.result() always receives a positive timeout <= configured deadline, never None"
+    },
+    "6_bioclip_job_cancellation": {
+      "result": "PASS",
+      "outcome": "an unfinished job is cancelled; a finished job is not"
+    },
+    "7_gbif_timeout": {
+      "result": "PASS",
+      "outcome": "documented degradation, gbif_id null, request completes"
+    },
+    "8_ncbi_timeout": {
+      "result": "PASS",
+      "outcome": "documented degradation, ncbi_taxid null, request completes"
+    },
+    "9_rate_limiting_is_not_a_retry": {
+      "result": "PASS",
+      "outcome": "4 lookups produced exactly 4 requests; waits were 0.5s pacing intervals"
+    },
+    "10_bounded_completion": {
+      "result": "PASS",
+      "outcome": "every injected-failure path returned in well under 5s"
+    },
+    "no_real_sleeping": true,
+    "no_real_service_contacted": true
+  },
+  "retry_attempt_counts": {
+    "azure_sdk_max_retries": 0,
+    "gpt_failed_call_http_attempts": 1,
+    "gpt_successful_pair_http_attempts": 2,
+    "bioclip_failed_submits": 1,
+    "gbif_failed_requests": 1,
+    "ncbi_failed_requests": 1,
+    "ncbi_429_requests": 1,
+    "whole_request_per_provider": "1 space submit, 1 llm attempt, 1 gbif + 1 ncbi per candidate",
+    "planner_failure_forfeits_explainer": true,
+    "worker_threads_leaked_after_5_failures": 0,
+    "result": "PASS"
+  },
+  "malformed_payload_matrix": {
+    "azure_planner": {
+      "cases": 13,
+      "includes": [
+        "empty",
+        "whitespace",
+        "invalid JSON",
+        "wrong type",
+        "null",
+        "number",
+        "missing mandatory step",
+        "forbidden step",
+        "unexpected schema",
+        "wrongly typed top_k",
+        "raw external error body"
+      ],
+      "outcome": "deterministic plan fallback; seven keys intact",
+      "result": "PASS"
+    },
+    "azure_explainer": {
+      "cases": 4,
+      "includes": [
+        "empty",
+        "whitespace",
+        "invented species",
+        "probability claim"
+      ],
+      "outcome": "discarded; deterministic explanation used",
+      "result": "PASS"
+    },
+    "azure_explainer_opaque_prose": {
+      "outcome": "accepted verbatim - grounding restricts SPECIES and PROBABILITY claims, not arbitrary prose. The factual disclosure is appended outside it, and the candidate evidence is unchanged.",
+      "result": "PASS (documented behaviour)"
+    },
+    "bioclip_space": {
+      "cases": 19,
+      "includes": [
+        "None",
+        "string",
+        "int",
+        "empty list/dict",
+        "confidences None",
+        "confidences not a list",
+        "missing field",
+        "unparseable label",
+        "NaN",
+        "+inf",
+        "-inf",
+        "score -0.5",
+        "score 1.5",
+        "score 'high'",
+        "score True",
+        "score None"
+      ],
+      "outcome": "controlled failure or honest not_identified; never an invented candidate",
+      "result": "PASS"
+    },
+    "gbif": {
+      "cases": 12,
+      "includes": [
+        "None",
+        "string",
+        "list",
+        "int",
+        "EXACT without usageKey",
+        "usageKey not an int",
+        "usageKey True",
+        "FUZZY",
+        "HIGHERRANK",
+        "NONE",
+        "unknown future matchType",
+        "unexpected schema",
+        "HTTP 503 body",
+        "undecodable JSON"
+      ],
+      "outcome": "identifier stays None; available/matched reported truthfully",
+      "result": "PASS"
+    },
+    "ncbi": {
+      "cases": 12,
+      "includes": [
+        "None",
+        "string",
+        "list",
+        "int",
+        "empty dict",
+        "missing idlist",
+        "empty idlist",
+        "idlist not a list",
+        "non-integer id",
+        "None id",
+        "ambiguous multi-id",
+        "unexpected schema",
+        "HTTP 500 body"
+      ],
+      "outcome": "taxid stays None; ambiguity reported as inconsistent",
+      "result": "PASS"
+    },
+    "never_500": true,
+    "never_invented_evidence": true
+  },
+  "partial_availability_matrix": {
+    "gbif_up_ncbi_down": "PASS - ncbi_taxid null, evidence identical",
+    "gbif_down_ncbi_up": "PASS - gbif_id null, evidence identical",
+    "both_down": "PASS - both null, evidence identical, decision unchanged",
+    "available_but_unmatched": "PASS - taxonomy_degraded is False; 'answered, no record' is distinguished from 'did not answer'",
+    "bioclip_unavailable": "PASS - controlled CLASSIFICATION_UNAVAILABLE",
+    "gpt_unavailable": "PASS - identical candidate evidence to the LLM-backed run",
+    "one_verified_one_degraded": "PASS - per-candidate degradation; candidate 1 keeps both identifiers, candidate 2 loses GBIF only, ordering untouched",
+    "taxonomy_cannot_modify": {
+      "candidate_identity": "PASS",
+      "order": "PASS",
+      "scores": "PASS",
+      "confidence": "PASS",
+      "decision": "PASS",
+      "text_alignment": "PASS"
+    },
+    "missing_identifiers_remain_null": true
+  },
+  "concurrency_results": {
+    "max_workers": 8,
+    "requests": 8,
+    "images_crossed": 0,
+    "instructions_crossed": 0,
+    "taxonomy_reports_crossed": 0,
+    "shared_context_crossed": 0,
+    "provenance_misattributed": 0,
+    "checkpointer_present": false,
+    "memory_store_present": false,
+    "repeated_requests_accumulate_state": false,
+    "rate_limiter_carries_biological_data": false,
+    "result": "PASS"
+  },
+  "llm_budget_isolation": {
+    "requests": 6,
+    "calls_per_request": 2,
+    "total_calls": 12,
+    "budget_accumulated_across_requests": false,
+    "third_call_reachable_under_injection": false,
+    "result": "PASS - each request receives a fresh maximum two-call budget"
+  },
+  "prompt_injection_results": {
+    "instructions_tested": 10,
+    "categories": [
+      "ignore system rules",
+      "invent a species",
+      "replace the top candidate",
+      "change scores",
+      "expose the API key",
+      "print the base64 image",
+      "reveal internal prompts",
+      "force a third GPT call",
+      "bypass taxonomy/confidence",
+      "request a similarity/vector operation"
+    ],
+    "candidate_evidence_changed": false,
+    "species_changed": false,
+    "secrets_or_image_leaked": false,
+    "third_gpt_call_obtained": false,
+    "model_compliance_overruled": "a model that obeyed the injection - poisoned taxon_hint plus an explanation naming Ursus maritimus with a certainty claim - changed nothing; the explanation was discarded as ungrounded",
+    "similarity_declined_out_loud": true,
+    "only_bioclip_supplied_candidates": true,
+    "result": "PASS"
+  },
+  "structured_error_results": {
+    "http_request_cases": [
+      "empty_instruction",
+      "corrupt_image",
+      "unsupported_media_type",
+      "remote_url",
+      "file_path",
+      "malformed_image_object",
+      "invalid_base64"
+    ],
+    "provider_failure_cases": [
+      "gpt_unavailable",
+      "gpt_malformed",
+      "bioclip_unavailable",
+      "bioclip_timeout",
+      "bioclip_malformed",
+      "taxonomy_unavailable",
+      "taxonomy_malformed",
+      "taxonomy_timeout"
+    ],
+    "http_500_count": 0,
+    "unhandled_exception_count": 0,
+    "all_outputs_structured_or_seven_keys": "PASS - every failure path, including the unexpected-exception path, returns the structured {error_code, error} dict",
+    "canary_in_any_http_body": false,
+    "result": "PASS"
+  },
+  "provenance_results": {
+    "accurate_after_phase5_correction": true,
+    "live_gbif_mode": "real",
+    "live_ncbi_mode": "real",
+    "live_taxonomy_executed": true,
+    "belongs_to_the_correct_request_under_concurrency": true,
+    "result": "PASS"
+  },
+  "leak_scan": {
+    "canaries": [
+      "azure api key",
+      "azure endpoint",
+      "azure deployment",
+      "ncbi email",
+      "instruction marker",
+      "image byte marker",
+      "provider error body",
+      "shared context value"
+    ],
+    "surfaces_captured": [
+      "logs",
+      "exceptions",
+      "serialized state",
+      "API responses",
+      "provenance",
+      "failure outputs"
+    ],
+    "agent_logs": "clean at DEBUG, INFO and WARNING",
+    "api_responses": "clean for every malformed-input and provider-failure case",
+    "structured_failure_output": "carries only {error_code, error}, both data-free",
+    "image_bytes_to_the_reasoning_model": "none - asserted with a PNG tEXt canary",
+    "normalized_input_serialization": "image_bytes and context excluded by construction",
+    "ncbi_email": "sent to NCBI as its guidelines require; absent from response and agent logs",
+    "third_party_logger_exposure": "CORRECTED - a live DEBUG run now shows third_party_logger_leaks: []",
+    "result": "PASS"
+  },
+  "operational_logging": {
+    "present": [
+      "provider mode",
+      "stage",
+      "decision",
+      "plan rejection",
+      "LLM call count",
+      "exception type only",
+      "controlled error code",
+      "candidate count",
+      "margin",
+      "top_k"
+    ],
+    "absent": [
+      "per-stage duration",
+      "taxonomy degradation flag",
+      "explanation source"
+    ],
+    "sufficient_to_identify_the_failed_stage": true,
+    "assessment": "The failed stage IS identifiable: each node logs on completion and graph.py logs 'failed -> <ERROR_CODE>', so the last successful stage plus the code locates the failure. Duration, taxonomy degradation and explanation source are absent from the logs but all three are present in recognition_provenance on the response, so no diagnostic information is lost - only its location differs. Recorded as an observation, NOT changed.",
+    "never_logged": [
+      "instruction contents",
+      "base64",
+      "image bytes",
+      "shared context",
+      "keys",
+      "NCBI email",
+      "endpoints",
+      "raw provider bodies"
+    ],
+    "result": "PASS"
+  },
+  "architecture_gates": {
+    "qdrant": "absent",
+    "vector_store": "absent",
+    "embeddings": "absent",
+    "similarity_or_retrieval_architecture": "absent",
+    "local_bioclip_weights": "absent",
+    "forbidden_dependency_in_requirements": "none",
+    "raw_images_in_package": "none (demo_images is generated and git-ignored)",
+    "caches_tracked": "none",
+    "env_tracked": "none (git-ignored)",
+    "logs_or_temp_files_tracked": "none",
+    "stray_classifier_temp_files": "none",
+    "lingering_processes": "none",
+    "seven_key_contract": "unchanged",
+    "result": "PASS"
+  },
+  "live_smoke": {
+    "performed": true,
+    "providers": "Azure GPT-5 mini + remote BioCLIP-2 + live GBIF + live NCBI",
+    "bounded": "240s in-process deadline plus an external timeout",
+    "no_real_service_was_made_to_fail": true,
+    "result": {
+      "elapsed_seconds": 18.812,
+      "status": "completed",
+      "species": "Loxodonta africana",
+      "decision": "identified",
+      "gbif_id": 2435350,
+      "ncbi_taxid": 9785,
+      "taxonomy_status": "verified",
+      "output_keys": [
+        "gbif_id",
+        "ncbi_taxid",
+        "recognition",
+        "recognition_candidates",
+        "recognition_provenance",
+        "species",
+        "species_id"
+      ],
+      "reasoning_llm_calls": 2,
+      "plan_source": "llm",
+      "explanation_source": "llm",
+      "gbif_mode": "real",
+      "ncbi_mode": "real",
+      "taxonomy_executed": true,
+      "log_line_count": 17,
+      "log_capture_level": "INFO",
+      "leak_scan": "clean",
+      "checks_failed": [],
+      "third_party_logger_leaks": [
+        "AZURE_OPENAI_BASE_URL"
+      ],
+      "image_sha256": "f652759522d925d5f4a4c49bcf202490aa9af1d37abd5209a0be0e14fcca4d1c",
+      "image_source": "https://commons.wikimedia.org/wiki/File:African_bush_elephants_(Loxodonta_africana)_female_with_six-week-old_baby.jpg",
+      "image_licence": "CC BY-SA 4.0"
+    },
+    "leak_scan_agent_surfaces": "clean",
+    "third_party_logger_leaks_at_INFO": [
+      "AZURE_OPENAI_BASE_URL"
+    ],
+    "third_party_logger_leaks_at_DEBUG": [
+      "AZURE_OPENAI_BASE_URL",
+      "AZURE_OPENAI_DEPLOYMENT",
+      "NCBI_EMAIL (percent-encoded)"
+    ]
+  },
+  "findings": [
+    {
+      "id": "P7-F1",
+      "severity": "high",
+      "type": "sensitive data disclosure",
+      "file": "backend/agents/multimodal_recognition_agent/api.py",
+      "line": 38,
+      "code": "output=f\"Multimodal Recognition Agent error: {exc}\"",
+      "summary": "The last-resort HTTP handler interpolates the exception into the response body. Any exception that is not a RecognitionError therefore returns its message - which may carry provider internals, a URL, or request data - to the caller verbatim.",
+      "reproduction": "A classifier raising ValueError('internal detail CANARYSECRETINEXCEPTION9z') produced the body: {\"status\":\"failed\",...,\"output\":\"Multimodal Recognition Agent error: internal detail CANARYSECRETINEXCEPTION9z\"}",
+      "reachability": "Defensive path. Every shipped provider converts its own failures into RecognitionError, so this needs an unexpected exception - a Pydantic validation error, a LangGraph internal error, or a third-party provider injected later. That is precisely when a leak is least wanted.",
+      "evidence_test": "test_p7_f1_an_unexpected_exception_message_should_not_reach_the_caller (strict xfail)",
+      "recommendation": "Return the fixed structured payload instead, and log the exception type only - the same rule every other boundary in this agent already follows.",
+      "fixed": true,
+      "approval_required": false,
+      "correction": "api.py no longer derives anything from the exception. It returns a fixed, data-free message and logs only the stage, the exception CLASS and a fresh per-request correlation id. No str(exc), repr(exc), exception args, provider error body or traceback crosses the boundary.",
+      "before": "{\"status\":\"failed\",\"output\":\"Multimodal Recognition Agent error: internal detail CANARYSECRETINEXCEPTION9z\"}",
+      "after": "{\"status\":\"failed\",\"output\":{\"error_code\":\"INTERNAL_ERROR\",\"error\":\"The Recognition Agent encountered an internal error and could not complete this request. No species was identified. The failure has been logged for the operators of the service.\"}}",
+      "log_after": "[Recognition] stage=api.execute request_id=<hex> unexpected ValueError; returning a controlled internal error.",
+      "regression_tests": [
+        "test_p7_f1_an_unexpected_exception_message_never_reaches_the_caller",
+        "test_p7_f1_the_message_is_identical_whatever_the_exception_was",
+        "test_p7_f1_the_internal_error_message_carries_no_request_data",
+        "test_p7_f1_the_log_records_type_and_correlation_id_but_no_message",
+        "test_p7_f1_the_correlation_id_is_fresh_per_request",
+        "test_p7_f1_the_never_500_guarantee_still_holds_on_this_path",
+        "test_p7_f1_a_recognition_error_is_unaffected_by_the_correction"
+      ]
+    },
+    {
+      "id": "P7-F2",
+      "severity": "medium",
+      "type": "output contract break",
+      "file": "backend/agents/multimodal_recognition_agent/api.py",
+      "line": 38,
+      "summary": "On that same path `output` is a STRING, not the structured {error_code, error} dict every other failure returns, so a caller doing output['error_code'] raises TypeError.",
+      "reproduction": "the same request as P7-F1; payload['output'] is a str",
+      "evidence_test": "test_p7_f2_every_failure_output_should_be_the_structured_dict (strict xfail)",
+      "recommendation": "emit {'error_code': 'INTERNAL_ERROR', 'error': <fixed message>}",
+      "fixed": true,
+      "approval_required": false,
+      "correction": "The unexpected path now returns the same {error_code, error} dict every other failure returns, so output is never a string and a caller can read output['error_code'] on every branch.",
+      "before": "output was a str",
+      "after": "output is {\"error_code\": \"INTERNAL_ERROR\", \"error\": \"<fixed safe message>\"}",
+      "error_code_provenance": "Checked against the existing error model before inventing anything, as the authorization required. ErrorCode has no generic internal/unexpected member, and no other agent or the orchestrator defines one. WORKFLOW_INCOMPLETE - the only existing internal literal, emitted by workflows/graph.py - was deliberately NOT reused: it means 'the workflow ran and produced no result', a narrower and different claim. INTERNAL_ERROR is therefore a new literal, following graph.py's precedent of a bare string, because domain/errors.py is outside the authorized boundary. Its canonical home is the ErrorCode enum once that file may change.",
+      "regression_tests": [
+        "test_p7_f2_the_unexpected_path_returns_the_structured_failure_contract",
+        "test_p7_f2_the_internal_code_was_checked_against_the_existing_error_model"
+      ]
+    },
+    {
+      "id": "P7-F3",
+      "severity": "medium",
+      "type": "connection details disclosed by third-party loggers",
+      "file": "not agent code - a configuration gap",
+      "summary": "The agent's own logger is clean at every level. The HTTP libraries beneath it are not: at INFO, httpx logs the full Azure request URL including the endpoint host and resource name; at DEBUG, httpcore and urllib3 additionally log the deployment name and the NCBI email, percent-encoded in the Entrez query string.",
+      "reproduction": "Live smoke with the root logger at INFO recorded AZURE_OPENAI_BASE_URL in an httpx line; at DEBUG it additionally recorded AZURE_OPENAI_DEPLOYMENT and NCBI_EMAIL as name%40host.",
+      "note": "The percent-encoding is why this nearly went unnoticed: a scan for the raw address reports clean while the address is in the log. The Phase 7 scan now checks quote and quote_plus variants.",
+      "evidence_test": "test_p7_f3_the_agent_does_not_currently_quiet_third_party_http_loggers",
+      "recommendation": "Either raise the level of httpx/httpcore/urllib3/openai loggers where the agent configures logging, or document that operators must not run this agent at DEBUG in an environment where logs are retained. The Azure API key is NOT affected - it travels in a header, never a URL.",
+      "fixed": true,
+      "approval_required": false,
+      "correction": "api.py applies a narrow Recognition-service logging policy at import: httpx, httpcore, urllib3 and openai are pinned to WARNING, so they cannot emit INFO/DEBUG request URLs even when the ROOT logger is set to DEBUG. Requests are unmodified, NCBI still receives the email its usage guidelines require, and provider behaviour is unchanged.",
+      "before": "At INFO, httpx logged the Azure request URL. At DEBUG, httpcore and urllib3 additionally logged the deployment name and the NCBI email percent-encoded in the Entrez query string. A live DEBUG run produced a log full of those lines.",
+      "after": "A live DEBUG run produced 6 log lines, ALL of them the agent's own [Recognition] records. third_party_logger_leaks: [].",
+      "regression_tests": [
+        "test_p7_f3_the_service_entry_point_quiets_third_party_http_loggers",
+        "test_p7_f3_httpx_cannot_expose_the_azure_endpoint_at_root_debug",
+        "test_p7_f3_httpcore_cannot_expose_the_deployment_or_url_details",
+        "test_p7_f3_urllib3_cannot_expose_the_ncbi_email_in_any_encoding[raw|quote|quote_plus]",
+        "test_p7_f3_the_azure_api_key_canary_appears_in_no_logger_at_any_level",
+        "test_p7_f3_a_warning_from_a_quieted_logger_still_gets_through",
+        "test_p7_f3_the_agents_own_logger_is_not_quieted",
+        "test_p7_f3_the_policy_follows_the_pattern_the_repository_already_uses",
+        "test_p7_f3_the_policy_does_not_touch_requests_or_provider_behaviour",
+        "test_p7_f3_a_successful_seven_key_response_is_unchanged_by_the_policy",
+        "test_p7_f3_recognition_error_code_logging_survives_the_policy",
+        "test_p7_f3_a_percent_encoded_value_defeats_a_naive_leak_scan"
+      ]
+    }
+  ],
+  "protection_boundary": {
+    "files_created": [
+      "backend/agents/multimodal_recognition_agent/tests/test_phase7_resilience_security.py",
+      "backend/agents/multimodal_recognition_agent/docs/PHASE7_CERTIFICATION.md",
+      "backend/agents/multimodal_recognition_agent/docs/phase7_results.json"
+    ],
+    "implementation_files_changed": [
+      "backend/agents/multimodal_recognition_agent/api.py"
+    ],
+    "protected_implementation_files_changed": 0,
+    "git_diff_vs_head": "api.py only",
+    "thresholds_changed": false,
+    "ranking_changed": false,
+    "bioclip_changed": false,
+    "taxonomy_or_rate_limiting_changed": false,
+    "reasoning_llm_changed": false,
+    "langgraph_workflow_changed": false,
+    "state_changed": false,
+    "schemas_or_seven_key_contract_changed": false,
+    "phase3_4_5_tests_changed": false,
+    "orchestrator_registry_frontend_or_other_agent_changed": false,
+    "committed_or_pushed": false
+  },
+  "acceptance_gate": {
+    "all_external_waits_bounded": "PASS",
+    "no_retry_loop_exists": "PASS",
+    "all_failures_controlled_or_documented_degradations": "PASS",
+    "no_http_500_occurs": "PASS",
+    "concurrent_requests_share_no_state": "PASS",
+    "llm_budgets_reset_per_request": "PASS",
+    "no_secret_prompt_or_image_data_leaks": "PASS",
+    "prompt_injection_cannot_alter_scientific_evidence": "PASS",
+    "provenance_remains_accurate": "PASS",
+    "operational_evidence_identifies_the_failed_stage_safely": "PASS",
+    "protected_architecture_and_seven_key_contract_unchanged": "PASS",
+    "complete_offline_suite_fully_green": "PASS - 1140 passed, 0 failed, 0 skipped, 0 xfailed"
+  },
+  "remaining_limitations": [
+    "JUDGEMENT CALL (preserved): opaque model prose is accepted verbatim in the explanation. Grounding restricts SPECIES and PROBABILITY claims, not arbitrary text, because the model is the author of the wording. This is exactly why the factual disclosure is appended outside the model's text, and the candidate evidence is provably unchanged.",
+    "JUDGEMENT CALL (preserved): operational logging carries no per-stage duration, taxonomy degradation flag or explanation source. Assessed as sufficient and left unchanged - the failed stage is identifiable from the last node log plus the error code, and all three fields are present in recognition_provenance on the response, so no diagnostic information is lost, only its location differs.",
+    "The dependency logging policy is applied at the HTTP service entry point. A caller that imports RecognitionAgent directly does not pass through api.py; covering that would need agent.py, which was outside the authorized boundary.",
+    "INTERNAL_ERROR is a string literal rather than an ErrorCode member, because domain/errors.py was outside the authorized boundary. It follows graph.py's existing precedent; its canonical home is the enum.",
+    "The correlation id is logged, not returned. Surfacing it in the response would add a third key to the failure output, which the authorization fixed at {error_code, error}.",
+    "Timeout tests prove the agent passes a BOUNDED deadline to each client and maps every failure correctly; they do not measure real network waits, because no offline test may contact a service or sleep.",
+    "Concurrency was exercised at 8 workers in one process. Multi-process and multi-replica behaviour is out of scope, though the absence of shared mutable state is the same argument.",
+    "The NCBI rate limiter is per-provider, so several agent instances in one deployment would each hold their own budget. Not a defect at one replica; worth knowing before scaling out."
+  ],
+  "corrective_pass": {
+    "authorization": "Phase 7 Corrective Authorization - Safe Errors and Dependency Logging",
+    "scope": "P7-F1, P7-F2 and P7-F3 only.",
+    "files_modified": [
+      "backend/agents/multimodal_recognition_agent/api.py"
+    ],
+    "files_modified_outside_implementation": [
+      "backend/agents/multimodal_recognition_agent/tests/test_phase7_resilience_security.py",
+      "backend/agents/multimodal_recognition_agent/docs/PHASE7_CERTIFICATION.md",
+      "backend/agents/multimodal_recognition_agent/docs/phase7_results.json"
+    ],
+    "git_diff_vs_head": "api.py only - 1 file changed, 80 insertions, 1 deletion",
+    "untouched": [
+      "BioCLIP",
+      "taxonomy and NCBI rate limiting",
+      "reasoning LLM",
+      "LangGraph workflow",
+      "state",
+      "confidence",
+      "ranking",
+      "schemas and the seven-key contract",
+      "Phase 3-5 tests",
+      "Global Orchestrator, registry, frontend and other agents"
+    ],
+    "unrelated_refactoring": "none"
+  },
+  "dependency_logging_policy": {
+    "namespaces": [
+      "httpx",
+      "httpcore",
+      "urllib3",
+      "openai"
+    ],
+    "level": "WARNING",
+    "applied": "at import of api.py, the Recognition service entry point",
+    "mechanism": "logging.getLogger(name).setLevel(logging.WARNING)",
+    "uses_existing_approved_pattern": true,
+    "pattern_precedent": "backend/api.py:29 already does logging.getLogger('httpx').setLevel(logging.WARNING). The repository has no centralized dictConfig/fileConfig system to hook into - only per-entry-point basicConfig calls - so this uses the same idiom rather than creating a competing system, and extends it to the two namespaces the NCBI email leak required.",
+    "openai_namespace_note": "The authorization named httpx, httpcore and urllib3. `openai` is included as well because it is the Azure SDK's own logger and can emit request options containing the URL at DEBUG. Flagged explicitly rather than added silently; trivially removable.",
+    "preserved": [
+      "the Recognition Agent's own [Recognition] INFO stage trail",
+      "WARNING and above from the quieted namespaces, so real transport problems still surface",
+      "NCBI_EMAIL in the NCBI request, as Entrez usage guidelines require",
+      "every HTTP request, unmodified"
+    ],
+    "scope_limitation": "The policy is applied at the HTTP service entry point. Code that imports RecognitionAgent directly rather than serving it - the smoke scripts do - does not pass through api.py and keeps its libraries' own levels. Applying it in agent.py would cover every caller but was outside the authorized boundary."
+  },
+  "live_smoke_after_correction": {
+    "performed": true,
+    "log_capture_level": "DEBUG - the level that previously leaked",
+    "providers": "Azure GPT-5 mini + remote BioCLIP-2 + live GBIF + live NCBI",
+    "no_real_service_was_made_to_fail": true,
+    "result": {
+      "elapsed_seconds": 30.157,
+      "status": "completed",
+      "species": "Loxodonta africana",
+      "decision": "identified",
+      "gbif_id": 2435350,
+      "ncbi_taxid": 9785,
+      "taxonomy_status": "verified",
+      "output_keys": [
+        "gbif_id",
+        "ncbi_taxid",
+        "recognition",
+        "recognition_candidates",
+        "recognition_provenance",
+        "species",
+        "species_id"
+      ],
+      "reasoning_llm_calls": 2,
+      "plan_source": "llm",
+      "explanation_source": "llm",
+      "gbif_mode": "real",
+      "ncbi_mode": "real",
+      "taxonomy_executed": true,
+      "log_line_count": 6,
+      "log_capture_level": "DEBUG",
+      "leak_scan": "clean",
+      "checks_failed": [],
+      "third_party_logger_leaks": [],
+      "image_sha256": "f652759522d925d5f4a4c49bcf202490aa9af1d37abd5209a0be0e14fcca4d1c",
+      "image_source": "https://commons.wikimedia.org/wiki/File:African_bush_elephants_(Loxodonta_africana)_female_with_six-week-old_baby.jpg",
+      "image_licence": "CC BY-SA 4.0"
+    },
+    "third_party_logger_leaks": [],
+    "log_lines_total": 6,
+    "log_lines_all_from_the_agent": true,
+    "checks_failed": [],
+    "verdict": "ALL_PASS"
+  },
+  "artifact_scan_after_correction": {
+    "untracked_and_unignored": [
+      "tests/test_phase7_resilience_security.py",
+      "docs/PHASE7_CERTIFICATION.md",
+      "docs/phase7_results.json"
+    ],
+    "tracked_modified": [
+      "api.py"
+    ],
+    "secrets_weights_images_caches_enterable_into_git": "none",
+    "evaluation_images_deleted": true,
+    "stray_classifier_temp_files": "none",
+    "lingering_python_processes": "none"
+  }
+}

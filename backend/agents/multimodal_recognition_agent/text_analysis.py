@@ -2,15 +2,20 @@
 
 Text does two jobs in this agent, and only two:
 
-1. It says what the user wants - identification, visually similar species, or a
-   scientific follow-up that another agent owns.
+1. It says what the user wants - identification, or a scientific follow-up that
+   another agent owns.
 2. It supplies hints (a suspected taxon, a location, a habitat) that can agree
-   with, or contradict, what the image retrieved.
+   with, or contradict, what the classifier returned.
 
 It never supplies a species. A name in the instruction is compared against the
-candidates retrieval already produced; if it matches none of them, that is a
-conflict to be reported, not a new candidate to be added. This is the single
+candidates the classifier already produced; if it matches none of them, that is
+a conflict to be reported, not a new candidate to be added. This is the single
 rule that keeps the image as the primary evidence.
+
+A third thing text can do is ask for something this agent does not provide.
+Requests for visually similar animals or images are recognised and *declined* -
+`unsupported_capability` is set and the response says so. They are never routed
+into a nearest-neighbour search, because there is not one to route them into.
 
 Everything here is rule-based. Clear intents cost nothing and are reproducible,
 which is exactly what the specification asks for before spending an LLM call.
@@ -31,8 +36,8 @@ from .domain.models import SpeciesCandidate, TextAlignment, TextEvidence
 
 _logger = logging.getLogger(__name__)
 
-# Intent keywords. Ordered by specificity: a follow-up question wins over a
-# similarity question, which wins over plain identification.
+# Intent keywords. Ordered by specificity: a follow-up question wins over plain
+# identification.
 _FOLLOW_UP_CAPABILITIES: dict[str, tuple[str, ...]] = {
     # capability hint -> trigger words
     "Evolution": ("evolution", "evolutionary", "phylogen", "ancestor", "ancestry",
@@ -45,8 +50,16 @@ _FOLLOW_UP_CAPABILITIES: dict[str, tuple[str, ...]] = {
     "Protein": ("protein", "structure", "alphafold", "uniprot"),
 }
 
-_SIMILARITY_WORDS = ("similar", "resembl", "looks like", "look like", "close relative",
-                     "lookalike", "look-alike", "comparable")
+# Phrases that ask for visually similar animals or images. This agent does not
+# provide that, so matching one does NOT select a workflow - it records a
+# declined capability on the evidence and the request is answered by species
+# classification alone.
+_UNSUPPORTED_SIMILARITY_WORDS = ("similar", "resembl", "looks like", "look like",
+                                 "close relative", "lookalike", "look-alike",
+                                 "comparable")
+
+# The name the response uses for the thing that was declined.
+UNSUPPORTED_SIMILARITY_CAPABILITY = "visual_similarity_search"
 
 # "Panthera leo" - genus capitalised, species lowercase.
 #
@@ -161,20 +174,33 @@ class RuleBasedTextAnalyzer:
         matched, and False only when the intent fell through to the
         `recognition` default. That distinction is what lets clear requests cost
         exactly zero LLM calls.
+
+        There are two intents and no third one. A similarity request does not
+        get its own intent - see `unsupported_capability_in`.
         """
         for capability, triggers in _FOLLOW_UP_CAPABILITIES.items():
             if any(trigger in lowered for trigger in triggers):
                 return "scientific_follow_up", capability, True
 
-        if any(word in lowered for word in _SIMILARITY_WORDS):
-            return "similarity", None, True
-
         if any(trigger in lowered for trigger in _RECOGNITION_TRIGGERS):
+            return "recognition", None, True
+
+        if any(word in lowered for word in _UNSUPPORTED_SIMILARITY_WORDS):
+            # An unambiguous request - just not for something we do. Marking it
+            # clear keeps it away from the reasoning model, which has no more
+            # idea how to satisfy it than the rules do.
             return "recognition", None, True
 
         # Nothing matched. Default to recognition - the safe assumption for an
         # agent that was handed an image - but mark it ambiguous.
         return "recognition", None, False
+
+    @staticmethod
+    def unsupported_capability_in(lowered: str) -> str | None:
+        """The capability the instruction asked for that this agent lacks."""
+        if any(word in lowered for word in _UNSUPPORTED_SIMILARITY_WORDS):
+            return UNSUPPORTED_SIMILARITY_CAPABILITY
+        return None
 
     def analyze(
         self,
@@ -199,6 +225,7 @@ class RuleBasedTextAnalyzer:
             location_hint=self._location_hint(instruction),
             habitat_hint=next((word for word in _HABITAT_WORDS if word in lowered), None),
             requested_capability=requested_capability,
+            unsupported_capability=self.unsupported_capability_in(lowered),
         )
 
         # Four independent reasons to spend nothing: no adapter, a disabled one,
@@ -305,14 +332,14 @@ def align_text_with_candidates(
     candidates: list[SpeciesCandidate],
     resolved_hint_species_id: str | None,
 ) -> TextAlignment:
-    """Does the instruction agree with what the image retrieved?
+    """Does the instruction agree with what the classifier returned?
 
     - `agree`    the named species is the top candidate;
     - `conflict` the named species is known, but is not the top candidate;
     - `neutral`  no usable name, or a name we cannot resolve.
 
-    A conflict never removes or adds a candidate. It only prevents the workflow
-    from claiming an identification it cannot support.
+    A conflict never removes or adds a candidate, and never touches a score. It
+    only prevents the workflow from claiming an identification it cannot support.
     """
     if not candidates:
         return "neutral"
@@ -327,7 +354,7 @@ def align_text_with_candidates(
     if resolved_hint_species_id == candidates[0].species_id:
         return "agree"
 
-    # Known species, but the image put something else first - including the case
-    # where it is a lower-ranked candidate. Either way the text and the image
-    # disagree about what this is.
+    # Known species, but the classifier put something else first - including the
+    # case where it is a lower-ranked candidate. Either way the text and the
+    # image disagree about what this is.
     return "conflict"

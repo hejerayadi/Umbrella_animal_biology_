@@ -15,6 +15,21 @@ from ...extractor import Extractor
 from ...state import WorkflowState
 
 
+# Every execution-history entry is rendered into the Responder's prompt in
+# full - unlike a context finding, which that module caps. A pasted nucleotide
+# sequence is the one extracted value that can be arbitrarily long, so it is
+# abbreviated here rather than spending thousands of prompt tokens restating
+# what is already in `context`.
+_MAX_HISTORY_CHARS = 60
+
+
+def _abbreviate(value: Any) -> str:
+    text = repr(value)
+    if len(text) <= _MAX_HISTORY_CHARS:
+        return text
+    return f"{text[:_MAX_HISTORY_CHARS]}... ({len(text)} chars)"
+
+
 def make_extractor_node(
     extractor: Extractor,
 ) -> Callable[[WorkflowState], dict[str, Any]]:
@@ -37,7 +52,7 @@ def make_extractor_node(
                 ],
             }
 
-        step = ", ".join(f"{key}={value!r}" for key, value in facts.items())
+        step = ", ".join(f"{key}={_abbreviate(value)}" for key, value in facts.items())
         return {
             # Merge, never replace: same pattern the worker node uses when an
             # agent completes, so nothing already in context is lost.

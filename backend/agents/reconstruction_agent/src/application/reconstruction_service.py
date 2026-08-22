@@ -164,9 +164,20 @@ class ReconstructionService:
         if request.accession:
             return await self._fetch_by_accession(request.accession, request.organism)
 
+        # Worded for the end user, not for a developer. This message is the one
+        # thing the orchestrator's Responder has to work with on this path, and
+        # it renders it into the answer the user reads - so it has to say what
+        # they should do, not name context keys they have never heard of.
+        #
+        # Deliberately not an escalation to another agent: nothing else in the
+        # system holds the caller's own incomplete assembly, and picking some
+        # arbitrary published sequence for the species would be inventing the
+        # target rather than repairing one.
         raise InvalidSequenceError(
-            "No target sequence given. Provide `context.sequence` with residues, or "
-            "`context.accession` naming a sequence to fetch."
+            "No sequence was given to reconstruct. Paste the nucleotide sequence "
+            "containing the gaps (runs of 'N'), or name the NCBI accession of the "
+            "record to repair - this agent fills gaps in a specific sequence and "
+            "cannot choose one on your behalf."
         )
 
     async def _fetch_by_accession(self, accession: str, organism: str | None) -> Sequence:

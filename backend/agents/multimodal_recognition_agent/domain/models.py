@@ -1,7 +1,12 @@
 """Internal domain models.
 
-These follow the Sprint 2 specification's shapes. Two of them carry a hard
-safety property worth stating explicitly.
+The agent has exactly one core function: take one animal image plus a non-empty
+text instruction and name the most likely species. There is no vector database,
+no reference-image corpus and no similarity feature, so nothing here describes a
+retrieved point, a neighbour or a distance. What the classifier returns is a
+ranked list of *taxonomic labels*.
+
+Two models carry a hard safety property worth stating explicitly.
 
 `NormalizedRecognitionInput` holds the only two values in this agent that must
 never escape: the decoded image bytes, and the shared context (which may contain
@@ -30,10 +35,23 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 MediaType = Literal["image/jpeg", "image/png", "image/webp"]
-Intent = Literal["recognition", "similarity", "scientific_follow_up"]
+
+# The complete set of things a Recognition request can be asking for. There is
+# deliberately no `similarity` member: finding visually similar animals or
+# images is not a capability of this agent, and an enum value for it would be
+# the first step back towards a nearest-neighbour pipeline.
+Intent = Literal["recognition", "scientific_follow_up"]
+
 TextAlignment = Literal["agree", "neutral", "conflict"]
 Decision = Literal["identified", "uncertain", "not_identified"]
-TaxonomyStatus = Literal["mock_verified", "partial", "unverified"]
+
+# How much of a candidate's taxonomy the sources could supply.
+# `mock_verified` means "the mock fixture had both identifiers" - it does NOT
+# mean anything was checked against a live GBIF or NCBI database. `verified` is
+# the Phase 4 real-mode equivalent: both live GBIF and NCBI lookups matched and
+# returned an identifier. The two are deliberately distinct values so a
+# response can never be misread as live when it was mocked, or vice versa.
+TaxonomyStatus = Literal["mock_verified", "verified", "partial", "unverified"]
 
 
 class NormalizedRecognitionInput(BaseModel):
@@ -53,7 +71,8 @@ class NormalizedRecognitionInput(BaseModel):
 
     media_type: MediaType
     # SHA-256 over `image_bytes` exactly as defined above - not over pixels and
-    # not over the data URL string.
+    # not over the data URL string. This is the key the mock classifier's
+    # fixture is indexed by.
     image_sha256: str
     # Stored header dimensions, before any EXIF transpose. The pixel-area guard
     # uses width * height, which a transpose leaves unchanged.
@@ -66,8 +85,8 @@ class NormalizedRecognitionInput(BaseModel):
 class TextEvidence(BaseModel):
     """What the instruction contributes: intent and controlled hints.
 
-    Never a species. Text can shape the decision but cannot introduce a
-    candidate that retrieval did not return.
+    Never a species. Text can shape the decision but cannot introduce a taxon
+    the classifier did not return.
 
     `language` is a best-effort deterministic guess, `None` whenever the text
     is too short or too ambiguous to call. It is reported, never acted on - no
@@ -81,28 +100,48 @@ class TextEvidence(BaseModel):
     habitat_hint: str | None = None
     requested_capability: str | None = None
 
+    # Set when the instruction asks for something this agent does not provide -
+    # today, only `visual_similarity_search`. The request is still answered by
+    # species classification; the field is how the response says, out loud, that
+    # the other part of the question was not attempted. It is a *refusal*
+    # marker, never a route into a different pipeline.
+    unsupported_capability: str | None = None
 
-class RetrievedReference(BaseModel):
-    """One reference point returned by the retrieval provider."""
 
-    point_id: str
+class BioCLIPTaxonPrediction(BaseModel):
+    """One taxonomic label produced by the BioCLIP-2 classification boundary.
+
+    This is a *label*, not a database hit. It has no point id, no reference
+    count, no dataset version and no distance, because none of those exist in a
+    classifier's output. `classification_score` is the classifier's own ranking
+    score for this label on this image.
+
+    In Sprint 2 every one of these comes from `MockBioCLIP2Provider`, whose
+    scores are deterministic test values - not calibrated probabilities and not
+    scientific confidence.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     species_id: str
     scientific_name: str
     common_name: str | None = None
-    similarity_score: float
-    source: str | None = None
-    dataset_version: str
-    embedding_mode: Literal["mock_bioclip2"]
+    rank: Literal["species"] = "species"
+    classification_score: float
 
 
 class SpeciesCandidate(BaseModel):
-    """Distinct species aggregated from one or more retrieved references."""
+    """One classified species, after taxonomy validation has had its turn.
+
+    Same identity as the prediction it came from - the taxonomy sources may
+    annotate a candidate, never create or replace one.
+    """
 
     species_id: str
     scientific_name: str
     common_name: str | None = None
-    similarity_score: float
-    reference_count: int
+    rank: Literal["species"] = "species"
+    classification_score: float
     gbif_id: int | None = None
     ncbi_taxid: int | None = None
     taxonomy_status: TaxonomyStatus

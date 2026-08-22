@@ -1,0 +1,805 @@
+{
+  "phase": 8,
+  "title": "Sprint 3 closure, documentation, demo and PR readiness",
+  "generated_utc": "2026-08-21T16:41:31+00:00",
+  "final_status": "PASS",
+  "final_status_conclusion": "PASS \u2014 Standalone Recognition Agent Sprint 3 complete",
+  "final_status_reason": "Every standalone Sprint 3 requirement passes, all real providers work together live, and the one open finding (P8-F1) has been corrected under explicit authorization and verified both offline and live. The complete offline suite is green with zero xfails. This status covers the STANDALONE Recognition Agent only.",
+  "scope_note": "Two scopes must not be conflated. (1) The standalone Recognition Agent Sprint 3 scope is complete apart from P8-F1. (2) Full-platform orchestration integration is NOT started and is future external work owned by the orchestrator/integration team. The complete platform integration is not finished, and nothing in this report claims otherwise.",
+  "baseline": {
+    "branch": "group-d-recognition-sprint3",
+    "head_sha": "fd12565b8d37d70d52e1c22c6a94cd41564d0af8",
+    "head_subject": "phase 7",
+    "phase7_present_in_head": true,
+    "working_tree_clean_at_start": true,
+    "offline_suite_at_baseline": {
+      "passed": 1140,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "phase0_base_sha": "2f1455dbf44b7be6ce7ad8c5dcee6a9e35c7bf44",
+    "phase0_base_subject": "recognition with mock ready",
+    "phase0_base_determination": "Derived from git history, not guessed and not recorded in any prior report: SPRINT_3_COMPLETION_PLAN_RECOGNITION_AGENT.md was introduced in a9f4367 ('phases 0 2 implemented'), the first Sprint 3 commit, and docs/sprint2-final-recognition-only.md was introduced in 2f1455d ('recognition with mock ready'), which closed Sprint 2. 2f1455d is therefore the last pre-Sprint-3 commit and the authoritative Phase 0 base.",
+    "merge_base_with_main": "3edcf2eead8ca4769202ea7fa9c5e4296e1d48db",
+    "main_head": "55c8efcf796365e823027a839e36cb2756786451",
+    "merge_base_note": "main has advanced past the merge base independently; the Sprint 3 branch was not rebased. No Recognition work depends on that divergence."
+  },
+  "phase_statuses": {
+    "phase_0_branch_and_baseline": "PASS",
+    "phase_1_config_and_provider_hardening": "PASS",
+    "phase_2_gpt5_mini_reasoning_brain": "PASS",
+    "phase_3_remote_bioclip2": "PASS",
+    "phase_4_live_gbif_ncbi": "PASS",
+    "phase_5_complete_real_standalone_flow": "PASS (after the F1-F3 provenance corrections)",
+    "phase_6_orchestrator_revalidation": "N/A - The phase was defined as revalidation of an existing integration, but that prerequisite does not exist.",
+    "phase_7_resilience_security_privacy": "PASS (after the P7-F1-F3 corrections)",
+    "phase_8_closure": "PASS \u2014 Standalone Recognition Agent Sprint 3 complete"
+  },
+  "test_counts": {
+    "complete_offline_suite": {
+      "passed": 1196,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 0
+    },
+    "complete_offline_suite_before_p8f1_fix": {
+      "passed": 1178,
+      "failed": 0,
+      "skipped": 0,
+      "xfailed": 1
+    },
+    "focused_confidence_tests": {
+      "passed": 13,
+      "failed": 0
+    },
+    "architecture_and_no_leak_gates": {
+      "passed": 63,
+      "failed": 0
+    },
+    "phase3_regression": {
+      "passed": 141,
+      "failed": 0
+    },
+    "phase4_regression": {
+      "passed": 172,
+      "failed": 0
+    },
+    "phase5_regression": {
+      "passed": 113,
+      "failed": 0
+    },
+    "phase7_regression": {
+      "passed": 217,
+      "failed": 0
+    },
+    "phase8_demo_and_closure": {
+      "passed": 56,
+      "failed": 0,
+      "xfailed": 0
+    },
+    "xfail_note": "Zero xfails remain. The strict xfail recording P8-F1 was converted into ordinary passing regression tests, not deleted or weakened; the suite gained 18 tests.",
+    "offline_property": "No offline test contacts Azure, the BioCLIP Space, GBIF or NCBI, and none sleeps."
+  },
+  "provider_modes": {
+    "bioclip": "remote",
+    "taxonomy": "real",
+    "reasoning_llm": "azure"
+  },
+  "provider_versions": {
+    "reasoning_llm": {
+      "provider": "azure-gpt-5-mini",
+      "deployment_alias": "umbrella-gpt5-mini",
+      "region": "swedencentral",
+      "max_calls_per_request": 2,
+      "store": false,
+      "sdk_max_retries": 0
+    },
+    "classification": {
+      "provider": "RemoteBioCLIP2Provider",
+      "space": "imageomics/bioclip-2-demo",
+      "model_target": "imageomics/bioclip-2",
+      "recognition_mode": "remote_bioclip2_open_domain_species",
+      "provenance": {
+        "remote_space_id": "imageomics/bioclip-2-demo",
+        "remote_space_revision": "4768b0d8b743582f6eaa058fde15d303ed073522",
+        "model_version": "imageomics/bioclip-2"
+      }
+    },
+    "taxonomy": {
+      "gbif": "RealGBIFProvider - https://api.gbif.org/v1/species/match",
+      "ncbi": "RealNCBIProvider - Entrez esearch",
+      "ncbi_rate_unkeyed": "2 requests/second (published limit 3/s; margin deliberate)",
+      "ncbi_rate_with_key": "10 requests/second",
+      "ncbi_api_key": "optional"
+    }
+  },
+  "environment_variable_names_only": [
+    "RECOGNITION_LLM_PROVIDER_MODE",
+    "AZURE_OPENAI_BASE_URL",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_DEPLOYMENT",
+    "AZURE_OPENAI_REASONING_EFFORT",
+    "AZURE_OPENAI_MAX_OUTPUT_TOKENS",
+    "RECOGNITION_LLM_TIMEOUT_SECONDS",
+    "RECOGNITION_LLM_MAX_CALLS_PER_REQUEST",
+    "BIOCLIP_PROVIDER_MODE",
+    "RECOGNITION_REMOTE_CLASSIFIER_TIMEOUT_SECONDS",
+    "BIOCLIP_MOCK_PROVIDER_VERSION",
+    "RECOGNITION_CLASSIFICATION_FIXTURE_PATH",
+    "TAXONOMY_PROVIDER_MODE",
+    "RECOGNITION_TAXONOMY_TIMEOUT_SECONDS",
+    "NCBI_TOOL",
+    "NCBI_EMAIL",
+    "NCBI_API_KEY",
+    "RECOGNITION_TOP_K_SPECIES",
+    "IDENTIFIED_MIN_SCORE",
+    "IDENTIFIED_MIN_MARGIN",
+    "UNCERTAIN_MIN_SCORE",
+    "MAX_IMAGE_BYTES",
+    "MAX_IMAGE_PIXELS",
+    "MIN_IMAGE_WIDTH",
+    "MIN_IMAGE_HEIGHT",
+    "TEXT_ANALYZER_MODE",
+    "RECOGNITION_LIVE_SMOKE"
+  ],
+  "environment_values_disclosed": false,
+  "diff_audit": {
+    "phase0_base_sha": "2f1455dbf44b7be6ce7ad8c5dcee6a9e35c7bf44",
+    "head_sha": "fd12565b8d37d70d52e1c22c6a94cd41564d0af8",
+    "total_diffstat": "27 files changed, 10995 insertions(+), 126 deletions(-)",
+    "commits_introduced_during_sprint3": [
+      "a9f4367 2026-08-09 phases 0 2 implemented",
+      "b3f94e0 2026-08-14 phase 3 ready bioclip ready",
+      "1e0cfb4 2026-08-20 Phase 4: real GBIF/NCBI taxonomy providers, live smoke test, gate test fixes",
+      "059277c 2026-08-20 implementation ncbi gbif valide",
+      "83ae275 2026-08-21 phase 5",
+      "fd12565 2026-08-21 phase 7"
+    ],
+    "changed_files": [
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/.env.example"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/SPRINT_3_COMPLETION_PLAN_RECOGNITION_AGENT.md"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/adapters/bioclip.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/adapters/reasoning_llm.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/adapters/taxonomy.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/agent.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/api.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/config.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/docs/PHASE5_CERTIFICATION.md"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/docs/PHASE7_CERTIFICATION.md"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/docs/phase5_results.json"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/docs/phase7_results.json"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/domain/models.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/requirements.txt"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/smoke_test_azure.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/smoke_test_taxonomy.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_phase1_config_hardening.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_phase2_no_retry_and_smoke.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_phase3_remote_bioclip.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_phase4_real_taxonomy.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_phase5_certification.py"
+      },
+      {
+        "status": "A",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_phase7_resilience_security.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_recognition_only_gate.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/tests/test_workflow.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/workflows/graph.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/workflows/nodes.py"
+      },
+      {
+        "status": "M",
+        "path": "backend/agents/multimodal_recognition_agent/workflows/state.py"
+      }
+    ],
+    "implementation_files_changed": [
+      "backend/agents/multimodal_recognition_agent/adapters/bioclip.py",
+      "backend/agents/multimodal_recognition_agent/adapters/reasoning_llm.py",
+      "backend/agents/multimodal_recognition_agent/adapters/taxonomy.py",
+      "backend/agents/multimodal_recognition_agent/agent.py",
+      "backend/agents/multimodal_recognition_agent/api.py",
+      "backend/agents/multimodal_recognition_agent/config.py",
+      "backend/agents/multimodal_recognition_agent/domain/models.py",
+      "backend/agents/multimodal_recognition_agent/smoke_test_azure.py",
+      "backend/agents/multimodal_recognition_agent/smoke_test_taxonomy.py",
+      "backend/agents/multimodal_recognition_agent/workflows/graph.py",
+      "backend/agents/multimodal_recognition_agent/workflows/nodes.py",
+      "backend/agents/multimodal_recognition_agent/workflows/state.py"
+    ],
+    "new_test_modules": [
+      "backend/agents/multimodal_recognition_agent/tests/test_phase1_config_hardening.py",
+      "backend/agents/multimodal_recognition_agent/tests/test_phase2_no_retry_and_smoke.py",
+      "backend/agents/multimodal_recognition_agent/tests/test_phase3_remote_bioclip.py",
+      "backend/agents/multimodal_recognition_agent/tests/test_phase4_real_taxonomy.py",
+      "backend/agents/multimodal_recognition_agent/tests/test_phase5_certification.py",
+      "backend/agents/multimodal_recognition_agent/tests/test_phase7_resilience_security.py"
+    ],
+    "documentation_files": [
+      "backend/agents/multimodal_recognition_agent/SPRINT_3_COMPLETION_PLAN_RECOGNITION_AGENT.md",
+      "backend/agents/multimodal_recognition_agent/docs/PHASE5_CERTIFICATION.md",
+      "backend/agents/multimodal_recognition_agent/docs/PHASE7_CERTIFICATION.md"
+    ],
+    "environment_template_changes": [
+      "backend/agents/multimodal_recognition_agent/.env.example"
+    ],
+    "dependency_changes": [
+      "backend/agents/multimodal_recognition_agent/requirements.txt"
+    ],
+    "all_changes_belong_to_recognition": true,
+    "other_agent_modified": false,
+    "orchestrator_registry_or_frontend_modified": false,
+    "shared_schema_contracts_unchanged": true,
+    "seven_key_contract_unchanged": true,
+    "tracked_secret_image_weight_cache_dataset_or_log": "none"
+  },
+  "uncommitted_phase8_changes": {
+    "modified": [
+      "backend/agents/multimodal_recognition_agent/SPRINT_3_COMPLETION_PLAN_RECOGNITION_AGENT.md",
+      "backend/agents/multimodal_recognition_agent/card.json",
+      "backend/agents/multimodal_recognition_agent/domain/confidence.py"
+    ],
+    "created": [
+      "backend/agents/multimodal_recognition_agent/demo_sprint3.py",
+      "backend/agents/multimodal_recognition_agent/docs/RECOGNITION_AGENT_FINAL_REFERENCE.md",
+      "backend/agents/multimodal_recognition_agent/docs/SPRINT_3_FINAL_REPORT.md",
+      "backend/agents/multimodal_recognition_agent/docs/SPRINT_3_PR_SUMMARY.md",
+      "backend/agents/multimodal_recognition_agent/docs/phase8_results.json",
+      "backend/agents/multimodal_recognition_agent/tests/test_phase8_demo_and_closure.py"
+    ],
+    "committed_or_pushed": false
+  },
+  "live_verification": {
+    "azure_gpt_smoke": "PASS - 2 logical calls, 2 HTTP attempts, no retry, store=False, seven keys",
+    "remote_bioclip2_smoke": {
+      "result": "PASS",
+      "labels_returned": 5,
+      "ranked_and_in_range": true,
+      "latency_seconds": 5.875,
+      "top_label": {
+        "name": "Loxodonta africana",
+        "score": 0.9364414811134338
+      }
+    },
+    "gbif_ncbi_smoke": "PASS - Panthera leo gbif=5219404 ncbi=9689; Panthera tigris gbif=5219416 ncbi=9694; a nonexistent binomial matched nothing and invented nothing",
+    "complete_real_standalone_request": {
+      "status": "completed",
+      "decision": "identified",
+      "text_alignment": "neutral",
+      "species": "Loxodonta africana",
+      "species_id": "loxodonta_africana",
+      "gbif_id": 2435350,
+      "ncbi_taxid": 9785,
+      "taxonomy_status": "verified",
+      "top_k": [
+        {
+          "name": "Loxodonta africana",
+          "score": 0.9364414811134338,
+          "gbif_id": 2435350,
+          "ncbi_taxid": 9785
+        },
+        {
+          "name": "Loxodonta cyclotis",
+          "score": 0.04492184892296791,
+          "gbif_id": 2435349,
+          "ncbi_taxid": 99490
+        },
+        {
+          "name": "Stylochaeton natalensis",
+          "score": 0.0005943049909546971,
+          "gbif_id": 2871856,
+          "ncbi_taxid": 1120226
+        },
+        {
+          "name": "Colophospermum mopane",
+          "score": 0.0004395524156279862,
+          "gbif_id": 2974567,
+          "ncbi_taxid": 162715
+        },
+        {
+          "name": "Elephas maximus",
+          "score": 0.0003900700539816171,
+          "gbif_id": 5219461,
+          "ncbi_taxid": 9783
+        }
+      ],
+      "output_keys": [
+        "gbif_id",
+        "ncbi_taxid",
+        "recognition",
+        "recognition_candidates",
+        "recognition_provenance",
+        "species",
+        "species_id"
+      ],
+      "reasoning_llm_calls": 2,
+      "plan_source": "llm",
+      "explanation_source": "llm",
+      "recognition_provider": "RemoteBioCLIP2Provider",
+      "recognition_mode": "remote_bioclip2_open_domain_species",
+      "gbif_mode": "real",
+      "ncbi_mode": "real",
+      "taxonomy_executed": true,
+      "taxonomy_degraded": false,
+      "warnings": null,
+      "latency_seconds": 20.969,
+      "transport_error": null
+    },
+    "phase5_real_image_scenarios": {
+      "prompt_injection": {
+        "status": "completed",
+        "decision": "identified",
+        "text_alignment": "neutral",
+        "species": "Loxodonta africana",
+        "species_id": "loxodonta_africana",
+        "gbif_id": 2435350,
+        "ncbi_taxid": 9785,
+        "taxonomy_status": "verified",
+        "top_k": [
+          {
+            "name": "Loxodonta africana",
+            "score": 0.9364414811134338,
+            "gbif_id": 2435350,
+            "ncbi_taxid": 9785
+          },
+          {
+            "name": "Loxodonta cyclotis",
+            "score": 0.04492184892296791,
+            "gbif_id": 2435349,
+            "ncbi_taxid": 99490
+          },
+          {
+            "name": "Stylochaeton natalensis",
+            "score": 0.0005943049909546971,
+            "gbif_id": 2871856,
+            "ncbi_taxid": 1120226
+          },
+          {
+            "name": "Colophospermum mopane",
+            "score": 0.0004395524156279862,
+            "gbif_id": 2974567,
+            "ncbi_taxid": 162715
+          },
+          {
+            "name": "Elephas maximus",
+            "score": 0.0003900700539816171,
+            "gbif_id": 5219461,
+            "ncbi_taxid": 9783
+          }
+        ],
+        "output_keys": [
+          "gbif_id",
+          "ncbi_taxid",
+          "recognition",
+          "recognition_candidates",
+          "recognition_provenance",
+          "species",
+          "species_id"
+        ],
+        "reasoning_llm_calls": 1,
+        "plan_source": "deterministic",
+        "explanation_source": "deterministic",
+        "recognition_provider": "RemoteBioCLIP2Provider",
+        "recognition_mode": "remote_bioclip2_open_domain_species",
+        "gbif_mode": "real",
+        "ncbi_mode": "real",
+        "taxonomy_executed": true,
+        "taxonomy_degraded": false,
+        "warnings": null,
+        "latency_seconds": 7.609,
+        "transport_error": null
+      },
+      "scientific_follow_up": {
+        "status": "needs_agent",
+        "target_agent": "Evolution",
+        "latency_seconds": 13.969,
+        "transport_error": null
+      },
+      "resume_after_delegation": {
+        "status": "completed",
+        "decision": "identified",
+        "text_alignment": "neutral",
+        "species": "Loxodonta africana",
+        "species_id": "loxodonta_africana",
+        "gbif_id": 2435350,
+        "ncbi_taxid": 9785,
+        "taxonomy_status": "verified",
+        "top_k": [
+          {
+            "name": "Loxodonta africana",
+            "score": 0.9364414811134338,
+            "gbif_id": 2435350,
+            "ncbi_taxid": 9785
+          },
+          {
+            "name": "Loxodonta cyclotis",
+            "score": 0.04492184892296791,
+            "gbif_id": 2435349,
+            "ncbi_taxid": 99490
+          },
+          {
+            "name": "Stylochaeton natalensis",
+            "score": 0.0005943049909546971,
+            "gbif_id": 2871856,
+            "ncbi_taxid": 1120226
+          },
+          {
+            "name": "Colophospermum mopane",
+            "score": 0.0004395524156279862,
+            "gbif_id": 2974567,
+            "ncbi_taxid": 162715
+          },
+          {
+            "name": "Elephas maximus",
+            "score": 0.0003900700539816171,
+            "gbif_id": 5219461,
+            "ncbi_taxid": 9783
+          }
+        ],
+        "output_keys": [
+          "gbif_id",
+          "ncbi_taxid",
+          "recognition",
+          "recognition_candidates",
+          "recognition_provenance",
+          "species",
+          "species_id"
+        ],
+        "reasoning_llm_calls": 1,
+        "plan_source": "deterministic",
+        "explanation_source": "deterministic",
+        "recognition_provider": "RemoteBioCLIP2Provider",
+        "recognition_mode": "remote_bioclip2_open_domain_species",
+        "gbif_mode": "real",
+        "ncbi_mode": "real",
+        "taxonomy_executed": true,
+        "taxonomy_degraded": false,
+        "warnings": null,
+        "latency_seconds": 7.578,
+        "transport_error": null
+      },
+      "second_species": {
+        "status": "completed",
+        "decision": "identified",
+        "text_alignment": "neutral",
+        "species": "Acinonyx jubatus",
+        "species_id": "acinonyx_jubatus",
+        "gbif_id": 2435270,
+        "ncbi_taxid": 32536,
+        "taxonomy_status": "verified",
+        "top_k": [
+          {
+            "name": "Acinonyx jubatus",
+            "score": 0.9070415496826172,
+            "gbif_id": 2435270,
+            "ncbi_taxid": 32536
+          },
+          {
+            "name": "Acinonyx pardinensis",
+            "score": 0.07306791841983795,
+            "gbif_id": 8065414,
+            "ncbi_taxid": null
+          },
+          {
+            "name": "Panthera pardus",
+            "score": 0.0014678245643153787,
+            "gbif_id": 5219436,
+            "ncbi_taxid": 9691
+          },
+          {
+            "name": "Genetta thierryi",
+            "score": 0.0013391844695433974,
+            "gbif_id": 5219353,
+            "ncbi_taxid": 205597
+          },
+          {
+            "name": "Canis lupaster",
+            "score": 0.0011125546880066395,
+            "gbif_id": 8702600,
+            "ncbi_taxid": 1707807
+          }
+        ],
+        "output_keys": [
+          "gbif_id",
+          "ncbi_taxid",
+          "recognition",
+          "recognition_candidates",
+          "recognition_provenance",
+          "species",
+          "species_id"
+        ],
+        "reasoning_llm_calls": 2,
+        "plan_source": "llm",
+        "explanation_source": "deterministic",
+        "recognition_provider": "RemoteBioCLIP2Provider",
+        "recognition_mode": "remote_bioclip2_open_domain_species",
+        "gbif_mode": "real",
+        "ncbi_mode": "real",
+        "taxonomy_executed": true,
+        "taxonomy_degraded": false,
+        "warnings": null,
+        "latency_seconds": 9.594,
+        "transport_error": null
+      }
+    },
+    "checks_failed": [],
+    "demo_script_live": {
+      "image": "reptile_iguana.jpg (CC BY-SA 3.0, Wikimedia Commons, deleted after use)",
+      "result": "completed / identified - Iguana iguana",
+      "gbif_id": 2459658,
+      "ncbi_taxid": 8517,
+      "taxonomy_status": "verified",
+      "reasoning_llm_calls": 2,
+      "plan_source": "llm",
+      "explanation_source": "llm",
+      "latency_seconds": 21.172,
+      "provider_modes": {
+        "bioclip": "remote",
+        "taxonomy": "real",
+        "llm": "azure"
+      }
+    },
+    "external_rate_limiting_or_outages_observed": [
+      "Azure gpt-5-mini (swedencentral) returns HTTP 429 under back-to-back load; the agent falls back deterministically with honest provenance. Reported, not worked around - no request was retried to force a PASS.",
+      "GBIF was transiently unavailable for one candidate during the Phase 5 run (Iguana iguana); the agent degraded correctly. The same lookup succeeded in the Phase 8 demo run."
+    ],
+    "real_not_identified_smoke": {
+      "image": "ambiguous_coyote.jpg (CC BY-SA 3.0, Wikimedia Commons, deleted after use)",
+      "providers": "remote BioCLIP-2 + live GBIF + live NCBI + Azure GPT-5 mini",
+      "decision": "not_identified",
+      "top_k": [
+        {
+          "name": "Canis lycaon",
+          "score": 0.422096312046051
+        },
+        {
+          "name": "Canis latrans",
+          "score": 0.38662874698638916
+        },
+        {
+          "name": "Canis edwardii",
+          "score": 0.08986126631498337
+        },
+        {
+          "name": "Canis lupaster",
+          "score": 0.03793545067310333
+        },
+        {
+          "name": "Demodex canis",
+          "score": 0.008984921500086784
+        }
+      ],
+      "scores_identical_to_phase5": true,
+      "clarification_question": "The available visual evidence was not strong enough to identify a species confidently. Could you supply a clearer photograph of the animal, or tell me where the observation was made?",
+      "sprint_2_claim_present": false,
+      "latency_seconds": 22.719,
+      "reasoning_llm_calls": 2,
+      "seven_keys_exact": true
+    }
+  },
+  "seven_key_contract": [
+    "gbif_id",
+    "ncbi_taxid",
+    "recognition",
+    "recognition_candidates",
+    "recognition_provenance",
+    "species",
+    "species_id"
+  ],
+  "contract_checks": {
+    "seven_keys_exact_on_every_completed_branch": true,
+    "failure_output_is_always_the_structured_dict": true,
+    "agent_card_schema_compatible": true,
+    "agent_card_identity_port_and_capabilities_preserved": true,
+    "registry_port_8005_unchanged": true,
+    "shared_AgentRequest_AgentResult_AgentStatus_unchanged": true
+  },
+  "no_leak_evidence": {
+    "tracked_env_files": "none",
+    "tracked_secrets_or_personal_emails": "none - only variable NAMES and test placeholders",
+    "tracked_images_weights_caches_logs_datasets": "none",
+    "tracked_virtual_environments": "none",
+    "canary_scan_surfaces": [
+      "logs",
+      "exceptions",
+      "serialized state",
+      "API responses",
+      "provenance",
+      "failure outputs",
+      "demo output"
+    ],
+    "canary_result": "clean",
+    "dependency_logging_policy": "httpx, httpcore, urllib3, openai pinned to WARNING",
+    "temporary_evaluation_assets_removed": true,
+    "lingering_processes": "none"
+  },
+  "na_items": {
+    "phase_6": "N/A - The phase was defined as revalidation of an existing integration, but that prerequisite does not exist.",
+    "prepare_training_data": "N/A - pre-trained BioCLIP-2; no training in scope",
+    "train_or_finetune_a_model": "N/A - fixed architecture decision",
+    "retrieval_pipeline": "N/A - no vector store, retrieval or similarity by decision",
+    "group_d_sub_orchestrator": "N/A - not in the current architecture",
+    "frontend": "N/A - explicitly outside this plan"
+  },
+  "unresolved_external_work": [
+    {
+      "item": "Global Orchestrator integration for Recognition",
+      "owner": "orchestrator / integration team",
+      "status": "NOT IMPLEMENTED - future task",
+      "recognition_readiness": "READY FOR FUTURE INTEGRATION - POST /execute on port 8005, the shared AgentRequest/AgentResult contract, the agent card and the seven output keys are all validated standalone.",
+      "not_validated": [
+        "orchestrator routing",
+        "shared-context aggregation",
+        "specialist invocation",
+        "delegation resume end to end"
+      ]
+    },
+    {
+      "item": "Azure deployment capacity",
+      "owner": "platform / infrastructure",
+      "status": "OPEN - informational",
+      "detail": "umbrella-gpt5-mini rate-limits under back-to-back load. The agent degrades correctly; production planning should size the deployment."
+    }
+  ],
+  "findings": [
+    {
+      "id": "P8-F1",
+      "severity": "medium",
+      "type": "stale mock claim in user-facing text",
+      "file": "backend/agents/multimodal_recognition_agent/domain/confidence.py",
+      "line": 84,
+      "summary": "clarification_for() hardcodes 'The Sprint 2 classifier did not return a taxon confident enough to name a species for this image.' into the not_identified branch, with no mode branch.",
+      "impact": "In full real mode a user whose photograph could not be identified is told a 'Sprint 2 classifier' produced that outcome, while the run actually used remote BioCLIP-2 with live GBIF and NCBI.",
+      "reachability": "Confirmed reachable: 2 of the 7 Phase 5 real-mode evaluation images (shark_white, ambiguous_coyote) returned not_identified.",
+      "scope": "Only the not_identified branch. The uncertain branch is already clean, and the other 'Sprint 2' literals in the runtime are mock-mode-only and therefore accurate - asserted by test.",
+      "evidence_tests": [
+        "test_p8_f1_is_reproducible_and_recorded",
+        "test_p8_f1_the_clarification_question_should_not_claim_a_sprint_2_classifier (strict xfail)",
+        "test_p8_f1_the_uncertain_branch_is_already_clean",
+        "test_p8_f1_the_other_sprint_2_strings_are_mode_correct"
+      ],
+      "recommendation": "Give the sentence the same mode branch Phase 5 gave the explanation and the safety footer - a one-line change in domain/confidence.py.",
+      "fixed": true,
+      "approval_required": false,
+      "reason_not_fixed": "domain/confidence.py is a PROTECTED file under the Phase 8 boundary, and section 2 requires reporting an implementation defect and stopping before fixing it.",
+      "authorization": "Phase 8 Final Corrective Authorization \u2014 P8-F1",
+      "correction": "domain/confidence.py: the not_identified clarification question is now provider-neutral. It describes the EVIDENCE rather than the component that produced it, so it is true in every mode and needed no mode branch. The request for a clearer photograph and `request_better_image` behaviour are unchanged.",
+      "before": "\"The Sprint 2 classifier did not return a taxon confident enough to name a species for this image. Could you supply a clearer photograph of the animal, or tell me where the observation was made?\"",
+      "after": "\"The available visual evidence was not strong enough to identify a species confidently. Could you supply a clearer photograph of the animal, or tell me where the observation was made?\"",
+      "live_verification": "A bounded real not_identified run (remote BioCLIP-2 + live GBIF/NCBI, coyote photograph) returned the corrected sentence. Candidate scores were identical to the Phase 5 run - Canis lycaon 0.4221, Canis latrans 0.3866 - confirming the correction changed no science.",
+      "regression_tests": [
+        "test_p8_f1_the_real_mode_question_makes_no_sprint_2_claim[no_candidates|one_weak_candidate|weak_and_close]",
+        "test_p8_f1_the_mock_mode_question_remains_truthful[...]",
+        "test_p8_f1_the_question_is_identical_in_both_modes",
+        "test_p8_f1_the_question_still_asks_for_better_visual_evidence[...]",
+        "test_p8_f1_the_thresholds_are_unchanged",
+        "test_p8_f1_the_decide_function_is_untouched",
+        "test_p8_f1_candidate_identity_order_and_scores_are_unchanged[...]",
+        "test_p8_f1_the_seven_output_keys_remain_exact[...]",
+        "test_p8_f1_the_uncertain_and_identified_branches_are_byte_identical",
+        "test_p8_f1_no_other_stale_mock_claim_is_reachable_in_real_mode",
+        "test_p8_f1_a_real_mode_identified_response_is_also_free_of_sprint_2_wording"
+      ],
+      "unchanged_by_the_correction": [
+        "thresholds (0.75 / 0.08 / 0.45)",
+        "confidence decisions",
+        "candidate ranking",
+        "identified / uncertain / not_identified conditions",
+        "request_better_image",
+        "workflow",
+        "providers",
+        "schemas",
+        "seven-key contract",
+        "API",
+        "agent card",
+        "demo behaviour"
+      ]
+    }
+  ],
+  "known_limitations": [
+    "No Global Orchestrator integration exists; the agent emits needs_agent and stops. This is future external work, not a Recognition defect.",
+    "Seven real evaluation images across six groups certify INTEGRATION, not general scientific accuracy. No threshold was tuned on them.",
+    "Per-stage latency is not instrumented; only end-to-end wall clock. The equivalent fields are present in recognition_provenance.",
+    "Text alignment is inert in real mode by design (RealTaxonomyProvider ships no name catalogue), so agreement and conflict are certified against the mock-catalogue provider.",
+    "The dependency logging policy applies at the HTTP entry point; code importing RecognitionAgent directly keeps its libraries' own levels.",
+    "INTERNAL_ERROR is a string literal rather than an ErrorCode member, because domain/errors.py was outside the Phase 7 corrective boundary.",
+    "The NCBI rate limiter is per-provider, so several agent instances would each hold their own budget. Relevant before scaling out.",
+    "Outage scenarios are injected into our own transports; no external service was deliberately failed.",
+    "Opaque model prose is accepted verbatim in the explanation - grounding restricts species and probability claims, not arbitrary text.",
+    "External Azure and GBIF availability remains outside our control: the Azure deployment rate-limits under back-to-back load and GBIF was transiently unavailable for one candidate during evaluation. The agent degrades correctly and reports both honestly; neither was retried to force a green result."
+  ],
+  "final_gate": {
+    "all_standalone_requirements_pass": true,
+    "all_tests_pass": true,
+    "all_real_providers_work": true,
+    "documentation_accurate": true,
+    "no_blocker_remains_inside_recognition": true,
+    "phase_6_clearly_na": true,
+    "platform_integration_listed_as_future_external_work": true,
+    "conclusion": "PASS \u2014 Standalone Recognition Agent Sprint 3 complete",
+    "full_platform_completion_claimed": false,
+    "orchestrator_e2e_validation_claimed": false,
+    "specialist_execution_or_resume_e2e_claimed": false
+  },
+  "pr_readiness": {
+    "pr_opened": false,
+    "committed": false,
+    "pushed": false,
+    "summary_document": "docs/SPRINT_3_PR_SUMMARY.md",
+    "ready_to_open": true,
+    "scope": "standalone Recognition Agent only; Global Orchestrator integration excluded"
+  }
+}

@@ -97,6 +97,71 @@ export interface ProteinViewerSpec {
   domains: ProteinDomain[];
 }
 
+/**
+ * One ranked taxonomic label from the Multimodal Recognition Agent.
+ *
+ * `classificationScore` is a RANKING score over BioCLIP-2's label set, not a
+ * calibrated probability - the agent says so in its own provenance and the UI
+ * has to keep saying it. Displaying it as "% confident" would invent a
+ * statistical claim the model never made.
+ */
+export interface RecognitionCandidate {
+  speciesId: string;
+  scientificName: string;
+  commonName?: string | null;
+  rank?: string | null;
+  classificationScore: number;
+  gbifId?: number | null;
+  ncbiTaxId?: number | null;
+  /**
+   * "verified" = both GBIF and NCBI matched, "partial" = one did,
+   * "unverified"/"mock_verified" = no live double match. Annotation only:
+   * taxonomy never reorders or rescores a candidate.
+   */
+  taxonomyStatus?: string | null;
+}
+
+/**
+ * Where the answer came from - the "source of knowledge" behind the ranking.
+ *
+ * Deliberately carries the mock/real flags. The agent refuses to let fixture
+ * predictions be presented under a production banner, and this panel is the
+ * last place that promise could be broken.
+ */
+export interface RecognitionProvenance {
+  modelTarget?: string | null;
+  modelVersion?: string | null;
+  provider?: string | null;
+  /** e.g. "remote_bioclip2_open_domain_species" or "mock_classification". */
+  recognitionMode?: string | null;
+  mockProviderVersion?: string | null;
+  /** The Hugging Face Space that actually ran inference, and its revision. */
+  remoteSpaceId?: string | null;
+  remoteSpaceRevision?: string | null;
+  /** "real" = live lookup, "mock" = committed fixture. */
+  gbifMode?: string | null;
+  ncbiMode?: string | null;
+  taxonomyExecuted?: boolean;
+  taxonomyDegraded?: boolean;
+  scoreIsProbability?: boolean;
+  scoreKind?: string | null;
+  reasoningLlmProvider?: string | null;
+  reasoningLlmCalls?: number | null;
+}
+
+/** The Multimodal Recognition Agent's contribution to one answer. */
+export interface RecognitionResult {
+  /** "identified" | "uncertain" | "not_identified". */
+  decision: string;
+  species?: string | null;
+  speciesId?: string | null;
+  gbifId?: number | null;
+  ncbiTaxId?: number | null;
+  candidates: RecognitionCandidate[];
+  provenance: RecognitionProvenance;
+  clarificationQuestion?: string | null;
+}
+
 export type MessageSender = "user" | "assistant";
 
 export interface Message {
@@ -129,6 +194,13 @@ export interface Message {
    * answer renders without the picture.
    */
   generatedImageUrl?: string;
+  /**
+   * The ranked species candidates, when the Multimodal Recognition Agent
+   * contributed to this answer. Kept on the message like `proteinViewer`
+   * above so it survives a reload - it is a handful of names, scores and
+   * integers, nothing like the size of an image.
+   */
+  recognition?: RecognitionResult;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

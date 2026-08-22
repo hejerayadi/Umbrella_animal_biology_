@@ -68,7 +68,10 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
             )
             raw = await self._client.result(job_id)
             references, pending = to_references(
-                raw, query_length=len(payload.sequence), gap_length=payload.gap_length
+                raw,
+                query_length=len(payload.sequence),
+                gap_length=payload.gap_length,
+                left_flank_length=payload.left_flank_length,
             )
             total = len(references)
 
@@ -102,6 +105,13 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
                     "blast_hits_total": total,
                     "blast_hits_with_sequence": len(with_sequence),
                     "blast_fetches_attempted": min(len(pending), _MAX_SEQUENCE_FETCHES),
+                    # The count that actually predicts whether the alignment
+                    # can produce a fill. Hits can be plentiful and every one
+                    # of them useless: homologous to a flank, carrying nothing
+                    # across the gap itself.
+                    "blast_hits_carrying_gap": sum(
+                        1 for reference in references if reference.carries_gap
+                    ),
                 },
             )
 

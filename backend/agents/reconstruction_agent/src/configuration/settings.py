@@ -366,12 +366,22 @@ class Settings(_Base):
 
     max_iterations: int = Field(default=6, alias="RECONSTRUCTION_MAX_ITERATIONS", ge=1, le=50)
     # Measured, not guessed: `scripts/tune_settings.py` sweeps 360 synthetic
-    # gaps with known answers, and 0.65 is the lowest threshold that accepts no
+    # gaps with known answers, and this is the lowest threshold that accepts no
     # incorrect reconstruction. Precision is weighted above recall because a
     # wrong base propagates silently into every downstream analysis, while an
     # unresolved gap stays visibly unresolved.
+    #
+    # 0.15, not the 0.65 this used to be. That figure was measured against the
+    # OLD confidence score, which separated correct from incorrect at 0.575 -
+    # barely better than chance - so the threshold had to be set high to
+    # compensate. The rebuilt score separates them at 0.987, and
+    # `scripts/tuning_baseline.json` records precision 1.000 from 0.15 upward.
+    # Leaving the old default here meant any deployment that did not set the
+    # variable explicitly ran at recall 0.289 and refused most gaps it could
+    # have filled correctly - while `.env.example` and `ConfidencePolicy` had
+    # both already moved to 0.15.
     min_confidence: float = Field(
-        default=0.65, alias="RECONSTRUCTION_MIN_CONFIDENCE", ge=0.0, le=1.0
+        default=0.15, alias="RECONSTRUCTION_MIN_CONFIDENCE", ge=0.0, le=1.0
     )
     max_gap_length: int = Field(default=5000, alias="RECONSTRUCTION_MAX_GAP_LENGTH", ge=1)
 

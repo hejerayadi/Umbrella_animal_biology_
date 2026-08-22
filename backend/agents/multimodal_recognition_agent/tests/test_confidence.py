@@ -52,9 +52,9 @@ def test_agreement_does_not_promote_a_weak_result():
 
 def test_agreement_does_not_change_the_score():
     candidates = [candidate("panthera_leo", 0.92)]
-    before = candidates[0].similarity_score
+    before = candidates[0].classification_score
     decide(candidates, 1.0, "agree", THRESHOLDS)
-    assert candidates[0].similarity_score == before
+    assert candidates[0].classification_score == before
 
 
 def test_thresholds_are_configurable():
