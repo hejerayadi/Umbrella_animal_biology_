@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Markdown } from "@/components/umbrella/markdown";
 import { UmbrellaMark } from "@/components/umbrella/logo";
 import { ProteinViewer } from "@/components/umbrella/protein-viewer";
+import { RecognitionPanel } from "@/components/umbrella/recognition-panel";
 import { UserAvatar } from "@/components/umbrella/user-avatar";
 import type { Message } from "@/lib/umbrella-types";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,12 @@ export function ChatMessage({
                   className="max-h-[28rem] w-auto max-w-full object-contain"
                 />
               </a>
+            )}
+            {/* Shown once the text settles. Unlike Mol* there is nothing
+                expensive to mount, but the scores are a footnote to the
+                written answer and should not appear above it mid-type. */}
+            {message.recognition && done && (
+              <RecognitionPanel result={message.recognition} />
             )}
             {/* Held back until the text finishes typing: mounting Mol* mid-
                 animation makes it initialise its WebGL context while the
