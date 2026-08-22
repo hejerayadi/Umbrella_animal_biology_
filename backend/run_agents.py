@@ -78,6 +78,7 @@ _VENV_PYTHON = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/pyth
 _AGENT_ENV: dict[str, dict[str, str]] = {
     "Trait": {"TRAIT_AGENT_IMPL": "workflow"},
     "Evolution": {"EVOLUTION_AGENT_IMPL": "orchestrator"},
+    "Biodiversity": {"BIODIVERSITY_AGENT_IMPL": "orchestrator"},
 }
 
 

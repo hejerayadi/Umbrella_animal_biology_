@@ -13,7 +13,7 @@ def enrich_observation(observation):
     try:
         weather = get_weather(lat, lon, str(date)[:10])
     except Exception as e:
-        print(f"⚠️ Erreur météo : {e}")
+        print(f"[warn] Erreur météo : {e}")
         weather = None
 
     enriched = observation.copy()

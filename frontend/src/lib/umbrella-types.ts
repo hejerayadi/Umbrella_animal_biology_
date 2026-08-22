@@ -162,6 +162,43 @@ export interface RecognitionResult {
   clarificationQuestion?: string | null;
 }
 
+/** Which of the Biodiversity Agent's four skills produced a map. */
+export type BiodiversitySkill =
+  | "distribution"
+  | "hotspots"
+  | "habitat"
+  | "migration"
+  | "unknown";
+
+/** One headline figure shown beside a map, already formatted for display. */
+export interface BiodiversityMapStat {
+  label: string;
+  value: string;
+}
+
+export interface BiodiversityMapSpec {
+  /**
+   * An http(s) URL served by the Biodiversity Agent (`GET /maps/{name}`).
+   * Never a `file://` path - a page served over http cannot load one, which
+   * is exactly why maps used not to appear at all.
+   */
+  url: string;
+  skill: BiodiversitySkill;
+  speciesName?: string | null;
+  region?: string | null;
+  stats: BiodiversityMapStat[];
+  /** The worker agents credited with the answer, for the provenance line. */
+  sourceAgents: string[];
+  /**
+   * True when the answering worker is still a placeholder returning curated
+   * fixtures rather than measured data. Shown on the panel, following the
+   * same rule the Recognition panel follows: fixture data is never presented
+   * as measurement. Remove the entry in `PLACEHOLDER_AGENTS`
+   * (orchestrator-client.ts) when the real worker ships.
+   */
+  isIllustrative: boolean;
+}
+
 export type MessageSender = "user" | "assistant";
 
 export interface Message {
@@ -201,6 +238,13 @@ export interface Message {
    * integers, nothing like the size of an image.
    */
   recognition?: RecognitionResult;
+  /**
+   * The map the Biodiversity Agent rendered for this answer, when it ran.
+   * Only the URL and a few summary figures are kept - the map itself is a
+   * ~700 KB self-contained folium document served by the agent, fetched by
+   * the iframe when the panel mounts, and never persisted with the message.
+   */
+  biodiversityMap?: BiodiversityMapSpec;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

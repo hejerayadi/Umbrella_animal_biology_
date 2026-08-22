@@ -58,6 +58,11 @@ python -m uvicorn backend.agents.biodiversity_agent.api:app --port 8003
 The default is `mock` — the port opens even when your environment has no LLM
 key set. Set the env var to switch.
 
+Launching the whole platform with `python -m backend.run_agents` sets
+`BIODIVERSITY_AGENT_IMPL=orchestrator` for you (see `_AGENT_ENV` there), so
+the stack serves the real orchestrator without any extra step. Exporting the
+variable yourself still wins if you want the mock back for an offline demo.
+
 **Health check** — confirm which implementation is running:
 
 ```bash
@@ -116,9 +121,9 @@ names to run several skills in parallel.
       "confidence": 0.85,
       "source_agents": ["Biodiversity Agent Orchestrator", "Species Distribution Agent"]
     },
-    "map_url": "file:///tmp/species_loxodonta_africana.html"
+    "map_url": "http://localhost:8003/maps/loxodonta_africana.html"
   },
-  "map_url": "file:///tmp/species_loxodonta_africana.html",
+  "map_url": "http://localhost:8003/maps/loxodonta_africana.html",
   "hotspots": null,
   "migration_route": null,
   "observation_count": 1234,
@@ -135,9 +140,24 @@ domain agent respects. Skill-specific fields (`hotspots`, `migration_route`,
 `observation_count`, `confidence`) are also mirrored at the top level for
 convenience — read whichever suits your frontend.
 
-`map_url` points to a self-contained HTML folium map. When the agent runs
-inside a container in production, mount `/tmp` (or an S3 bucket) so the frontend
-can fetch the file.
+`map_url` is an **HTTP URL served by this agent**, pointing at a self-contained
+folium map: `http://localhost:8003/maps/<name>.html`. Drop it straight into an
+`<iframe src=...>`.
+
+It used to be a `file://` path, which no browser will load from a page served
+over http - that is why maps never appeared in the frontend. The workers still
+write files to `outputs/maps/` (the Streamlit dashboards read them off disk);
+`api.py` rewrites the URL on the way out and serves the file at
+`GET /maps/{name}`.
+
+Behind a proxy or in a container the agent cannot know its own public address,
+so set `BIODIVERSITY_PUBLIC_URL` (e.g. `https://api.example.com/biodiversity`)
+and the rewritten URLs follow it. Only files in `outputs/maps/` are reachable.
+
+### GET `/maps/{name}`
+
+The rendered map named by `map_url`, as `text/html`. Only files this agent
+wrote are reachable; anything else is a 404.
 
 ### GET `/health`
 
@@ -147,6 +167,19 @@ when the agent is serving the mock instead of the real orchestrator.
 ---
 
 ## 5. Frontend snippets
+
+Both snippets below use this helper. `output` carries a plain string when the
+agent could not route the question at all, and a `{skill: message}` object when
+a worker was reached but failed - passing the object straight to `new Error()`
+gives you `[object Object]`.
+
+```js
+function describeFailure(output) {
+  if (typeof output === "string") return output;
+  if (output && typeof output === "object") return Object.values(output).join(" ");
+  return "Biodiversity agent failed";
+}
+```
 
 ### Vanilla `fetch`
 
@@ -159,7 +192,9 @@ async function askBiodiversity(question) {
   });
   const result = await r.json();
   if (result.status !== "completed") {
-    throw new Error(result.output);
+    // `output` is a string for a routing failure but an object for a worker
+    // failure (e.g. {migration_analysis: "..."}), so normalise before throwing.
+    throw new Error(describeFailure(result.output));
   }
   return result;
 }
@@ -188,7 +223,7 @@ export function useBiodiversity() {
         body: JSON.stringify({ instruction, context }),
       });
       const data = await r.json();
-      if (data.status !== "completed") throw new Error(data.output);
+      if (data.status !== "completed") throw new Error(describeFailure(data.output));
       setState({ loading: false, data, error: null });
     } catch (e) {
       setState({ loading: false, data: null, error: e.message });
@@ -251,15 +286,23 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Migration also needs:
+That now covers every worker, migration included - `sentence-transformers`
+and `shap` used to be a manual extra step, and skipping it made the migration
+skill fail with a message that reads like a credentials problem. Note that
+`sentence-transformers` pulls `torch` (~2.5GB), so the first install is slow.
+
+The Streamlit dashboards additionally want `streamlit-folium`:
 
 ```bash
-pip install sentence-transformers qdrant-client shap streamlit-folium
+pip install streamlit-folium
 ```
 
 ### Environment variables
 
-Create `.env` at the repository root:
+Create `.env` in **this agent's directory**
+(`backend/agents/biodiversity_agent/.env`). `framework/llm_client.py`
+walks up from the package and loads the first `.env` it finds, so the
+agent-local file wins over one at the repository root:
 
 ```
 # Azure OpenAI (intent classification + migration explanation)
@@ -280,11 +323,16 @@ Everything gracefully degrades:
 
 - No `AZURE_OPENAI_*` → intent classifier returns `feature=None` → the adapter
   answers with a "please rephrase" message instead of a 500.
-- No `QDRANT_*` → an in-memory dict fallback resolves the four species we ship
+- No `QDRANT_*` → an in-memory dict fallback resolves the five species we ship
   with (`Loxodonta africana`, `Ursus maritimus`, `Panthera tigris`,
   `Canis lupus`, `Sterna paradisaea` and their common names in FR/EN/ES).
 - No `shap` installed → migration prediction still works, only the SHAP table
   disappears from the response.
+
+Note that resolving a species name is not the same as being able to predict its
+migration: the Random Forest is trained on **three** species only (`Ciconia
+ciconia`, `Megaptera novaeangliae`, `Danaus plexippus`). Any other species gets
+a clear "not trained on this species" answer naming those three.
 
 ---
 

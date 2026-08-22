@@ -62,7 +62,7 @@ Rules:
 - biodiversity_hotspots: user asks about REGIONS with many species (no single species).
 - migration_analysis: user asks about MIGRATION / seasonal movement of a species.
 - species_name MUST be the scientific Latin binomial only (e.g. "Loxodonta africana",
-  "Panthera tigris", "Ursus maritimus", "Sterna paradisaea", "Ciconia ciconia",
+  "Panthera tigris", "Ursus maritimus", "Ciconia ciconia",
   "Megaptera novaeangliae", "Danaus plexippus"). Never a common name,
   never a plural, never a parenthetical, never a disjunction "A / B". If the user
   gave a common name in any language (French: "cigogne blanche" -> "Ciconia ciconia",
@@ -73,6 +73,12 @@ Rules:
   (savanna elephant -> Loxodonta africana, tiger -> Panthera tigris, brown bear
   -> Ursus arctos).
 - If the user asks about hotspots, species_name is null.
+- migration_analysis is only backed for three species: "Ciconia ciconia"
+  (white stork), "Megaptera novaeangliae" (humpback whale) and
+  "Danaus plexippus" (monarch butterfly). If the user asks about the
+  migration of any OTHER species, still set feature to "migration_analysis"
+  and give the correct binomial - the agent answers with a clear
+  "not trained on this species" message naming the three it supports.
 - If the question is not about any of these four, set "feature" to null.
 - Output ONLY the JSON. No markdown."""
 
