@@ -7,13 +7,20 @@ from kb.retrieval import semantic_search, validate_document
 from schemas.common import AgentStatus
 from schemas.inputs import PathwaysInput, ProteinDataInput
 
-from .fakes import CallLog, make_fake_kegg_client, make_fake_uniprot_client
+from .fakes import CallLog, make_fake_kegg_client, make_fake_uniprot_client, make_fake_uniprot_list_client
 
 
 @pytest.mark.asyncio
 async def test_protein_data_agent_reembeds_nothing_on_repeat_run(monkeypatch, embed_calls):
     log = CallLog()
-    monkeypatch.setattr(protein_data_module, "fetch_uniprot", make_fake_uniprot_client(log))
+    # protein_data_agent's primary path is list_uniprot_candidates (§8) —
+    # fetch_uniprot is only the deterministic fallback for 0-hit-after-LLM
+    # or multi-hit-LLM-failure cases, so faking fetch_uniprot alone left
+    # list_uniprot_candidates hitting the real UniProt API. FGF5 has exactly
+    # one reviewed hit there, so the agent took the single-candidate
+    # straight-through branch and never touched the fake at all (log was
+    # silently 0, not 2). Fake the actual entry point instead.
+    monkeypatch.setattr(protein_data_module, "list_uniprot_candidates", make_fake_uniprot_list_client(log))
 
     request = ProteinDataInput(
         gene_list=["FGF5"], trait_name="test", instruction="x", context={"tax_id": 9606}
@@ -23,7 +30,7 @@ async def test_protein_data_agent_reembeds_nothing_on_repeat_run(monkeypatch, em
     second = await protein_data_module.protein_data_agent(request)
 
     assert first.status == second.status == AgentStatus.COMPLETED
-    assert len(log) == 2, "fetch_uniprot has no request-level cache and runs on every call"
+    assert len(log) == 2, "list_uniprot_candidates has no request-level cache and runs on every call"
     assert len(embed_calls) == 1, "the second run's payload is unchanged, so it must not be re-embedded"
 
 
@@ -32,7 +39,7 @@ async def test_documents_written_during_workflow_are_retrievable_and_valid(monke
     monkeypatch.setattr(pathways_module, "fetch_pathway", make_fake_kegg_client(CallLog()))
 
     await pathways_module.pathways_agent(PathwaysInput(
-        gene_list=["FGF5", "UCP1"], instruction="x",
+        gene_list=["FGF5", "UCP1"], trait_name="test", instruction="x",
         context={"kegg_gene_ids": {"FGF5": "hsa:FGF5", "UCP1": "hsa:UCP1"}},
     ))
 
@@ -70,7 +77,7 @@ async def test_unresolved_gene_writes_nothing_to_the_kb(monkeypatch):
     monkeypatch.setattr(pathways_module, "fetch_pathway", make_fake_kegg_client(CallLog()))
 
     await pathways_module.pathways_agent(PathwaysInput(
-        gene_list=["NOT_A_REAL_GENE"], instruction="x",
+        gene_list=["NOT_A_REAL_GENE"], trait_name="test", instruction="x",
         context={"kegg_gene_ids": {"NOT_A_REAL_GENE": "hsa:doesnotexist"}},
     ))
 

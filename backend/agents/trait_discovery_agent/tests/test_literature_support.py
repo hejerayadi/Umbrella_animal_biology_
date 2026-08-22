@@ -204,3 +204,51 @@ async def test_mock_literature_support_contract():
     ))
     assert result_thin.status == AgentStatus.NEEDS_AGENT
     assert result_thin.target_agent == "Literature Agent"
+
+
+# --------------------------------------------------------------------------- #
+#  Neo4j write-tool wiring (previously a logged no-op stub — see
+#  kb/neo4j_store.py). These confirm the LLM's bound write_trait_gene_
+#  relationship tool now actually reaches Neo4j (or fails soft), not that
+#  the graph write logic itself is correct — that's kb/test_neo4j_store.py.
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_write_tool_is_wired_to_neo4j_not_a_stub(monkeypatch):
+    import kb.neo4j_store as neo4j_store
+    from kb.sources.literature_agent_client import write_trait_gene_relationship
+
+    calls = []
+
+    async def fake_upsert(trait_name, gene_symbol, pmid):
+        calls.append((trait_name, gene_symbol, pmid))
+        return True
+
+    monkeypatch.setattr(neo4j_store, "upsert_trait_gene_relationship", fake_upsert)
+    # literature_agent_client.py imported the function by name, so patch it there too.
+    import kb.sources.literature_agent_client as lac_module
+    monkeypatch.setattr(lac_module, "upsert_trait_gene_relationship", fake_upsert)
+
+    result = await write_trait_gene_relationship.ainvoke({
+        "trait_name": "fur growth", "gene_symbol": "FGF5", "pmid": "18239092",
+    })
+
+    assert result is True
+    assert calls == [("fur growth", "FGF5", "18239092")]
+
+
+@pytest.mark.asyncio
+async def test_write_tool_failure_does_not_raise_or_change_evidence_status(monkeypatch):
+    """A Neo4j write failure must fail soft (§9) — evidence is already valid
+    and already returned regardless of whether the graph write lands."""
+    import kb.sources.literature_agent_client as lac_module
+
+    async def failing_upsert(trait_name, gene_symbol, pmid):
+        return False  # kb/neo4j_store.py never raises out of this function
+
+    monkeypatch.setattr(lac_module, "upsert_trait_gene_relationship", failing_upsert)
+
+    result = await lac_module.write_trait_gene_relationship.ainvoke({
+        "trait_name": "fur growth", "gene_symbol": "FGF5", "pmid": "18239092",
+    })
+
+    assert result is False  # surfaced, but nothing raised

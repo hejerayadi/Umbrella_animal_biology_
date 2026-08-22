@@ -1,4 +1,3 @@
-
 import json
 import logging
 import time
@@ -13,6 +12,34 @@ logger = logging.getLogger(__name__)
 # decision, so a model that keeps calling tools instead of answering can't spin
 # forever. One real decision (§0.1 of the guide) should resolve in 1-2 turns.
 MAX_TOOL_TURNS = 6
+
+
+def _coerce_stringified_json_args(args: dict) -> dict:
+    """Some NIM-hosted models (observed with meta/llama-3.1-70b-instruct) emit
+    list/dict-typed tool arguments as a JSON-encoded string instead of a
+    native JSON array/object — e.g. go_ids='["GO:0008284", "GO:0008593"]'
+    instead of go_ids=["GO:0008284", "GO:0008593"]. The tool's Pydantic
+    schema then rejects it as `str` where `list[str]` was expected, and the
+    whole tool call fails before the tool body ever runs (§9 catches this as
+    a generic exception and falls back — silently discarding a real,
+    otherwise-successful model decision every time this happens).
+
+    Only strings that actually parse as a JSON array or object are touched;
+    plain string arguments (a go_id, a gene_symbol, etc.) pass through
+    unchanged. This runs once, at the loop level, so every tool bound via
+    invoke_tool_loop_with_fallback benefits — not just the one tool where
+    this was first observed.
+    """
+    coerced = dict(args)
+    for key, value in args.items():
+        if isinstance(value, str) and value[:1] in "[{":
+            try:
+                parsed_value = json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(parsed_value, (list, dict)):
+                coerced[key] = parsed_value
+    return coerced
 
 
 def _as_disguised_tool_call(parsed: dict | None, tools_by_name: dict) -> tuple[str, dict] | None:
@@ -123,6 +150,7 @@ async def invoke_tool_loop_with_fallback(
                             name, args,
                         )
                         tool = tools_by_name[name]
+                        args = _coerce_stringified_json_args(args)
                         result = await tool.ainvoke(args)
                         tool_call_log.append({"name": name, "args": args, "result": result})
                         convo.append(HumanMessage(
@@ -157,9 +185,15 @@ async def invoke_tool_loop_with_fallback(
 
                 for call in tool_calls:
                     tool = tools_by_name[call["name"]]
-                    result = await tool.ainvoke(call["args"])
+                    call_args = _coerce_stringified_json_args(call["args"])
+                    if call_args != call["args"]:
+                        logger.info(
+                            "Coerced stringified-JSON args for %s: %r -> %r",
+                            call["name"], call["args"], call_args,
+                        )
+                    result = await tool.ainvoke(call_args)
                     tool_call_log.append(
-                        {"name": call["name"], "args": call["args"], "result": result}
+                        {"name": call["name"], "args": call_args, "result": result}
                     )
                     convo.append(
                         ToolMessage(

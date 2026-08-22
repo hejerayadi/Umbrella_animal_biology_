@@ -55,25 +55,39 @@ def _print_case(title, input_lines, workflow_lines, llm_decision, final_status):
     print("=" * _WIDTH)
 
 
-class _FakeStructuredLLM:
-    """Stands in for `get_llm(...).with_structured_output(...)`. Records every
-    prompt input it receives so a test can assert the agent catalog it saw was
-    built live from agent_cards/, not hardcoded in the orchestrator."""
+class _FakeMessage:
+    """Minimal stand-in for the AIMessage-like object invoke_with_fallback
+    returns — capability_resolver only ever reads `.content` off it."""
+
+    def __init__(self, content: str):
+        self.content = content
+
+
+class _FakeInvokeWithFallback:
+    """Stands in for `workflows.llm.invoke_with_fallback` (imported into
+    capability_resolver's own namespace as `invoke_with_fallback`). Records
+    every (prompt, variables) pair it receives so a test can assert the agent
+    catalog it saw was built live from agent_cards/, not hardcoded in the
+    orchestrator — reconstructed by rendering the same prompt template the
+    real call site uses."""
 
     def __init__(self, result: CapabilityResolution):
         self.result = result
         self.calls: list[dict] = []
 
-    def with_structured_output(self, _schema):
-        async def _invoke(prompt_input):
-            self.calls.append(prompt_input)
-            return self.result
-        return _invoke
+    async def __call__(self, prompt, variables: dict):
+        self.calls.append(variables)
+        return _FakeMessage(self.result.model_dump_json())
+
+    def rendered_catalog(self, prompt, call_index: int = 0) -> str:
+        """Re-render the prompt for a given call so tests can assert on the
+        catalog text exactly as the LLM would have seen it."""
+        return prompt.format_prompt(**self.calls[call_index]).to_string()
 
 
-def _patch_resolver(monkeypatch, result: CapabilityResolution) -> _FakeStructuredLLM:
-    fake = _FakeStructuredLLM(result)
-    monkeypatch.setattr(resolver_module, "get_llm", lambda *a, **kw: fake)
+def _patch_resolver(monkeypatch, result: CapabilityResolution) -> _FakeInvokeWithFallback:
+    fake = _FakeInvokeWithFallback(result)
+    monkeypatch.setattr(resolver_module, "invoke_with_fallback", fake)
     return fake
 
 
@@ -147,9 +161,10 @@ async def test_case2_missing_gene_list_escalation(monkeypatch):
 
     # Prove the catalog handed to the LLM was built dynamically from agent_cards/
     # at call time, not a hardcoded string anywhere in the orchestrator. The fake
-    # is spliced in *after* prompt formatting (chain = prompt | llm), so what it
-    # receives is the rendered ChatPromptValue, not the raw template inputs.
-    catalog_seen = fake.calls[0].to_string()
+    # is spliced in at `invoke_with_fallback` (capability_resolver's own imported
+    # name), so what it receives is the exact `agent_catalog` variable that gets
+    # formatted into the prompt — built fresh from build_catalog_text() each call.
+    catalog_seen = fake.calls[0]["agent_catalog"]
     assert "### Genome Agent" in catalog_seen
     assert "### Trait Discovery Agent" not in catalog_seen, "waiting agent must be excluded"
     assert build_catalog_text(exclude="Trait Discovery Agent") in catalog_seen
@@ -210,12 +225,9 @@ async def test_case4_subagent_failure_no_llm_call(monkeypatch):
         raise AssertionError("write_explanation must not run on a failed workflow")
     monkeypatch.setattr(td_graph_module, "write_explanation", _fail_if_called_explanation)
 
-    class _GuardLLM:
-        def with_structured_output(self, _schema):
-            async def _invoke(_input):
-                raise AssertionError("capability_resolver must not run for a hard subagent failure")
-            return _invoke
-    monkeypatch.setattr(resolver_module, "get_llm", lambda *a, **kw: _GuardLLM())
+    async def _guard_invoke_with_fallback(prompt, variables):
+        raise AssertionError("capability_resolver must not run for a hard subagent failure")
+    monkeypatch.setattr(resolver_module, "invoke_with_fallback", _guard_invoke_with_fallback)
 
     app = td_graph_module.build_trait_discovery_graph()
     result = await app.ainvoke(TraitDiscoveryState(

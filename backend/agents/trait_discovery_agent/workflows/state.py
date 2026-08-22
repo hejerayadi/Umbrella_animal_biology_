@@ -34,6 +34,14 @@ class TraitDiscoveryState:
     evidence: List[LiteratureRecord] = field(default_factory=list)
     explanation: str = ""
 
+    # §8: surfaced from the sub-orchestrators so partial-failure detail is
+    # visible at the top level, not swallowed at a sub-orchestrator boundary.
+    # malformed_ids / missing_genes come from Functional Evidence (Pathways /
+    # Protein Data respectively); unmatched_genes comes from Gene Mapper.
+    malformed_ids: List[str] = field(default_factory=list)
+    missing_genes: List[str] = field(default_factory=list)
+    unmatched_genes: List[str] = field(default_factory=list)
+
     gene_mapper_status: Optional[AgentStatus] = None
     functional_evidence_status: Optional[AgentStatus] = None
     literature_status: Optional[AgentStatus] = None
@@ -58,5 +66,12 @@ class FunctionalEvidenceState:
     protein_data: List[ProteinEntry] = field(default_factory=list)
     pathways_status: Optional[AgentStatus] = None
     protein_data_status: Optional[AgentStatus] = None
+
+    # §8: per-agent partial-failure detail — malformed_ids comes from
+    # Pathways, missing_genes from Protein Data. Populated independently by
+    # each worker node (no key collision) and passed through by merge_node
+    # unchanged, so a failure in one never has to touch the other's data.
+    malformed_ids: List[str] = field(default_factory=list)
+    missing_genes: List[str] = field(default_factory=list)
 
     status: Optional[AgentStatus] = None

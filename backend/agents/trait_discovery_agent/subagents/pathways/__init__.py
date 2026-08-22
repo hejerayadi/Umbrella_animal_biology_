@@ -118,6 +118,17 @@ async def pathways_agent(input: PathwaysInput) -> PathwaysOutput:
             pathways.append(entry)
             continue
 
+        # Cache payload (§6): NOT pathway_id + pathway_name only, despite the
+        # checklist's phrasing — kb/retrieval.py's REQUIRED_FIELDS["kegg_pathways"]
+        # and the create_payload_index() call in kb/qdrant_store.py both depend
+        # on gene_symbol/source/ingested_at/schema_version being present on every
+        # point (gene_symbol is filtered on directly — see
+        # tests/integration/test_retrieval_in_workflow.py). Trimming this payload
+        # breaks validate_document() and gene_symbol-scoped filtering. The
+        # checklist description is the stale artifact here, not this code —
+        # update it to say "pathway_id + pathway_name plus the shared
+        # cache-envelope fields (gene_symbol, source, ingested_at,
+        # schema_version)" rather than changing this payload.
         await upsert_point(
             "kegg_pathways",
             dedup_key,
