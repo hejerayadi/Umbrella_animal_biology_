@@ -21,6 +21,10 @@ from typing import Any
 from domain.models import Reference
 from domain.models.sequence import reverse_complement
 
+#: What BLAST writes into an aligned row where the other sequence has no
+#: residue. Both spellings appear in the JSON depending on the service version.
+_ALIGNMENT_GAPS = frozenset("-.")
+
 
 @dataclass(frozen=True, slots=True)
 class HitSpan:
@@ -109,6 +113,63 @@ def _hsp_strand(hsp: dict[str, Any]) -> int:
     return 1
 
 
+#: How far from the flank junction an insertion may start and still be read as
+#: the missing segment. An aligner is free to slide an indel by a few bases
+#: when the surrounding residues repeat, so demanding the exact column would
+#: reject genuine carriers; allowing more would start crediting unrelated
+#: indels elsewhere in the flank.
+_JUNCTION_TOLERANCE = 10
+
+
+def _gap_bases_carried(hsp: dict[str, Any], left_flank_length: int) -> int:
+    """How many subject bases sit at the query's flank junction, if any.
+
+    The query submitted to BLAST is the two flanks joined, so a reference that
+    still carries the missing segment aligns with a gap run in the *query* row
+    at the junction, and its own bases opposite. Counting them answers the only
+    question that matters when choosing what to align: does this reference
+    actually have anything to contribute across the gap?
+
+    Returns 0 when the HSP does not reach the junction, which is the common
+    case - most hits are homologous to one flank and carry nothing.
+    """
+    qseq = hsp.get("hsp_qseq")
+    hseq = hsp.get("hsp_hseq")
+    query_from = _int_or_none(hsp.get("hsp_query_from"))
+
+    if not isinstance(qseq, str) or not isinstance(hseq, str) or query_from is None:
+        return 0
+    # Rows of unequal length are malformed output; reading them would misplace
+    # every column that follows.
+    if len(qseq) != len(hseq):
+        return 0
+
+    # Query residues consumed so far, as a 0-based count. `hsp_query_from` is
+    # 1-based, so the HSP opens having already consumed `query_from - 1`.
+    consumed = query_from - 1
+    column = 0
+
+    while column < len(qseq):
+        if qseq[column] not in _ALIGNMENT_GAPS:
+            consumed += 1
+            column += 1
+            continue
+
+        run = 0
+        while column + run < len(qseq) and qseq[column + run] in _ALIGNMENT_GAPS:
+            run += 1
+
+        if abs(consumed - left_flank_length) <= _JUNCTION_TOLERANCE:
+            return sum(
+                1 for character in hseq[column : column + run]
+                if character not in _ALIGNMENT_GAPS
+            )
+
+        column += run
+
+    return 0
+
+
 def _residues_from_hsp(hsp: dict[str, Any], strand: int) -> str | None:
     """The subject's residues for one HSP, ungapped and on the target's strand.
 
@@ -126,7 +187,11 @@ def _residues_from_hsp(hsp: dict[str, Any], strand: int) -> str | None:
 
 
 def to_references(
-    raw: str, *, query_length: int | None = None, gap_length: int = 0
+    raw: str,
+    *,
+    query_length: int | None = None,
+    gap_length: int = 0,
+    left_flank_length: int | None = None,
 ) -> tuple[list[Reference], list[HitSpan]]:
     """Domain references for every BLAST hit, plus the spans still to fetch.
 
@@ -162,6 +227,18 @@ def to_references(
         residues = _residues_from_hsp(best, strand)
         span = _subject_span(hsps, accession, strand, gap_length)
 
+        # Measured across every HSP, not just the best one: the HSP that
+        # carries the missing segment is not always the one with the strongest
+        # e-value, and one that does carry it settles the question for the hit.
+        gap_bases = (
+            max(
+                (_gap_bases_carried(hsp, left_flank_length) for hsp in hsps),
+                default=0,
+            )
+            if left_flank_length is not None
+            else None
+        )
+
         # Prefer a fetch whenever the HSPs bracket a region: that gap between
         # them is the missing segment, and no single HSP contains it.
         if span is not None and len(hsps) > 1:
@@ -179,6 +256,7 @@ def to_references(
                 bit_score=_float_or_none(best.get("hsp_bit_score")),
                 source="blast",
                 strand=strand,
+                gap_bases=gap_bases,
                 metadata=_metadata(hit, hsps, span),
             )
         )

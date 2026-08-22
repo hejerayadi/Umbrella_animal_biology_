@@ -176,3 +176,90 @@ class TestReconstructionValidator:
 
         assert report.is_valid  # a warning, not a disqualification
         assert any("homopolymer" in warning for warning in report.warnings)
+
+
+class TestAlignmentReferenceSelection:
+    """Which references reach MAFFT.
+
+    A reference that stops short of the gap contributes no bases to the columns
+    being reconstructed, and pulls the multiple alignment towards the shape with
+    no insertion at the junction. One such row was enough to break a real run:
+    it covered a single flank at 0.979 identity, so it ranked first, and the
+    alignment came back with no gap columns while three genuine donors sat in
+    the same input carrying the correct fill.
+    """
+
+    @staticmethod
+    def _context(gap_length: int = 21):
+        from domain.models import Sequence
+        from domain.services import ContextExtractor, GapDetector
+
+        residues = "ACGT" * 30 + "N" * gap_length + "ACGT" * 30
+        sequence = Sequence.parse("t", residues)
+        gaps = GapDetector().detect(sequence)
+        return ContextExtractor().extract_all(sequence, gaps)[0]
+
+    @staticmethod
+    def _reference(accession: str, gap_bases: int | None, identity: float = 0.95):
+        from domain.models import Reference
+
+        return Reference(
+            accession=accession,
+            residues="ACGT" * 60,
+            identity=identity,
+            coverage=1.0,
+            source="blast",
+            gap_bases=gap_bases,
+        )
+
+    def _select(self, references):
+        from agent.planning.planner import PlanStep
+        from agent.planning.tool_selector import ToolSelector
+        from domain.services import ReferenceRanker
+
+        context = self._context()
+        state = {"references": {context.identifier: references}, "gap_contexts": [context]}
+        selector = ToolSelector(ReferenceRanker())
+        invocation = selector.build(
+            PlanStep(tool="mafft_align", gap_id=context.identifier), state
+        )
+        return list(invocation.payload.references) if invocation else []
+
+    def test_non_carriers_are_excluded_when_a_carrier_exists(self) -> None:
+        chosen = self._select(
+            [
+                # Ranks top on identity and carries nothing - the exact profile
+                # that broke the real run.
+                self._reference("FLANK_ONLY.1", gap_bases=0, identity=0.99),
+                self._reference("DONOR_A.1", gap_bases=21, identity=0.90),
+                self._reference("DONOR_B.1", gap_bases=21, identity=0.88),
+            ]
+        )
+
+        assert "FLANK_ONLY.1" not in chosen
+        assert set(chosen) == {"DONOR_A.1", "DONOR_B.1"}
+
+    def test_everything_is_kept_when_no_hit_carries_the_gap(self) -> None:
+        # Nothing spans it, so there is nothing better to fall back to. The
+        # alignment still runs: that is what tells the critic the evidence is
+        # absent rather than untried.
+        chosen = self._select(
+            [
+                self._reference("A.1", gap_bases=0),
+                self._reference("B.1", gap_bases=0),
+            ]
+        )
+
+        assert set(chosen) == {"A.1", "B.1"}
+
+    def test_unmeasured_references_are_still_alignable(self) -> None:
+        # NCBI records never went through a homology search, so they have no
+        # measurement. They must not be discarded for lacking one.
+        chosen = self._select(
+            [
+                self._reference("NCBI_A.1", gap_bases=None),
+                self._reference("NCBI_B.1", gap_bases=None),
+            ]
+        )
+
+        assert set(chosen) == {"NCBI_A.1", "NCBI_B.1"}

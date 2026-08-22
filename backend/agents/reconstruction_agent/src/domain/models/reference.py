@@ -35,6 +35,18 @@ class Reference:
     #: the time it reaches here; this records that it happened.
     strand: int = 1
 
+    #: How many bases this reference carries across the gap itself, measured
+    #: from the BLAST alignment. `None` means unmeasured - an NCBI record that
+    #: never went through a homology search - which is not the same as zero.
+    #:
+    #: This is the difference between a reference that can fill the gap and one
+    #: that merely resembles its flanks, and it decides which rows reach the
+    #: aligner. Aligning both kinds together lets the majority that carries
+    #: nothing outvote the few that do, and MAFFT then opens no gap column at
+    #: all - the whole reconstruction fails on references that looked fine by
+    #: identity and coverage.
+    gap_bases: int | None = None
+
     # --- Provenance -------------------------------------------------------
     # Evidence accumulates across iterations and slices, so a reference has to
     # say where it came from: two rounds can return the same accession from
@@ -47,6 +59,16 @@ class Reference:
     def has_sequence(self) -> bool:
         """Whether the residues were fetched, or only the hit metadata."""
         return bool(self.residues)
+
+    @property
+    def carries_gap(self) -> bool:
+        """Whether this reference demonstrably spans the gap.
+
+        False for an unmeasured reference as well as for one measured at zero:
+        the caller is choosing rows to align, and "we never checked" is not a
+        reason to prefer it over one we know carries the segment.
+        """
+        return bool(self.gap_bases)
 
     @property
     def quality(self) -> float:

@@ -270,3 +270,82 @@ class TestEvoMapper:
 
     def test_unparseable_payload_yields_an_empty_map(self) -> None:
         assert parse_evolution_agent_reply("not a mapping") == {}
+
+
+class TestGapCarryingReferences:
+    """Which BLAST hits actually carry bases across the gap.
+
+    The query is the two flanks joined, so a reference that still holds the
+    missing segment aligns with a gap run in the *query* row at the junction.
+    Hits that merely match a flank carry nothing, and aligning them alongside
+    the donors is what made MAFFT open no gap columns at all.
+    """
+
+    @staticmethod
+    def _result(qseq: str, hseq: str, query_from: int = 1) -> str:
+        import json
+
+        return json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "TEST001.1",
+                        "hit_hsps": [
+                            {
+                                "hsp_qseq": qseq,
+                                "hsp_hseq": hseq,
+                                "hsp_query_from": query_from,
+                                "hsp_query_to": query_from + len(qseq.replace("-", "")) - 1,
+                                "hsp_hit_from": 1,
+                                "hsp_hit_to": len(hseq.replace("-", "")),
+                                "hsp_identity": 95.0,
+                                "hsp_expect": 1e-40,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+    def test_a_reference_carrying_the_segment_is_measured(self) -> None:
+        from tools.blast.mapper import to_references
+
+        # 10 query bases, a 4-base insertion the query lacks, then 10 more.
+        qseq = "ACGTACGTAC" + "----" + "GTACGTACGT"
+        hseq = "ACGTACGTAC" + "TTTT" + "GTACGTACGT"
+        refs, _ = to_references(self._result(qseq, hseq), left_flank_length=10)
+
+        assert refs[0].gap_bases == 4
+        assert refs[0].carries_gap is True
+
+    def test_a_reference_matching_only_a_flank_carries_nothing(self) -> None:
+        from tools.blast.mapper import to_references
+
+        qseq = "ACGTACGTACGTACGTACGT"
+        hseq = "ACGTACGTACGTACGTACGT"
+        refs, _ = to_references(self._result(qseq, hseq), left_flank_length=10)
+
+        assert refs[0].gap_bases == 0
+        assert refs[0].carries_gap is False
+
+    def test_an_insertion_far_from_the_junction_is_not_the_gap(self) -> None:
+        from tools.blast.mapper import to_references
+
+        # The insertion sits at query position 2, nowhere near a junction at 40.
+        qseq = "AC" + "----" + "GTACGTACGTACGTACGTAC"
+        hseq = "AC" + "TTTT" + "GTACGTACGTACGTACGTAC"
+        refs, _ = to_references(self._result(qseq, hseq), left_flank_length=40)
+
+        assert refs[0].gap_bases == 0
+
+    def test_unmeasured_when_no_junction_is_supplied(self) -> None:
+        from tools.blast.mapper import to_references
+
+        qseq = "ACGTACGTAC" + "----" + "GTACGTACGT"
+        hseq = "ACGTACGTAC" + "TTTT" + "GTACGTACGT"
+        refs, _ = to_references(self._result(qseq, hseq))
+
+        # None, not 0: an NCBI record that never went through a search is
+        # unmeasured, and that must not read as "carries nothing".
+        assert refs[0].gap_bases is None
+        assert refs[0].carries_gap is False
