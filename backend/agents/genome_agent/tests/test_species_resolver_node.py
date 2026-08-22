@@ -23,11 +23,11 @@ async def test_species_resolver_node_zero_candidates_is_fatal():
     state = GenomeAgentState(user_question="genome of the xyzzy123", species_name="definitely not a real species xyzzy123")
 
     with patch(
-        "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
+        "genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
         return_value=None,
     ):
         with patch(
-            "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+            "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
             return_value={"assembly_id": None, "scientific_name": None, "common_name": None, "confidence": 0.0},
         ):
             result = await species_resolver_node(state)
@@ -45,11 +45,11 @@ async def test_species_resolver_node_exception_handling():
     state = GenomeAgentState(user_question="genome of the tiger", species_name="tiger")
 
     with patch(
-        "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
+        "genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
         return_value=None,
     ):
         with patch(
-            "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+            "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
             side_effect=Exception("Simulated NCBI failure"),
         ):
             result = await species_resolver_node(state)

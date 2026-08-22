@@ -41,7 +41,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from .workflows.nodes.capability_resolver_node import capability_resolver_node
-from .workflows.nodes.explanation_node import error_end_node, explanation_writer_node
+from .workflows.nodes.explanation_writer_node import error_end_node, explanation_writer_node
 from .workflows.nodes.genome_data_nodes import get_gene_annotation_node, get_genome_metadata_node
 from .workflows.nodes.query_router_node import query_router_node
 from .workflows.nodes.reconstruction_resolver_node import reconstruction_resolver_node

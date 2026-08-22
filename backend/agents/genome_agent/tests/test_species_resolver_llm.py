@@ -29,7 +29,7 @@ def _make_tool_call(name, args, call_id="call_1"):
 async def test_llm_client_raises_triggers_fallback():
     """When get_llm_client raises, resolve_species_llm returns None
     so the node can fall back to deterministic resolution."""
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", side_effect=EnvironmentError("No key")):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", side_effect=EnvironmentError("No key")):
         result = await resolve_species_llm("tiger")
     assert result is None
 
@@ -63,8 +63,8 @@ async def test_llm_grounded_assembly_id_accepted():
         _make_llm_response([call2]),
     ]
 
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
-        with patch("backend.agents.genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
             result = await resolve_species_llm("tiger")
 
     assert result is not None
@@ -116,8 +116,8 @@ async def test_llm_fabricated_assembly_id_is_rejected_and_retried():
         _make_llm_response([grounded_call]),
     ]
 
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
-        with patch("backend.agents.genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
             result = await resolve_species_llm("tiger")
 
     assert result is not None
@@ -161,9 +161,9 @@ async def test_empty_search_then_reformulated_retries_once():
         _make_llm_response([final_output_call]),
     ]
 
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
-        with patch("backend.agents.genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(side_effect=[empty_results, [{"tax_id": "9691", "scientific_name": "Panthera tigris", "common_name": "tiger", "rank": "species"}]]))):
-            with patch("backend.agents.genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(side_effect=[empty_results, [{"tax_id": "9691", "scientific_name": "Panthera tigris", "common_name": "tiger", "rank": "species"}]]))):
+            with patch("genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
                 result = await resolve_species_llm("Panthera tigris altaica")
 
     assert result is not None
@@ -209,9 +209,9 @@ async def test_ambiguous_elephant_returns_lowered_confidence():
         _make_llm_response([output_call]),
     ]
 
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
-        with patch("backend.agents.genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(return_value=tax_results))):
-            with patch("backend.agents.genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(return_value=tax_results))):
+            with patch("genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
                 result = await resolve_species_llm("elephant")
 
     assert result is not None
@@ -254,9 +254,9 @@ async def test_house_mouse_clean_single_match():
         _make_llm_response([output_call]),
     ]
 
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
-        with patch("backend.agents.genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(return_value=tax_results))):
-            with patch("backend.agents.genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(return_value=tax_results))):
+            with patch("genome_agent.subagents.species_resolver.search_assembly_by_taxid", MagicMock(ainvoke=AsyncMock(return_value=assembly_results))):
                 result = await resolve_species_llm("house mouse")
 
     assert result is not None
@@ -275,9 +275,11 @@ async def test_no_match_after_reformulation_returns_none():
 
     empty_results = []
 
-    # LLM calls search_taxonomy twice (original + reformulated), both empty.
-    # The loop runs up to 4 times; after two empty results the LLM may
-    # make additional calls with no tool_calls before giving up.
+    # LLM calls search_taxonomy twice (original + reformulated), both empty,
+    # then keeps returning no tool calls for the rest of the max_steps=8
+    # budget — the loop `continue`s on an empty response rather than
+    # exiting early, so the mock must cover every step it will actually
+    # take or the (n+1)th bound.invoke() call raises StopIteration.
     tax_call_1 = _make_tool_call("search_taxonomy", {"query": "definitely not a real species xyzzy123"}, call_id="call_1")
     tax_call_2 = _make_tool_call("search_taxonomy", {"query": "xyzzy123 species"}, call_id="call_2")
 
@@ -286,11 +288,15 @@ async def test_no_match_after_reformulation_returns_none():
         _make_llm_response([tax_call_2]),
         _make_llm_response([]),
         _make_llm_response([]),
+        _make_llm_response([]),
+        _make_llm_response([]),
+        _make_llm_response([]),
+        _make_llm_response([]),
     ]
 
-    with patch("backend.agents.genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
-        with patch("backend.agents.genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(side_effect=[empty_results, empty_results]))):
+    with patch("genome_agent.subagents.species_resolver.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.species_resolver.search_taxonomy", MagicMock(ainvoke=AsyncMock(side_effect=[empty_results, empty_results]))):
             result = await resolve_species_llm("definitely not a real species xyzzy123")
 
     assert result is None
-    assert client.invoke.call_count == 4
+    assert client.invoke.call_count == 8
