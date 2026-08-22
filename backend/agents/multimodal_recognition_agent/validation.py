@@ -2,7 +2,7 @@
 
 Every Recognition request carries exactly two things: a non-empty instruction,
 and exactly one image under `context["recognition_image"]`. Neither alone is a
-valid request.
+valid request, and both are enforced here rather than left to the caller.
 
 The decode path is ordered so that each step is cheap relative to the one after
 it. The size of the *encoded* string is checked before any decoding, the decoded
@@ -242,14 +242,12 @@ def validate_paired_request(
 ) -> NormalizedRecognitionInput:
     """The single entry point. Either returns a normalized input, or raises."""
 
-    # The validated decisions make the instruction OPTIONAL: the image is the
-    # primary scientific evidence, and text is context that may or may not be
-    # supplied. An absent, empty or whitespace-only instruction is normalised to
-    # "" and the request proceeds on the image alone. A non-text instruction is
-    # still malformed input, not an absent one.
-    if instruction is None:
-        instruction = ""
-    if not isinstance(instruction, str):
+    # Both halves are required. One image AND one non-empty text instruction, in
+    # the same request - an image with nothing asked of it is not a Recognition
+    # request, and neither is a sentence with no photograph. A whitespace-only
+    # string is empty; a non-text instruction is malformed. Both refuse the same
+    # way, because both mean "no usable instruction was supplied".
+    if not isinstance(instruction, str) or not instruction.strip():
         raise RecognitionError(ErrorCode.EMPTY_INSTRUCTION)
 
     if not isinstance(context, dict):

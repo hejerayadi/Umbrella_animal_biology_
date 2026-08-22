@@ -1,9 +1,25 @@
 langgraph==0.2.39
-langchain-core==0.3.15
+langchain-core>=0.3.30
+langchain>=0.3.10
 langchain-openai==0.2.4
 qdrant-client==1.11.3
 python-dotenv==1.0.1
-folium==0.17.0
-streamlit==1.39.0
+folium>=0.17.0
+streamlit>=1.42.0
+pillow>=11.0.0
+pygbif>=0.6.4
+scikit-learn>=1.5.0          # DBSCAN + silhouette, hotspots pipeline
 pytest==8.3.2
 pytest-asyncio==0.24.0
+
+# The hotspots pipeline imports these directly (they used to arrive only as
+# streamlit's transitive deps, so a fresh venv could not import the tests).
+pandas>=2.0
+numpy>=1.26
+requests>=2.32
+
+# Migration: Qdrant retrieval embeddings + the SHAP explanation. Without
+# these the migration worker fails at import with a message that reads like
+# a credentials problem. sentence-transformers pulls torch (~2.5GB).
+sentence-transformers>=3.0
+shap>=0.46

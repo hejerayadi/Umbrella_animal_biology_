@@ -80,6 +80,7 @@ version, none of which the API exposes, so it is left unset rather than guessed.
 - **Qdrant** — a managed cluster; set `QDRANT_URL` and `QDRANT_API_KEY` in `.env`. There is no `docker-compose.yml`: nothing is provisioned locally. When `QDRANT_URL` is absent, retrieval reports `RETRIEVAL_UNAVAILABLE` before loading BGE-M3; it never presents an empty in-memory store as a successful production search.
 - **PostgreSQL** — out of scope for this sprint. `PERSISTENCE_ENABLED=false` keeps the repository layer dormant; the API answers without a database.
 - **Azure** — the LLM provider for explanation and critic generation (`LLM_PROVIDER=azure`).
+- **LangSmith** — optional remote tracing of the LangGraph workflow (`LANGSMITH_TRACING=true` plus `LANGSMITH_API_KEY`). Off by default and never required: see [LangSmith tracing](#langsmith-tracing).
 - **BGE-M3** — the embedding model for ingestion and retrieval, and the only one `get_embedding_provider` will build. It ships in the `embeddings` extra (`uv sync --extra embeddings`), because it pulls torch; without that extra, the retrieval node reports `RETRIEVAL_UNAVAILABLE` in the response warnings rather than falling back to anything. `HashEmbedding` carries no semantics and is reachable only from `tests/`.
 
 ## Run locally
@@ -219,7 +220,52 @@ with log_context(task_id=str(task.task_id)):  # inherited by every child span
         outcome["candidates"] = len(candidates)
 ```
 
-`GET /api/v1/ready` reports whether Qdrant, the Azure LLM, and persistence are configured and reachable.
+`GET /api/v1/ready` reports whether Qdrant, the Azure LLM, persistence, and LangSmith are configured and reachable.
+
+### LangSmith tracing
+
+The structured logs above are the authoritative record and stay complete on their
+own. LangSmith is the optional remote view of the same run: the LangGraph state
+machine, every node, and both Azure calls with their prompts, structured outputs
+and token counts, on a timeline.
+
+It is off by default and never load-bearing — a missing key, an unreachable
+endpoint or an expired plan costs the traces, not the analysis.
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_…
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_PROJECT=umbrella-protein-agent
+LANGSMITH_TRACING_SAMPLING_RATE=      # empty exports every run
+```
+
+`LANGSMITH_ENDPOINT` is region-specific and a key is only valid against its own
+region. An EU workspace answers the US host with `403 Forbidden` on every export
+— which reads like a revoked key rather than a wrong host — so an EU account
+needs `https://eu.api.smith.langchain.com`.
+
+LangChain reads these from the process environment, and pydantic-settings does
+not export what it loads from `.env`, so `app/observability/tracing.py` publishes
+them at startup. That is also where the two variables are reconciled: with
+`LANGSMITH_TRACING=true` and no API key, startup logs `protein.tracing.disabled`
+at WARNING and runs untraced rather than attaching a tracer whose exports can only
+be rejected.
+
+Each analysis appears as one root run named `protein_workflow` whose **run id is
+the `analysis_id`** already on every log line of that run — so a trace is opened
+from a log line directly, with no search by timestamp. Runs are filterable in
+LangSmith by the metadata the workflow attaches: `gene`, `uniprot_accession`,
+`scientific_name`, `taxon_id`, `preferred_source`, `app_env`, `app_version`,
+`task_id`, `trace_id`. Azure calls are nested under the node that made them and
+named `llm.<node>`, which is what tells the explanation call apart from the
+critic's — both go through the same `with_structured_output` wrapper and would
+otherwise share a name.
+
+LangSmith redacts variables whose names contain `key`, `secret` or `token` before
+attaching the environment to a run, so `LANGSMITH_API_KEY` and the Azure and
+Qdrant credentials are not exported. Prompts and model outputs *are*, which is the
+point of the tool; keep tracing off where that is not wanted.
 
 ## Verify
 

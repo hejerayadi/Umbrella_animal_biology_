@@ -3,6 +3,11 @@
 Images are generated in-process with Pillow rather than committed as binary
 files: the specification forbids committing raw images, and a generated one is
 reproducible anyway.
+
+Nothing here reaches a network, a database or a model. `StubClassifier` is how a
+test states exactly which taxonomic labels the classification boundary returned,
+which is what makes the confidence, text-fusion and taxonomy branches testable
+one at a time.
 """
 from __future__ import annotations
 
@@ -13,13 +18,8 @@ import io
 import pytest
 from PIL import Image, PngImagePlugin
 
-from ..config import (
-    QdrantConfig,
-    RecognitionConfig,
-    ThresholdConfig,
-    ValidationConfig,
-)
-from ..domain.models import RetrievedReference, SpeciesCandidate
+from ..config import RecognitionConfig, ThresholdConfig, ValidationConfig
+from ..domain.models import BioCLIPTaxonPrediction, SpeciesCandidate
 
 
 # --- image builders --------------------------------------------------------
@@ -79,26 +79,13 @@ def make_config(**overrides) -> RecognitionConfig:
             identified_min_margin=0.08,
             uncertain_min_score=0.45,
         ),
-        qdrant=QdrantConfig(
-            url=None,
-            collection=None,
-            vector_name=None,
-            expected_dimension=None,
-            expected_distance=None,
-            dataset_version=None,
-            top_k_references=None,
-            timeout_seconds=10.0,
-        ),
         bioclip_provider_mode="mock",
-        mock_provider_version="local-dev-mock-bioclip2-v0",
-        mock_embedding_dimension=32,
-        mock_embedding_dimension_is_local_default=True,
-        retrieval_mode="mock",
+        recognition_mode="mock_classification",
+        mock_provider_version="sprint2-mock-bioclip2-classifier-v1",
+        classification_fixture_path=None,
         taxonomy_provider_mode="mock",
         text_analyzer_mode="rules",
         top_k_species=5,
-        max_references_per_species=3,
-        image_seed_overrides={},
     )
     base.update(overrides)
     return RecognitionConfig(**base)
@@ -126,51 +113,50 @@ def valid_context(valid_png):
 
 # --- domain builders -------------------------------------------------------
 
-def reference(species_id: str, score: float, point_id: str = "p", name: str | None = None):
-    return RetrievedReference(
-        point_id=point_id,
+def prediction(species_id: str, score: float, name: str | None = None,
+               common_name: str | None = None) -> BioCLIPTaxonPrediction:
+    """One taxonomic label, as the classification boundary would return it."""
+    return BioCLIPTaxonPrediction(
         species_id=species_id,
         scientific_name=name or species_id.replace("_", " ").capitalize(),
-        common_name=None,
-        similarity_score=score,
-        source="test",
-        dataset_version="local-dev-fixtures-v0",
-        embedding_mode="mock_bioclip2",
+        common_name=common_name,
+        rank="species",
+        classification_score=score,
     )
 
 
-def candidate(species_id: str, score: float, name: str | None = None, count: int = 1):
+def candidate(species_id: str, score: float, name: str | None = None) -> SpeciesCandidate:
     return SpeciesCandidate(
         species_id=species_id,
         scientific_name=name or species_id.replace("_", " ").capitalize(),
-        similarity_score=score,
-        reference_count=count,
+        classification_score=score,
         taxonomy_status="unverified",
     )
 
 
-class StubRetriever:
-    """Returns exactly what a test hands it, so scenarios are exact."""
+class StubClassifier:
+    """Returns exactly the labels a test hands it, so scenarios are exact.
 
-    provider_name = "StubRetriever"
-    mode = "mock_local_development"
+    It implements the same `classify(image, top_k)` signature the real
+    BioCLIP-2 provider will, which is the point: every workflow test below runs
+    against the production interface, not a special test path.
+    """
 
-    def __init__(self, references, *, raises=None):
-        self._references = references
+    provider_name = "StubClassifier"
+    recognition_mode = "mock_classification"
+    version = "stub-classifier-v1"
+
+    def __init__(self, predictions=None, *, raises=None):
+        self._predictions = list(predictions or [])
         self._raises = raises
         self.last_top_k: int | None = None
+        self.calls = 0
 
-    def search(self, query_vector, *, top_k):
-        from ..adapters.retrieval import RetrievalOutcome
+    def classify(self, image, top_k):
         from ..domain.errors import RecognitionError
 
+        self.calls += 1
         if self._raises is not None:
             raise RecognitionError(self._raises)
         self.last_top_k = top_k
-        return RetrievalOutcome(
-            references=list(self._references),
-            provider=self.provider_name,
-            mode=self.mode,
-            collection=None,
-            dataset_version="local-dev-fixtures-v0",
-        )
+        return list(self._predictions)[:top_k]

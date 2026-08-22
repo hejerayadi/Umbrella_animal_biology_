@@ -1,21 +1,11 @@
-export type UserRole =
-  | "Student"
-  | "Researcher"
-  | "Professor"
-  | "Conservation Scientist"
-  | "Bioinformatician"
-  | "Developer"
-  | "Other";
-
-export const USER_ROLES: UserRole[] = [
-  "Student",
-  "Researcher",
-  "Professor",
-  "Conservation Scientist",
-  "Bioinformatician",
-  "Developer",
-  "Other",
-];
+export type UserRole = "ADMIN" | "BIOLOGIST";
+export type UserStatus =
+  | "PENDING_EMAIL"
+  | "PENDING_APPROVAL"
+  | "INVITED"
+  | "ACTIVE"
+  | "REJECTED"
+  | "DISABLED";
 
 export const AI_CAPABILITIES = [
   "Genome Reconstruction",
@@ -31,14 +21,19 @@ export type AiCapability = (typeof AI_CAPABILITIES)[number];
 
 export interface User {
   id: string;
-  name: string;
   email: string;
   role: UserRole;
-  purpose: string;
-  mainInterest: string;
-  goals: string;
-  researchInterests: AiCapability[];
-  createdAt: string;
+  status: UserStatus;
+  full_name: string;
+  institution: string;
+  professional_title: string;
+  country: string;
+  orcid?: string | null;
+  motivation: string;
+  specialties: string[];
+  email_verified_at?: string | null;
+  last_login_at?: string | null;
+  created_at: string;
 }
 
 export interface Conversation {
@@ -102,6 +97,108 @@ export interface ProteinViewerSpec {
   domains: ProteinDomain[];
 }
 
+/**
+ * One ranked taxonomic label from the Multimodal Recognition Agent.
+ *
+ * `classificationScore` is a RANKING score over BioCLIP-2's label set, not a
+ * calibrated probability - the agent says so in its own provenance and the UI
+ * has to keep saying it. Displaying it as "% confident" would invent a
+ * statistical claim the model never made.
+ */
+export interface RecognitionCandidate {
+  speciesId: string;
+  scientificName: string;
+  commonName?: string | null;
+  rank?: string | null;
+  classificationScore: number;
+  gbifId?: number | null;
+  ncbiTaxId?: number | null;
+  /**
+   * "verified" = both GBIF and NCBI matched, "partial" = one did,
+   * "unverified"/"mock_verified" = no live double match. Annotation only:
+   * taxonomy never reorders or rescores a candidate.
+   */
+  taxonomyStatus?: string | null;
+}
+
+/**
+ * Where the answer came from - the "source of knowledge" behind the ranking.
+ *
+ * Deliberately carries the mock/real flags. The agent refuses to let fixture
+ * predictions be presented under a production banner, and this panel is the
+ * last place that promise could be broken.
+ */
+export interface RecognitionProvenance {
+  modelTarget?: string | null;
+  modelVersion?: string | null;
+  provider?: string | null;
+  /** e.g. "remote_bioclip2_open_domain_species" or "mock_classification". */
+  recognitionMode?: string | null;
+  mockProviderVersion?: string | null;
+  /** The Hugging Face Space that actually ran inference, and its revision. */
+  remoteSpaceId?: string | null;
+  remoteSpaceRevision?: string | null;
+  /** "real" = live lookup, "mock" = committed fixture. */
+  gbifMode?: string | null;
+  ncbiMode?: string | null;
+  taxonomyExecuted?: boolean;
+  taxonomyDegraded?: boolean;
+  scoreIsProbability?: boolean;
+  scoreKind?: string | null;
+  reasoningLlmProvider?: string | null;
+  reasoningLlmCalls?: number | null;
+}
+
+/** The Multimodal Recognition Agent's contribution to one answer. */
+export interface RecognitionResult {
+  /** "identified" | "uncertain" | "not_identified". */
+  decision: string;
+  species?: string | null;
+  speciesId?: string | null;
+  gbifId?: number | null;
+  ncbiTaxId?: number | null;
+  candidates: RecognitionCandidate[];
+  provenance: RecognitionProvenance;
+  clarificationQuestion?: string | null;
+}
+
+/** Which of the Biodiversity Agent's four skills produced a map. */
+export type BiodiversitySkill =
+  | "distribution"
+  | "hotspots"
+  | "habitat"
+  | "migration"
+  | "unknown";
+
+/** One headline figure shown beside a map, already formatted for display. */
+export interface BiodiversityMapStat {
+  label: string;
+  value: string;
+}
+
+export interface BiodiversityMapSpec {
+  /**
+   * An http(s) URL served by the Biodiversity Agent (`GET /maps/{name}`).
+   * Never a `file://` path - a page served over http cannot load one, which
+   * is exactly why maps used not to appear at all.
+   */
+  url: string;
+  skill: BiodiversitySkill;
+  speciesName?: string | null;
+  region?: string | null;
+  stats: BiodiversityMapStat[];
+  /** The worker agents credited with the answer, for the provenance line. */
+  sourceAgents: string[];
+  /**
+   * True when the answering worker is still a placeholder returning curated
+   * fixtures rather than measured data. Shown on the panel, following the
+   * same rule the Recognition panel follows: fixture data is never presented
+   * as measurement. Remove the entry in `PLACEHOLDER_AGENTS`
+   * (orchestrator-client.ts) when the real worker ships.
+   */
+  isIllustrative: boolean;
+}
+
 export type MessageSender = "user" | "assistant";
 
 export interface Message {
@@ -134,6 +231,20 @@ export interface Message {
    * answer renders without the picture.
    */
   generatedImageUrl?: string;
+  /**
+   * The ranked species candidates, when the Multimodal Recognition Agent
+   * contributed to this answer. Kept on the message like `proteinViewer`
+   * above so it survives a reload - it is a handful of names, scores and
+   * integers, nothing like the size of an image.
+   */
+  recognition?: RecognitionResult;
+  /**
+   * The map the Biodiversity Agent rendered for this answer, when it ran.
+   * Only the URL and a few summary figures are kept - the map itself is a
+   * ~700 KB self-contained folium document served by the agent, fetched by
+   * the iframe when the panel mounts, and never persisted with the message.
+   */
+  biodiversityMap?: BiodiversityMapSpec;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

@@ -1,0 +1,21 @@
+# Extra dependencies for M3 - Biodiversity Hotspots.
+#
+# Kept separate from the agent's requirements.txt so that file stays exactly as
+# it was. Install both:
+#
+#   pip install -r backend/agents/biodiversity_agent/requirements.txt
+#   pip install -r backend/agents/biodiversity_agent/workers/hotspots/requirements-m3.txt
+
+# DBSCAN, the silhouette score, and the nearest-neighbour search behind the
+# k-distance curve.
+scikit-learn==1.5.2
+
+# The grid, the per-cell tables and the GBIF calls. pandas and numpy arrive with
+# streamlit, but the pipeline imports them directly so they are pinned here too.
+pandas>=2.0
+numpy>=1.26
+requests==2.32.3
+
+# No database, no vector store, no embedding model, no LLM: the module needs
+# none of them. folium (for the map) and streamlit (for the dashboard) are
+# already in the agent's requirements.txt.

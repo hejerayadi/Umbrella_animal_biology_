@@ -92,23 +92,29 @@ def test_other_context_keys_are_not_scanned_for_images(validation_config, valid_
 # --- instruction -----------------------------------------------------------
 
 @pytest.mark.parametrize("instruction", ["", "   ", "\n\t ", None])
-def test_absent_instruction_is_accepted(instruction, validation_config, valid_context):
-    """The validated decisions make the instruction OPTIONAL: the image is the
-    primary evidence, and text is context that may simply not be there."""
-    result = validate_paired_request(instruction, valid_context, validation_config)
-    assert result.instruction == ""
-    assert result.image_sha256
-
-
-@pytest.mark.parametrize("instruction", [42, [], {}, 3.5, True])
-def test_non_text_instruction_is_still_rejected(instruction, validation_config, valid_context):
-    """Optional is not the same as "anything goes" - a number is malformed
-    input, not an absent instruction."""
+def test_an_empty_instruction_is_rejected(instruction, validation_config, valid_context):
+    """One image AND one non-empty text instruction, in the same request.
+    An image with nothing asked of it is not a Recognition request."""
     _fails_with(ErrorCode.EMPTY_INSTRUCTION, instruction, valid_context, validation_config)
 
 
-def test_the_image_remains_mandatory(validation_config):
-    """Text became optional. The image did not."""
+@pytest.mark.parametrize("instruction", [42, [], {}, 3.5, True])
+def test_non_text_instruction_is_rejected(instruction, validation_config, valid_context):
+    """A number is malformed input, and refuses the same way an absent one does:
+    either way, no usable instruction was supplied."""
+    _fails_with(ErrorCode.EMPTY_INSTRUCTION, instruction, valid_context, validation_config)
+
+
+def test_a_non_empty_instruction_is_accepted_and_trimmed(validation_config, valid_context):
+    result = validate_paired_request(
+        "  Identify this animal.  ", valid_context, validation_config
+    )
+    assert result.instruction == "Identify this animal."
+    assert result.image_sha256
+
+
+def test_the_image_is_mandatory_too(validation_config):
+    """Neither half alone is a valid request."""
     _fails_with(ErrorCode.MISSING_IMAGE, "Identify this animal.", {}, validation_config)
 
 

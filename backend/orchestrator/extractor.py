@@ -34,6 +34,7 @@ recognised from a photo.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Literal, cast
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -66,6 +67,10 @@ _SYSTEM_PROMPT = (
     "residue_position: a single positive residue number explicitly requested. Do not "
     "copy the number out of mutation; leave this empty unless the position is requested "
     "separately.\n\n"
+    "accession: a nucleotide database accession explicitly written in the message, such "
+    "as 'NC_007596', 'MK123456.1' or 'GCF_000001405.40'. It identifies a sequence "
+    "record, so it is never a gene symbol and never a species name. Leave it empty "
+    "unless the message actually contains one.\n\n"
     "requested_regions: protein regions explicitly requested, preserving the wording "
     "used by the caller. Return an empty list when none are named.\n\n"
     "preferred_source: set to 'pdb' only for an explicit experimental/PDB preference, "
@@ -83,6 +88,81 @@ _PROMPT = ChatPromptTemplate.from_messages(
         ("human", "{user_query}"),
     ]
 )
+
+# A pasted nucleotide sequence is pulled out here rather than by the model.
+# Two reasons: the model would have to echo every base back to us, which is
+# slow, expensive and the one kind of field an LLM can silently corrupt; and
+# the answer is exactly determinable, so there is nothing to reason about.
+#
+# The IUPAC nucleotide alphabet. `N` is the one that matters most here - a run
+# of them is precisely what the Reconstruction agent looks for.
+_IUPAC_NUCLEOTIDES = "ACGTURYKMSWBDHVN"
+
+# 20 bases is short for a real sequence and far longer than any English word
+# confined to this alphabet, so the run cannot be prose. Matching is done on
+# whitespace-free runs only; wrapped FASTA is handled by joining its lines
+# first, below.
+_SEQUENCE_RUN = re.compile(rf"[{_IUPAC_NUCLEOTIDES}]{{20,}}", re.IGNORECASE)
+
+# A FASTA record: a '>' description line, then the residues on the lines under
+# it. Detected separately because those lines are individually short.
+_FASTA_HEADER = re.compile(r"^\s*>.*$", re.MULTILINE)
+
+# The four bases plus the unknown. The full IUPAC set above also contains H, K,
+# S, W, B, D, V, R, Y and M, which between them spell ordinary English words -
+# "THANKS" is entirely IUPAC letters, and was being swallowed as residues off
+# the end of a pasted FASTA record. Real sequence is overwhelmingly ACGTN even
+# when it carries ambiguity codes, so requiring that dominance separates a
+# residue line from a word without rejecting genuine ambiguity.
+_CORE_BASES = frozenset("ACGTN")
+_MIN_CORE_SHARE = 0.9
+
+
+def _looks_like_residues(text: str) -> bool:
+    """Whether a run of IUPAC-alphabet characters is really sequence."""
+    if not text:
+        return False
+    upper = text.upper()
+    if set(upper) - set(_IUPAC_NUCLEOTIDES):
+        return False
+    core = sum(1 for character in upper if character in _CORE_BASES)
+    return core / len(upper) >= _MIN_CORE_SHARE
+
+
+def _find_sequence(user_query: str) -> str | None:
+    """The nucleotide sequence pasted into the message, if there is one.
+
+    Returns the residues with all whitespace removed, upper-cased, or None.
+    Deliberately conservative: a false positive would send the Reconstruction
+    agent off to repair a fragment of the user's own sentence.
+    """
+
+    # A FASTA block first: its residue lines are wrapped, so each one on its
+    # own may be under the length floor even though the record is not.
+    for header in _FASTA_HEADER.finditer(user_query):
+        residues: list[str] = []
+        for line in user_query[header.end():].splitlines():
+            stripped = line.strip()
+            if not stripped:
+                # The newline ending the header itself produces one of these
+                # before any residue line is seen, so a blank only terminates
+                # the record once it is actually under way.
+                if residues:
+                    break
+                continue
+            if stripped.startswith(">") or not _looks_like_residues(stripped):
+                break
+            residues.append(stripped.upper())
+        joined = "".join(residues)
+        if len(joined) >= 20:
+            return joined
+
+    for match in _SEQUENCE_RUN.finditer(user_query):
+        candidate = match.group(0).upper()
+        if _looks_like_residues(candidate):
+            return candidate
+
+    return None
 
 
 class _ExtractorOutput(BaseModel):
@@ -115,6 +195,11 @@ class _ExtractorOutput(BaseModel):
         default=None,
         gt=0,
         description="Explicit positive residue position, excluding a position only present in mutation.",
+    )
+    accession: str | None = Field(
+        default=None,
+        description="Nucleotide database accession written in the message, e.g. "
+        "'NC_007596'. Empty when the message names none.",
     )
     requested_regions: list[str] = Field(
         default_factory=list,
@@ -158,6 +243,7 @@ class Extractor:
                 ("trait_name", response.trait_name),
                 ("gene_name", response.gene_name),
                 ("mutation", response.mutation),
+                ("accession", response.accession),
             )
             # `value.strip()` below would blow up on None, and some models
             # answer with "" or "none" instead of leaving the field out.
@@ -181,8 +267,22 @@ class Extractor:
         if response.include_explanation is not None:
             facts["include_explanation"] = response.include_explanation
 
+        # Found by regex rather than by the model - see `_find_sequence`. This
+        # is the key the Reconstruction agent repairs, and without it a request
+        # to fill in a pasted sequence reached that agent with nothing to work
+        # on and came straight back as a failure.
+        sequence = _find_sequence(user_query)
+        if sequence:
+            facts["sequence"] = sequence
+
         if facts:
-            _logger.info("[Extractor] query=%r -> %s", user_query, facts)
+            # `sequence` can be tens of kilobases; logging it in full buries
+            # every other line in the console the orchestrator streams to.
+            loggable = {
+                key: (f"<{len(value)} bases>" if key == "sequence" else value)
+                for key, value in facts.items()
+            }
+            _logger.info("[Extractor] query=%r -> %s", user_query, loggable)
         else:
             _logger.info("[Extractor] query=%r -> no entities named", user_query)
 

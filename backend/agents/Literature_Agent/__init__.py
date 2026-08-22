@@ -1,3 +1,3 @@
-from .mock import LiteratureMock
+from .orchestrator import LiteratureOrchestrator
 
-__all__ = ["LiteratureMock"]
+__all__ = ["LiteratureOrchestrator"]

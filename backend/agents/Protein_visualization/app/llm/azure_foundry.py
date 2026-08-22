@@ -21,6 +21,7 @@ from backend.agents.Protein_visualization.app.llm.prompts import (
 )
 from backend.agents.Protein_visualization.app.llm.schemas import CriticOutput, ExplanationOutput
 from backend.agents.Protein_visualization.app.observability.logging import log_stage
+from backend.agents.Protein_visualization.app.observability.tracing import child_run_config
 
 logger = logging.getLogger("app.llm")
 
@@ -89,7 +90,19 @@ class AzureFoundryClient:
                 [
                     ("system", system_prompt),
                     ("human", json.dumps(context, default=str)),
-                ]
+                ],
+                # Named after the node rather than left as "RunnableSequence":
+                # both LLM calls in this workflow go through the same
+                # with_structured_output wrapper, so without this the
+                # explanation and the critic are indistinguishable in a trace.
+                config=child_run_config(
+                    f"llm.{node}",
+                    tags=["llm", "azure_openai", f"node:{node}"],
+                    node=node,
+                    capability="llm",
+                    deployment=self.settings.azure_openai_deployment,
+                    output_schema=schema.__name__,
+                ),
             )
             duration_ms = round((time.monotonic() - started) * 1000)
 
