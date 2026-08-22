@@ -20,12 +20,26 @@ class GlobalOrchestrator:
         # every single query - building it is the "expensive" one-time setup.
         self._graph = build_orchestrator_graph()
 
-    def run(self, user_query: str, initial_context: dict[str, Any] | None = None) -> WorkflowState:
-        """Execute the full plan -> worker -> resolver loop until COMPLETED or FAILED."""
+    def run(
+        self,
+        user_query: str,
+        initial_context: dict[str, Any] | None = None,
+        *,
+        has_image: bool = False,
+    ) -> WorkflowState:
+        """Execute the full plan -> worker -> resolver loop until COMPLETED or FAILED.
+
+        `has_image` tells the planner an image was attached to this message.
+        The image itself never enters the state - see `WorkflowState.has_image`.
+        """
 
         # Start with a fresh clipboard: just the user's question and any
         # extra known facts (e.g. {"species": "woolly mammoth"}).
-        initial_state = WorkflowState(user_query=user_query, context=dict(initial_context or {}))
+        initial_state = WorkflowState(
+            user_query=user_query,
+            context=dict(initial_context or {}),
+            has_image=has_image,
+        )
 
         # Hand it to LangGraph, which runs planner -> workers -> resolver ->
         # workers -> ... automatically until the graph reaches END.

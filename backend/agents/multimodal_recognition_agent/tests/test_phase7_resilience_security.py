@@ -2018,18 +2018,69 @@ def test_p7_f3_the_ncbi_email_travels_as_a_query_parameter():
 def test_p7_f3_the_policy_follows_the_pattern_the_repository_already_uses():
     """Requirement: use the existing approved pattern, not a competing system.
 
-    `backend/api.py` already quiets httpx with exactly
-    `logging.getLogger(name).setLevel(logging.WARNING)`. There is no central
-    dictConfig to hook into - only per-entry-point basicConfig calls - so the
-    Recognition service applies the same idiom and simply covers the two extra
-    namespaces (httpcore, urllib3) that the NCBI email leak required.
+    The repository quiets a noisy dependency with exactly
+    `logging.getLogger(<name>).setLevel(logging.WARNING)`, and it still offers
+    no central `dictConfig` for a service to hook into - only per-entry-point
+    configuration. So the Recognition service applies that same idiom at its
+    own entry point and simply covers the two extra namespaces (httpcore,
+    urllib3) that the NCBI email leak required.
+
+    The convention is located by scanning rather than by naming one file: the
+    claim is about the idiom the repository uses, which survives a file move.
+    It did move - the central `backend/api.py` became a compatibility shim
+    over `backend/app/main.py` - and a hard-coded path asserted the layout
+    instead of the policy.
     """
     import pathlib
 
     repo_root = pathlib.Path(__file__).resolve().parents[4]
-    orchestrator_api = (repo_root / "backend" / "api.py").read_text(encoding="utf-8")
+    backend = repo_root / "backend"
+    recognition_dir = backend / "agents" / "multimodal_recognition_agent"
+    ignored = {".venv", "site-packages", "node_modules", "__pycache__"}
 
-    assert 'logging.getLogger("httpx").setLevel(logging.WARNING)' in orchestrator_api
+    idiom = re.compile(
+        r"""logging\.getLogger\(\s*(?:(['"])[\w.]+\1|[\w.]+)\s*\)"""
+        r"""\.setLevel\(\s*logging\.WARNING\s*\)"""
+    )
+
+    def sources(root):
+        for path in root.rglob("*.py"):
+            if ignored.isdisjoint(path.parts):
+                yield path
+
+    # 1. The idiom is the repository's, not one this agent invented: it is in
+    #    use outside the Recognition agent. Its home is allowed to move.
+    elsewhere = [
+        path.relative_to(repo_root).as_posix()
+        for path in sources(backend)
+        if recognition_dir not in path.parents and idiom.search(
+            path.read_text(encoding="utf-8", errors="ignore"))
+    ]
+    assert elsewhere, (
+        "no module outside the Recognition agent quiets a logger with "
+        "logging.getLogger(...).setLevel(logging.WARNING) any more - the "
+        "repository's logging convention changed, so this agent's policy "
+        "needs revisiting rather than this assertion relaxing"
+    )
+
+    # 2. Still nothing central to hook into, which is what makes a per-entry-
+    #    point policy the correct place for this protection.
+    central = [backend / "api.py", backend / "app" / "main.py"]
+    for path in central:
+        source = path.read_text(encoding="utf-8")
+        assert "dictConfig" not in source and "fileConfig" not in source, (
+            f"{path.name} now configures logging centrally - the Recognition "
+            "policy should hook into it instead of standing alone"
+        )
+
+    # 3. The Recognition entry point applies that same stdlib idiom, and does
+    #    not stand up a competing configuration system of its own.
+    recognition_api = (recognition_dir / "api.py").read_text(encoding="utf-8")
+    assert idiom.search(
+        recognition_api.replace("QUIETED_HTTP_LOGGER_LEVEL", "logging.WARNING")
+    ), "the Recognition entry point no longer uses the repository's idiom"
+    assert "dictConfig" not in recognition_api
+    assert "fileConfig" not in recognition_api
 
     from ..api import QUIETED_HTTP_LOGGERS
 

@@ -1,7 +1,7 @@
 {
   "name": "Reconstruction Agent",
   "type": "worker",
-  "description": "Reconstructs incomplete genomes or missing biological information. Covers filling in fragmented, partial or missing sequence data; reconstructing the genome of an extinct or poorly sequenced species; and inferring biological information that no database holds directly. Used when retrieval has already failed or the data is known to be incomplete - not as a first stop for data that can simply be looked up.",
+  "description": "Reconstructs incomplete genomes or missing biological information. Covers filling in fragmented, partial or missing sequence data; reconstructing the genome of an extinct or poorly sequenced species; and inferring biological information that no database holds directly. Used when retrieval has already failed or the data is known to be incomplete - not as a first stop for data that can simply be looked up. Works on a specific sequence: the user must paste the nucleotide sequence containing the gaps, or name the accession of the record to repair. It does not pick a target sequence on its own.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
@@ -20,6 +20,8 @@
     "context": "dict"
   },
   "output": {
-    "reconstructed_genome": "string"
+    "reconstruction": "dict",
+    "reconstruction_summary": "string",
+    "reconstruction_sequence": "string"
   }
 }

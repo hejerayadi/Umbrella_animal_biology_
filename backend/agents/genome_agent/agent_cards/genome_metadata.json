@@ -1,0 +1,25 @@
+{
+  "name": "Genome Metadata",
+  "type": "worker",
+  "description": "Retrieves genome size, chromosome count, and karyotype for a resolved assembly.",
+  "reports_to": [
+    "Genome Agent"
+  ],
+  "managed_services": [
+    "NCBI Assembly"
+  ],
+  "capabilities": [
+    "Genome size retrieval",
+    "Chromosome count lookup",
+    "Karyotype retrieval"
+  ],
+  "input": {
+    "assembly_id": "string"
+  },
+  "output": {
+    "genome_size_bp": "integer",
+    "chromosome_count": "integer",
+    "karyotype": "string",
+    "assembly_level": "string"
+  }
+}

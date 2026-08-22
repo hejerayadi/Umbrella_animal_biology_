@@ -18,7 +18,6 @@ class AgentRequest:
 
 @dataclass
 class AgentResult:
-
     status: AgentStatus
 
     target_agent: str | None = None
@@ -26,3 +25,9 @@ class AgentResult:
     prompt_to_target_agent: str | None = None
 
     output: Any | None = None
+
+    continuation_reason: str | None = None
+
+    retryable: bool = False
+
+    error: str | None = None

@@ -1,0 +1,6 @@
+{
+  "1tup": {"UniProt": {"P04637": {"mappings": [{
+    "chain_id": "A", "unp_start": 94, "unp_end": 312,
+    "start": {"residue_number": 94}, "end": {"residue_number": 312}
+  }]}}}
+}

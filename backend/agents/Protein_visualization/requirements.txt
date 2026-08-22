@@ -1,7 +1,0 @@
-# Standalone local dependencies for the Protein Visualization agent
-biopython==1.84
-py3Dmol==2.5.3
-
-# --- Agent API layer (api.py) - required, do not remove ---
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0

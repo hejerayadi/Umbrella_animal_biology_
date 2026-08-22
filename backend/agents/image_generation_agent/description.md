@@ -1,23 +1,11 @@
-# Animal Image Generation Agent
+Generates 2D scientific images with FLUX.2-pro from the species, protein and trait context collected by the other agents. It needs a subject to draw — a species or a protein identifier, either one on its own is enough.
 
-## Objective
-Produce a visual representation of an animal species from the biological data the platform already holds, so a species can be seen even when no photograph of it exists.
+Example questions:
+- "Draw a woolly mammoth"
+- "Draw the structural traits of human insulin"
+- "Create a 2D illustration of woolly mammoth morphological traits"
+- "Generate a scientific image for the species described in context"
 
-## Purpose
-Extinct, rarely observed, or newly described species often have no usable imagery. This agent turns morphological traits and habitat information gathered by the other agents into an illustrative image, rather than inventing an animal from scratch.
+This agent analyzes nothing itself and predicts no structures — it is the rendering step. It requests trait interpretation from the Trait Discovery Agent when traits are missing, organizes the returned traits into visualization sections, builds a prompt, and calls FLUX.2-pro.
 
-## Problem Addressed
-- Extinct species cannot be photographed.
-- Rare or deep-sea species have little to no public imagery.
-- Existing pictures are often low quality, partial, or wrongly labelled.
-
-## Main Tasks
-- Collect the morphological traits describing the species.
-- Collect the habitat and conservation context used to set the scene.
-- Build an image-generation prompt from those findings.
-- Return the generated image for the species.
-
-## Benefits
-- Makes results easier to interpret for non-specialists.
-- Supports teaching and science communication.
-- Gives researchers a visual hypothesis of how a species looks.
+For 3D protein structure prediction (AlphaFold / ESMFold), see the separate 3D Protein Structure Agent.

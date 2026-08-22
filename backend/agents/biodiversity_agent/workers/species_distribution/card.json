@@ -1,0 +1,31 @@
+{
+  "name": "Species Distribution Agent",
+  "type": "worker",
+  "description": "Produces an interactive point map of every recorded sighting of a given species by querying GBIF occurrence records.",
+  "reports_to": [
+    "Biodiversity Agent Orchestrator"
+  ],
+  "may_need": [],
+  "managed_services": [
+    "GBIF"
+  ],
+  "capabilities": [
+    "Fetch species occurrences",
+    "Deduplicate coordinates",
+    "Filter invalid (0, 0) points",
+    "Render an interactive point map",
+    "Estimate confidence from observation count"
+  ],
+  "input": {
+    "species_name": "string",
+    "feature": "species_distribution_map",
+    "region": "string | null",
+    "time_period": "tuple[int, int] | null"
+  },
+  "output": {
+    "species_name": "string",
+    "coordinates": "list[tuple[float, float]]",
+    "observation_count": "int",
+    "map_url": "string"
+  }
+}

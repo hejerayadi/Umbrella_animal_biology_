@@ -1,0 +1,129 @@
+"""Scientific critic.
+
+The deterministic verdict is computed from the workflow facts alone. A language
+model may then confirm it or make it stricter — never more permissive.
+"""
+
+import logging
+
+from backend.agents.Protein_visualization.app.capabilities.explanation.service import (
+    LanguageModel,
+    evidence_context,
+)
+from backend.agents.Protein_visualization.app.domain.enums import ValidationStatus
+from backend.agents.Protein_visualization.app.domain.models import (
+    CriticReport,
+    EvidencePack,
+    LlmUsage,
+    ProteinStructureRequest,
+    ResidueMapping,
+    ResolvedProtein,
+    StructureCandidate,
+)
+from backend.agents.Protein_visualization.app.observability.logging import log_event
+
+logger = logging.getLogger("app.critic")
+
+SEVERITY = {
+    ValidationStatus.accept: 0,
+    ValidationStatus.revise: 1,
+    ValidationStatus.abstain: 2,
+}
+
+
+def _strictest(*statuses: ValidationStatus) -> ValidationStatus:
+    return max(statuses, key=lambda status: SEVERITY[status])
+
+
+class CriticCapability:
+    def review(
+        self,
+        request: ProteinStructureRequest,
+        protein: ResolvedProtein | None,
+        structure: StructureCandidate | None,
+        mappings: list[ResidueMapping],
+        warnings: list[str] | None = None,
+    ) -> CriticReport:
+        if protein is None:
+            return CriticReport(
+                verdict=ValidationStatus.abstain.value,
+                reasons=("Protein identity was not confirmed; no structural claim can be made.",),
+            )
+        if structure is None:
+            return CriticReport(
+                verdict=ValidationStatus.abstain.value,
+                reasons=("No structure satisfied the selection rules.",),
+            )
+
+        verdict = ValidationStatus.accept
+        reasons: list[str] = []
+
+        if structure.sequence_coverage < 1.0:
+            verdict = _strictest(verdict, ValidationStatus.revise)
+            reasons.append(
+                f"The selected structure covers {structure.sequence_coverage:.0%} of the UniProt "
+                "sequence, so it is usable but not a complete-protein result."
+            )
+
+        if (request.residue_position is not None or request.mutation) and not any(
+            mapping.is_observed for mapping in mappings
+        ):
+            verdict = _strictest(verdict, ValidationStatus.revise)
+            reasons.append(
+                "A residue or mutation was requested but no observed SIFTS mapping was obtained, "
+                "so the position is not highlighted."
+            )
+        if structure.structure_type == "PREDICTED":
+            verdict = _strictest(verdict, ValidationStatus.revise)
+            reasons.append(
+                "The selected model is an AlphaFold prediction and must be presented as predicted."
+            )
+        if warnings:
+            verdict = _strictest(verdict, ValidationStatus.revise)
+            reasons.append(
+                "The workflow completed with degraded evidence: " + "; ".join(dict.fromkeys(warnings))
+            )
+        if not reasons:
+            reasons.append("Identity, selected structure and evidence are mutually consistent.")
+        return CriticReport(verdict=verdict.value, reasons=tuple(reasons))
+
+    async def audit(
+        self,
+        deterministic: CriticReport,
+        evidence: EvidencePack,
+        llm: LanguageModel | None = None,
+        node: str = "run_scientific_critic",
+    ) -> tuple[CriticReport, LlmUsage | None]:
+        """Let the model tighten the verdict; a proposed upgrade is discarded."""
+        if llm is None or not llm.enabled:
+            return deterministic, None
+
+        try:
+            context = evidence_context(evidence)
+            context.update(
+                deterministic_verdict=deterministic.verdict,
+                deterministic_reasons=list(deterministic.reasons),
+            )
+            output, usage = await llm.critique(context, node)
+        except Exception as exc:
+            log_event(
+                logger,
+                "protein.llm.critic.degraded",
+                logging.WARNING,
+                exc_info=True,
+                status="degraded",
+                error_code=type(exc).__name__,
+            )
+            return deterministic, None
+
+        proposed = ValidationStatus(output.verdict)
+        current = ValidationStatus(deterministic.verdict)
+        if SEVERITY[proposed] <= SEVERITY[current]:
+            return deterministic, usage
+        return (
+            CriticReport(
+                verdict=proposed.value,
+                reasons=tuple(dict.fromkeys((*deterministic.reasons, *output.reasons))),
+            ),
+            usage,
+        )

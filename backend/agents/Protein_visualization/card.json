@@ -1,20 +1,30 @@
 {
   "name": "3D Protein Structure Agent",
   "type": "worker",
-  "description": "Predicts protein structures and generates protein visualizations using AlphaFold and ESMFold. Covers the 3D structure, shape and folding of a protein; structure prediction from a gene or amino-acid sequence; protein domains, binding sites and structural comparison; and rendered molecular views of a protein.",
+  "description": "Resolves a gene or accession to a canonical protein identity, finds the best available 3D structure for it, maps functional annotations onto that structure, and returns a viewer-ready molecular scene. Covers the 3D structure, shape and folding of a protein; experimental structures and predicted models; protein domains, binding sites and residue-level mapping of a mutation or position; and rendered molecular views. Needs the species, plus a gene symbol or UniProt accession, before it can start.",
   "reports_to": [
     "Global Scientific Orchestrator"
   ],
   "may_need": [
     "Genome Agent",
-    "Trait Discovery Agent"
+    "Trait Discovery Agent",
+    "Literature Agent"
   ],
   "managed_services": [
-    "AlphaFold",
-    "ESMFold"
+    "UniProt",
+    "RCSB PDB",
+    "AlphaFold DB",
+    "InterPro",
+    "SIFTS",
+    "Qdrant",
+    "Azure OpenAI"
   ],
   "capabilities": [
-    "Protein prediction",
+    "Protein identity resolution",
+    "Experimental structure retrieval",
+    "Predicted structure retrieval",
+    "Functional annotation mapping",
+    "Residue mapping",
     "3D visualization"
   ],
   "input": {

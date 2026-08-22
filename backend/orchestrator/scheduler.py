@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
+
+
+class SchedulerPlanner(Protocol):
+    def next_agent(self, state: object) -> str | None: ...
+
+
+class SchedulerCapabilityResolver(Protocol):
+    def resolve(self, requested_capability: object) -> str | None: ...
 
 
 @dataclass(frozen=True)
@@ -20,12 +29,11 @@ class ExecutionScheduler:
 
     def schedule(
         self,
-        result,
-        planner,
-        capability_resolver,
-        state,
+        result: object,
+        planner: SchedulerPlanner,
+        capability_resolver: SchedulerCapabilityResolver,
+        state: object,
     ) -> ScheduleDecision:
-
         # The workflow currently receives statuses as plain strings, but this
         # normalization also accepts enum-like objects that expose `.name`.
         status = getattr(result, "status", None)
@@ -38,19 +46,15 @@ class ExecutionScheduler:
         # Some agents ask for a specific capability instead of naming the next
         # agent directly. In that case we delegate to the capability resolver.
         if status_name == "NEEDS_CAPABILITY":
-
             requested_capability = getattr(result, "requested_capability", None)
 
-            agent = capability_resolver.resolve(
-                requested_capability
-            )
+            agent = capability_resolver.resolve(requested_capability)
 
             return ScheduleDecision(next_agent=agent)
 
         # CONTINUE means the current agent wants the planner to pick the next
         # step in the predefined workflow chain.
         if status_name == "CONTINUE":
-
             agent = planner.next_agent(state)
 
             return ScheduleDecision(next_agent=agent)

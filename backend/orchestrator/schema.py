@@ -33,6 +33,9 @@ class AgentResult:
     target_agent: str | None = None
     prompt_to_target_agent: str | None = None
     output: Any | None = None
+    continuation_reason: str | None = None
+    retryable: bool = False
+    error: str | None = None
 
 
 @dataclass

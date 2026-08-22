@@ -1,27 +1,46 @@
 {
   "name": "Evolution Agent",
   "type": "worker",
-  "description": "Analyzes evolutionary relationships between species using NCBI Taxonomy and TimeTree. Covers how species are related, their ancestry, lineage and common ancestors; when two lineages diverged and the phylogenetic trees showing it; how a trait, species or group evolved over time; and taxonomy, classification and a species' place in the tree of life.",
+  "description": "Compares molecular sequences to reconstruct phylogenetic relationships, and separately builds a functional similarity network from protein embeddings.",
   "reports_to": [
-    "Global Scientific Orchestrator"
+    "Umbrella Global Orchestrator"
   ],
   "may_need": [
     "Genome Agent",
+    "Biodiversity Agent",
     "Literature Agent"
   ],
+  "sub_agents": [
+    "Molecular Comparison Sub-agent",
+    "Phylogenetic Reconstruction Sub-agent"
+  ],
   "managed_services": [
-    "NCBI Taxonomy",
-    "TimeTree"
+    "NCBI GenBank (provisional)",
+    "UniProt (provisional)",
+    "ESM2 embeddings (provisional)",
+    "MAFFT / IQ-TREE (provisional)"
   ],
   "capabilities": [
-    "Phylogenetic analysis",
-    "Evolutionary comparison"
+    "Homology-based molecular comparison",
+    "Multiple sequence alignment",
+    "Maximum-likelihood phylogenetic reconstruction",
+    "Branch support estimation",
+    "Functional similarity network generation"
   ],
   "input": {
-    "instruction": "string",
-    "context": "dict"
+    "species_ids": "string[] | null",
+    "sequences": "string[] | null"
   },
   "output": {
-    "evolution_analysis": "string"
-  }
+    "phylogenetic_tree": {
+      "topology": "newick | null",
+      "branch_support": "float[] | null"
+    },
+    "similarity_network": {
+      "nodes": "string[] | null",
+      "edges": "Edge[] | null"
+    }
+  },
+  "result": "EvolutionAnalysisResult",
+  "clarification_required": "boolean"
 }

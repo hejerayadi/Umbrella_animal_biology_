@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    
+        <script>
+            L_NO_TOUCH = false;
+            L_DISABLE_3D = false;
+        </script>
+    
+    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
+    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_f28428e0c99a7e48a6a9da9d9b23b98d {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+        
+</head>
+<body>
+    
+    
+    <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
+                background: white; padding: 8px 12px; border: 1px solid #ccc;
+                border-radius: 4px; font-family: sans-serif; font-size: 12px;">
+      <b>Panthera tigris</b><br>
+      4 observations (mock)<br>
+      <span style="color: #666;">Sprint 2 — Biodiversity Agent</span>
+    </div>
+    
+    
+            <div class="folium-map" id="map_f28428e0c99a7e48a6a9da9d9b23b98d" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_f28428e0c99a7e48a6a9da9d9b23b98d = L.map(
+                "map_f28428e0c99a7e48a6a9da9d9b23b98d",
+                {
+                    center: [18.4275, 84.275],
+                    crs: L.CRS.EPSG3857,
+                    zoom: 2,
+                    zoomControl: true,
+                    preferCanvas: false,
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_136b4aa361ea11bb5f00355a6719c7f9 = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
+            );
+        
+    
+            tile_layer_136b4aa361ea11bb5f00355a6719c7f9.addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+        
+    
+            var circle_marker_acbfb7f3254adc4f4301e56a21084154 = L.circleMarker(
+                [28.02, 79.71],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+        
+    
+        var popup_67efd0e12f30e1d6aeeb35f5f9247751 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_371f7a36cdf2b0caf2d17ad28032b44c = $(`<div id="html_371f7a36cdf2b0caf2d17ad28032b44c" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(28.020, 79.710)</div>`)[0];
+                popup_67efd0e12f30e1d6aeeb35f5f9247751.setContent(html_371f7a36cdf2b0caf2d17ad28032b44c);
+            
+        
+
+        circle_marker_acbfb7f3254adc4f4301e56a21084154.bindPopup(popup_67efd0e12f30e1d6aeeb35f5f9247751)
+        ;
+
+        
+    
+    
+            var circle_marker_5a8d5c96b010a64a70efbe10409f27b8 = L.circleMarker(
+                [21.32, 79.65],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+        
+    
+        var popup_c93e096c7e77f0ef60ae22eccf0004fe = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_6e47296869a0348bce3872b7b61bebd2 = $(`<div id="html_6e47296869a0348bce3872b7b61bebd2" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(21.320, 79.650)</div>`)[0];
+                popup_c93e096c7e77f0ef60ae22eccf0004fe.setContent(html_6e47296869a0348bce3872b7b61bebd2);
+            
+        
+
+        circle_marker_5a8d5c96b010a64a70efbe10409f27b8.bindPopup(popup_c93e096c7e77f0ef60ae22eccf0004fe)
+        ;
+
+        
+    
+    
+            var circle_marker_9dd8b70ad7e8de71a97cceebb9cbd986 = L.circleMarker(
+                [13.35, 100.99],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+        
+    
+        var popup_b249aff391b87adae074bd8005efc2dd = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_a57b32533573d7f0f6265d17cab20ce7 = $(`<div id="html_a57b32533573d7f0f6265d17cab20ce7" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(13.350, 100.990)</div>`)[0];
+                popup_b249aff391b87adae074bd8005efc2dd.setContent(html_a57b32533573d7f0f6265d17cab20ce7);
+            
+        
+
+        circle_marker_9dd8b70ad7e8de71a97cceebb9cbd986.bindPopup(popup_b249aff391b87adae074bd8005efc2dd)
+        ;
+
+        
+    
+    
+            var circle_marker_c7296433f83361a53bf6e7560cf2759b = L.circleMarker(
+                [11.02, 76.75],
+                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
+            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+        
+    
+        var popup_ec7a5b7ddd62f60b1209bd588496fc94 = L.popup({"maxWidth": 250});
+
+        
+            
+                var html_e5a6db42cf55851452e80ddfcdfe672b = $(`<div id="html_e5a6db42cf55851452e80ddfcdfe672b" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(11.020, 76.750)</div>`)[0];
+                popup_ec7a5b7ddd62f60b1209bd588496fc94.setContent(html_e5a6db42cf55851452e80ddfcdfe672b);
+            
+        
+
+        circle_marker_c7296433f83361a53bf6e7560cf2759b.bindPopup(popup_ec7a5b7ddd62f60b1209bd588496fc94)
+        ;
+
+        
+    
+</script>
+</html>

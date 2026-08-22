@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConversationSidebar } from "@/components/umbrella/conversation-sidebar";
 import { UmbrellaLogo } from "@/components/umbrella/logo";
-import { useUmbrella } from "@/lib/umbrella-store";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/chat")({
@@ -23,14 +23,14 @@ export const Route = createFileRoute("/chat")({
 });
 
 function ChatLayout() {
-  const { user, hydrated } = useUmbrella();
+  const { loading, user } = useAuth();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    if (hydrated && !user) navigate({ to: "/signin" });
-  }, [hydrated, user, navigate]);
+    if (!loading && !user) navigate({ to: "/signin" });
+  }, [loading, user, navigate]);
 
   const params = useParams({ strict: false }) as { conversationId?: string };
 
