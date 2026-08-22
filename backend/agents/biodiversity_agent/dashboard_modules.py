@@ -26,6 +26,7 @@ orchestration across the four workers.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import hashlib
 import html
 import json
@@ -397,7 +398,7 @@ def ask_for_a_region(payload: dict, key: str) -> None:
                 st.columns(3), enumerate(row, start=row_start + 1)):
             with column:
                 if st.button(f"{position}. {option.title()}",
-                             key=f"ask_{key}_{option}", use_container_width=True):
+                             key=f"ask_{key}_{option}", width="stretch"):
                     # The answer is stored, not acted on here: this block may be
                     # rendered below the input section, so the run has to start
                     # from the top with the choice already in hand.
@@ -525,23 +526,52 @@ def get_orchestrator() -> BiodiversityOrchestrator:
     return BiodiversityOrchestrator()
 
 
+def _run_async(coro):
+    """Run an async coroutine from a Streamlit sync context.
+
+    Streamlit reruns the whole script on every interaction, and each rerun
+    that calls ``asyncio.run`` closes its default ThreadPoolExecutor when
+    done. The NEXT call finds a dead executor and blows up with
+    ``RuntimeError: cannot schedule new futures after shutdown`` - the
+    exact symptom LangGraph triggers because its LangChain internals do
+    ``asyncio.get_running_loop().run_in_executor(None, ...)``.
+
+    Fix: build a fresh loop AND a fresh ThreadPoolExecutor every call,
+    set the loop as current so LangGraph's ``get_running_loop()`` finds
+    it, then dispose of both cleanly. One-shot per interaction, no state
+    leaks across reruns.
+    """
+
+    loop = asyncio.new_event_loop()
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+    loop.set_default_executor(executor)
+    prior = None
+    try:
+        prior = asyncio.get_event_loop_policy().get_event_loop()
+    except RuntimeError:
+        prior = None
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        try:
+            loop.close()
+        finally:
+            executor.shutdown(wait=False)
+            if prior is not None and not prior.is_closed():
+                asyncio.set_event_loop(prior)
+
+
 def route_via_llm(question: str) -> RecognizedIntent:
     """Ask the intent classifier which of the four features to run.
 
-    ``classify_intent`` is ``async``; Streamlit is sync. Wrap once, so the
-    caller stays a one-liner and errors turn into an unroutable intent
-    rather than a 500 in the UI."""
+    ``classify_intent`` is ``async``; Streamlit is sync. A missing LLM, a
+    network error, or an unparseable model output all come back as an
+    unusable intent rather than a UI crash."""
 
     try:
-        return asyncio.run(classify_intent(question))
-    except RuntimeError:
-        # Nested loop (rare, in tests) - build our own loop.
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(classify_intent(question))
-        finally:
-            loop.close()
-    except Exception:  # noqa: BLE001 - classifier promises never to raise, this is belt-and-braces
+        return _run_async(classify_intent(question))
+    except Exception:  # noqa: BLE001 - classifier promises never to raise, belt-and-braces
         return RecognizedIntent(source="error")
 
 
@@ -549,14 +579,7 @@ def run_orch(request: AgentRequest):
     """Sync wrapper around ``BiodiversityOrchestrator.run``."""
 
     orch = get_orchestrator()
-    try:
-        return asyncio.run(orch.run(request))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(orch.run(request))
-        finally:
-            loop.close()
+    return _run_async(orch.run(request))
 
 
 def _map_html_from_url(map_url: str | None) -> str | None:
@@ -692,40 +715,323 @@ def render_habitat(result, *, stream: bool) -> None:
         )
 
 
-def render_migration(result, *, stream: bool) -> None:
-    """Migration mock payload - a route with waypoints and a pattern."""
+def _build_interactive_migration_map(
+    french: str,
+    observed: list,
+    predicted: dict,
+):
+    """Build a folium map for streamlit-folium (which needs the object,
+    not the HTML). Same visual as ``MigrationWorker._render_map`` in
+    the worker, but returned as a folium.Map so click events can be
+    captured."""
+
+    import folium
+
+    if not observed:
+        return None
+
+    center = (observed[0].get("start_lat", 0), observed[0].get("start_lon", 0))
+    fmap = folium.Map(location=center, zoom_start=4, tiles="CartoDB positron")
+
+    for obs in observed:
+        lat, lon = obs.get("start_lat"), obs.get("start_lon")
+        if lat is None or lon is None:
+            continue
+        popup_html = (
+            f"<b>{html.escape(str(obs.get('region', '-')))}</b><br>"
+            f"{html.escape(str(obs.get('event_date', '-')))}<br>"
+            f"{lat:.3f}, {lon:.3f}<br>"
+            "<i>Click to predict from here</i>"
+        )
+        folium.CircleMarker(
+            location=(lat, lon),
+            radius=8, color="#8FD14F", fill=True, fill_color="#8FD14F",
+            fill_opacity=0.85, weight=1,
+            popup=folium.Popup(popup_html, max_width=240),
+            tooltip=f"{obs.get('region', 'observed')} - click to predict",
+        ).add_to(fmap)
+
+    if predicted:
+        pred_popup = (
+            f"<b>Predicted next</b><br>"
+            f"{predicted.get('lat', 0):.3f}, {predicted.get('lon', 0):.3f}<br>"
+            f"month {predicted.get('month', '-')}, day {predicted.get('day', '-')}"
+        )
+        folium.Marker(
+            location=(predicted.get("lat", 0), predicted.get("lon", 0)),
+            icon=folium.Icon(color="orange", icon="star", prefix="fa"),
+            popup=folium.Popup(pred_popup, max_width=240),
+            tooltip="predicted next",
+        ).add_to(fmap)
+
+        seed = observed[0]
+        folium.PolyLine(
+            locations=[
+                (seed["start_lat"], seed["start_lon"]),
+                (predicted["lat"], predicted["lon"]),
+            ],
+            color="#E0B23C", weight=3, dash_array="6,6", opacity=0.85,
+        ).add_to(fmap)
+
+    return fmap
+
+
+def _predict_from_seed(french: str, seed_lat: float, seed_lon: float,
+                       event_date: str | None):
+    """Call Miriam's predict_next_route directly to re-predict from a
+    user-clicked seed point. Bypasses Qdrant search (we already have
+    the observations) and just re-runs the Random Forest."""
+
+    try:
+        import importlib
+        predict_mod = importlib.import_module(
+            "backend.agents.biodiversity_agent.workers.migration.miriam.predict"
+        )
+        return predict_mod.predict_next_route(
+            species=french,
+            current_lat=seed_lat,
+            current_lon=seed_lon,
+            event_date=event_date,
+        )
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def render_migration(result, *, stream: bool, key: str = "live") -> None:
+    """Miriam's Migration payload - observed routes + Random Forest prediction.
+
+    Click any observed point on the map to re-predict from that seed;
+    the new prediction replaces the auto-seeded one below."""
 
     payload = _unwrap_aggregated(result.output)
     if not isinstance(payload, dict):
-        bubble(str(payload) or "I could not complete that request.", stream=stream)
+        bubble(
+            f"I could not complete the migration analysis. "
+            f"<b>{html.escape(str(payload))}</b>",
+            stream=stream,
+        )
         return
 
-    species = payload.get("species_name", "this species")
+    species = payload.get("species_name") or payload.get("french_name") or "this species"
+    french = payload.get("french_name", "")
     pattern = payload.get("migration_pattern") or payload.get("pattern") or "-"
-    route = (payload.get("migration_route") or payload.get("route") or [])
+    observed = payload.get("observed_routes") or []
+    auto_predicted = payload.get("predicted_next") or {}
+    auto_explanation = payload.get("explanation")
 
-    bubble(
-        f"Migration analysis for <i>{html.escape(str(species))}</i>. "
-        f"Pattern: <b>{html.escape(str(pattern))}</b>. "
-        f"Route has {len(route)} waypoint(s). "
-        "(Mock worker &mdash; awaits Miriam's Sprint 3 delivery.)",
-        stream=stream,
+    # ---- CLICK-DRIVEN RE-PREDICTION ---------------------------------
+    # If the user has clicked a point in a previous run, re-run the
+    # Random Forest from that seed and show the new result instead of
+    # the auto-seeded one. The click coord is kept in session_state
+    # under a per-turn key so several migration answers coexist without
+    # cross-contamination. The LLM explanation is regenerated too, so
+    # the "Pourquoi cette prédiction?" card describes the CLICKED
+    # trajectory - not the stale auto one.
+    click_key = f"mig_click_{key}"
+    exp_cache_key = f"mig_exp_{key}"
+    clicked = st.session_state.get(click_key)
+    predicted = auto_predicted
+    explanation = auto_explanation
+    seed_source = "first observed occurrence"
+    if clicked and observed and french:
+        # Pick the observation whose date we can reuse for month/day.
+        matched = next(
+            (o for o in observed
+             if abs(o["start_lat"] - clicked["lat"]) < 1e-4
+             and abs(o["start_lon"] - clicked["lon"]) < 1e-4),
+            observed[0],
+        )
+        new_pred = _predict_from_seed(
+            french=french,
+            seed_lat=clicked["lat"],
+            seed_lon=clicked["lon"],
+            event_date=matched.get("event_date"),
+        )
+        if new_pred and "error" not in new_pred:
+            predicted = {
+                "lat":   new_pred["predicted_lat"],
+                "lon":   new_pred["predicted_lon"],
+                "month": new_pred["month"],
+                "day":   new_pred["day"],
+            }
+            seed_source = (
+                f"clicked point at {clicked['lat']:.3f}, {clicked['lon']:.3f}"
+            )
+            # Regenerate the LLM explanation for the CLICKED prediction.
+            # Cache per (click_key, seed coord) so a re-render of the
+            # same click does not re-invoke the LLM. The cache carries
+            # the clicked coord tuple so a different click invalidates
+            # the previous answer and triggers a fresh call.
+            cache = st.session_state.get(exp_cache_key) or {}
+            cache_id = (clicked["lat"], clicked["lon"])
+            if cache.get("id") == cache_id and cache.get("text"):
+                explanation = cache["text"]
+            else:
+                seed_obs = {
+                    "start_lat": clicked["lat"],
+                    "start_lon": clicked["lon"],
+                }
+                try:
+                    from backend.agents.biodiversity_agent.workers.migration.worker import (
+                        MigrationWorker,
+                    )
+                    fresh = MigrationWorker._explain_with_llm(
+                        french=french,
+                        prediction=predicted,
+                        shap_values=None,  # SHAP requires re-running xai on new seed - skip for speed
+                        first_observation=seed_obs,
+                    )
+                except Exception:  # noqa: BLE001
+                    fresh = None
+                if fresh:
+                    explanation = fresh
+                    st.session_state[exp_cache_key] = {
+                        "id": cache_id, "text": fresh,
+                    }
+
+    header = (
+        f"Migration analysis for <i>{html.escape(str(species))}</i>"
+        + (f" (<i>{html.escape(french)}</i>)" if french and french != species else "")
+        + f". Method: <b>{html.escape(str(pattern))}</b>. "
+        + f"Retrieved {len(observed)} observed occurrence(s) from Qdrant. "
+        + f"Prediction seeded from {seed_source}."
+    )
+    if predicted:
+        header += (
+            f" Random Forest predicts the next position at "
+            f"<b>{predicted.get('lat', 0):.2f}, "
+            f"{predicted.get('lon', 0):.2f}</b>."
+        )
+    bubble(header, stream=stream)
+
+    # ---- INTERACTIVE MAP (streamlit-folium if available) -------------
+    interactive_rendered = False
+    try:
+        from streamlit_folium import st_folium
+        fmap = _build_interactive_migration_map(french, observed, predicted)
+        if fmap is not None:
+            click_result = st_folium(
+                fmap, height=520, width=None,
+                returned_objects=["last_object_clicked"],
+                key=f"mig_map_{key}",
+            )
+            interactive_rendered = True
+            # A click on a marker fires with the marker's coordinates.
+            last = (click_result or {}).get("last_object_clicked")
+            if last and (last.get("lat"), last.get("lng")) != (
+                clicked and clicked["lat"], clicked and clicked["lon"],
+            ):
+                st.session_state[click_key] = {
+                    "lat": last["lat"], "lon": last["lng"],
+                }
+                st.rerun()
+    except ImportError:
+        interactive_rendered = False
+
+    # Fallback for when streamlit-folium is not installed: render the
+    # worker's pre-baked HTML map (non-interactive, no click).
+    if not interactive_rendered:
+        map_html = _map_html_from_url(
+            getattr(result, "map_url", None) or payload.get("map_url")
+        )
+        if map_html:
+            st.components.v1.html(map_html, height=520, scrolling=False)
+
+    st.markdown(
+        '<div class="m3-caption">'
+        '<span style="color:#8FD14F">&#9679;</span> observed occurrence '
+        '&middot; <span style="color:#E0B23C">&#9733;</span> predicted '
+        'next position (Random Forest) '
+        + (
+            '&middot; <b>click any green dot to re-predict from that seed</b>'
+            if interactive_rendered else
+            '&middot; install <code>streamlit-folium</code> to enable click-to-predict'
+        )
+        + '.</div>',
+        unsafe_allow_html=True,
     )
 
-    map_html = _map_html_from_url(getattr(result, "map_url", None) or payload.get("map_url"))
-    if map_html:
-        st.components.v1.html(map_html, height=460, scrolling=False)
+    if clicked and interactive_rendered:
+        if st.button("Reset - use the auto-seeded prediction",
+                     key=f"mig_reset_{key}"):
+            st.session_state.pop(click_key, None)
+            st.session_state.pop(exp_cache_key, None)
+            st.rerun()
 
-    for i, waypoint in enumerate(route[:8], start=1):
-        if not isinstance(waypoint, dict):
-            continue
+    # Predicted-next card as the headline result.
+    if predicted:
         st.markdown(
             '<div class="m3-mini-card">'
-            f'<h4>#{i} &middot; {html.escape(str(waypoint.get("region", waypoint.get("name", "-"))))}</h4>'
-            f'<div><span class="lbl">season:</span><span class="val">'
-            f'{html.escape(str(waypoint.get("season", "-")))}</span>'
+            '<h4>Predicted next position</h4>'
+            f'<div><span class="lbl">lat:</span><span class="val">'
+            f'{predicted.get("lat", 0):.4f}</span>'
+            f'&nbsp;&nbsp;<span class="lbl">lon:</span><span class="val">'
+            f'{predicted.get("lon", 0):.4f}</span>'
             f'&nbsp;&nbsp;<span class="lbl">month:</span><span class="val">'
-            f'{html.escape(str(waypoint.get("month", "-")))}</span></div>'
+            f'{predicted.get("month", "-")}</span>'
+            f'&nbsp;&nbsp;<span class="lbl">day:</span><span class="val">'
+            f'{predicted.get("day", "-")}</span></div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ---- WHY this prediction ------------------------------------------
+    # Two layers: the LLM paragraph (readable) + the SHAP table
+    # (auditable). If either is missing, we still show the other.
+    # ``explanation`` was already resolved above - either the auto
+    # prediction's cached LLM output or a freshly generated one after
+    # the user clicked a new seed point.
+    shap_values = payload.get("shap_values")
+
+    if explanation:
+        st.markdown(
+            '<div class="m3-mini-card">'
+            '<h4>Pourquoi cette prédiction ?</h4>'
+            f'<div style="line-height:1.55;">{html.escape(explanation)}</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    if shap_values:
+        with st.expander("SHAP - influence des variables sur la prédiction",
+                         expanded=False):
+            st.caption(
+                "Un SHAP positif tire la prédiction vers le nord (latitude) "
+                "ou vers l'est (longitude); un SHAP négatif tire vers le sud "
+                "ou l'ouest. Plus la valeur absolue est grande, plus la "
+                "variable a pesé dans la prédiction."
+            )
+            rows = []
+            for feature in shap_values.get("latitude", {}):
+                rows.append({
+                    "variable": feature,
+                    "influence sur latitude":
+                        f"{shap_values['latitude'][feature]:+.4f}",
+                    "influence sur longitude":
+                        f"{shap_values['longitude'].get(feature, 0):+.4f}",
+                })
+            if rows:
+                st.dataframe(
+                    pd.DataFrame(rows), hide_index=True,
+                    width="stretch",
+                )
+
+    # Observed occurrences, up to 8 - the map already shows all of them,
+    # these cards are for the reader who wants the region/date list.
+    for i, obs in enumerate(observed[:8], start=1):
+        if not isinstance(obs, dict):
+            continue
+        region = obs.get("region", "-")
+        date = obs.get("event_date", "-")
+        st.markdown(
+            '<div class="m3-mini-card">'
+            f'<h4>#{i} &middot; {html.escape(str(region))}</h4>'
+            f'<div><span class="lbl">date:</span><span class="val">'
+            f'{html.escape(str(date))}</span>'
+            f'&nbsp;&nbsp;<span class="lbl">lat:</span><span class="val">'
+            f'{obs.get("start_lat", 0):.3f}</span>'
+            f'&nbsp;&nbsp;<span class="lbl">lon:</span><span class="val">'
+            f'{obs.get("start_lon", 0):.3f}</span></div>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -766,7 +1072,7 @@ def render_answer(result, key: str = "live", *, stream: bool = False) -> None:
         return
     if (wrapped_feature == BiodiversityFeature.MIGRATION_ANALYSIS.value
             or "migration" in agents):
-        render_migration(result, stream=stream)
+        render_migration(result, stream=stream, key=key)
         return
 
     if not hasattr(payload, "quality"):
@@ -959,7 +1265,7 @@ def render_answer(result, key: str = "live", *, stream: bool = False) -> None:
     with st.expander("Every setting this answer used, and what it does",
                      expanded=False):
         st.dataframe(pd.DataFrame(settings_table(payload)), hide_index=True,
-                     use_container_width=True)
+                     width="stretch")
 
     with st.expander("Reproduce this run, or take the data"):
         st.markdown("**The settings that produced it** - everything needed to "

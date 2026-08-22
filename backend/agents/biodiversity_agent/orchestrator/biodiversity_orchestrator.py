@@ -45,6 +45,7 @@ from ..workers.habitat.mock import HabitatMock
 from ..workers.hotspots.mock import HotspotsMock
 from ..workers.hotspots.worker import HotspotsWorker  # real M3 pipeline
 from ..workers.migration.mock import MigrationMock
+from ..workers.migration.worker import MigrationWorker  # real Random Forest (Miriam)
 from ..workers.species_distribution.worker import SpeciesDistributionWorker
 from .aggregator import aggregate
 from .router import Router
@@ -100,7 +101,7 @@ class BiodiversityOrchestrator:
             BiodiversityFeature.SPECIES_DISTRIBUTION_MAP: SpeciesDistributionWorker(),
             BiodiversityFeature.HABITAT_VISUALIZATION:    HabitatMock(),
             BiodiversityFeature.BIODIVERSITY_HOTSPOTS:    HotspotsWorker(),
-            BiodiversityFeature.MIGRATION_ANALYSIS:       MigrationMock(),
+            BiodiversityFeature.MIGRATION_ANALYSIS:       MigrationWorker(),
         }
         self._router = Router(self._workers)
         self._taxonomy = taxonomy or SpeciesTaxonomyService.from_env()

@@ -62,12 +62,16 @@ Rules:
 - biodiversity_hotspots: user asks about REGIONS with many species (no single species).
 - migration_analysis: user asks about MIGRATION / seasonal movement of a species.
 - species_name MUST be the scientific Latin binomial only (e.g. "Loxodonta africana",
-  "Panthera tigris", "Ursus maritimus", "Sterna paradisaea"). Never a common name,
+  "Panthera tigris", "Ursus maritimus", "Sterna paradisaea", "Ciconia ciconia",
+  "Megaptera novaeangliae", "Danaus plexippus"). Never a common name,
   never a plural, never a parenthetical, never a disjunction "A / B". If the user
-  gave a common name, translate it. If the user named a broader group with no
-  single accepted binomial (e.g. "elephants", "tigers", "bears"), pick the most
-  representative canonical species (savanna elephant -> Loxodonta africana,
-  tiger -> Panthera tigris, brown bear -> Ursus arctos).
+  gave a common name in any language (French: "cigogne blanche" -> "Ciconia ciconia",
+  "baleine à bosse" -> "Megaptera novaeangliae", "papillon monarque" ->
+  "Danaus plexippus"; English: "white stork" -> "Ciconia ciconia"), translate it.
+  If the user named a broader group with no single accepted binomial (e.g.
+  "elephants", "tigers", "bears"), pick the most representative canonical species
+  (savanna elephant -> Loxodonta africana, tiger -> Panthera tigris, brown bear
+  -> Ursus arctos).
 - If the user asks about hotspots, species_name is null.
 - If the question is not about any of these four, set "feature" to null.
 - Output ONLY the JSON. No markdown."""

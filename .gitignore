@@ -43,3 +43,7 @@ build/
 *.sqlite
 *.sqlite3
 *.db
+
+# Biodiversity Agent: generated folium maps (regenerated per request)
+backend/agents/biodiversity_agent/outputs/
+
