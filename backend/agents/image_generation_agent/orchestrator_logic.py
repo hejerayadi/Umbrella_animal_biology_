@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
+from .evidence_workflow import gather_protein_evidence
 from .flux_client import FluxClient, FluxGenerationError
 from .prompt_builder import build_visualization_prompt
 from .schema import AgentRequest, AgentResult, AgentStatus
+from .tool_schemas import EvidenceBundle
 
 # Traits enrich a drawing, they do not gate it.
 #
@@ -46,12 +48,27 @@ SPECIES_CONTEXT_KEYS = ("species", "organism")
 def run_orchestrator_logic(
     request: AgentRequest,
     flux_client: FluxClient | None = None,
+    evidence_gatherer: Callable[..., EvidenceBundle] | None = None,
 ) -> AgentResult:
     routing = _check_routing(request)
     if routing is not None:
         return routing
 
-    organized = organize_result(request)
+    protein = _get_protein_identifier(request.context, request.instruction)
+    species = _get_species(request.context)
+    evidence = _gather_evidence(
+        protein=protein,
+        species=species,
+        instruction=request.instruction,
+        evidence_gatherer=evidence_gatherer,
+    )
+    if evidence.critic and evidence.critic.verdict == "ABSTAIN":
+        return AgentResult(
+            status=AgentStatus.FAILED,
+            output="; ".join(evidence.critic.reasons) or "Protein identity could not be confirmed.",
+        )
+
+    organized = organize_result(request, evidence=evidence)
     traits_used = extract_trait_labels(request.context)
     prompt = build_visualization_prompt(
         organized,
@@ -65,7 +82,7 @@ def run_orchestrator_logic(
     except FluxGenerationError as exc:
         return AgentResult(status=AgentStatus.FAILED, output=str(exc))
 
-    confidence = compute_confidence_score(traits_used, organized)
+    confidence = compute_confidence_score(traits_used, organized, evidence=evidence)
 
     return AgentResult(
         status=AgentStatus.COMPLETED,
@@ -75,6 +92,20 @@ def run_orchestrator_logic(
             "confidence_score": confidence,
         },
     )
+
+
+def _gather_evidence(
+    *,
+    protein: str | None,
+    species: str | None,
+    instruction: str,
+    evidence_gatherer: Callable[..., EvidenceBundle] | None,
+) -> EvidenceBundle:
+    if protein is None:
+        return EvidenceBundle.empty()
+
+    gather = evidence_gatherer or gather_protein_evidence
+    return gather(gene=protein, species=species, instruction=instruction)
 
 
 def _check_routing(request: AgentRequest) -> AgentResult | None:
@@ -135,7 +166,10 @@ def _get_species(context: dict[str, Any]) -> str | None:
     return str(value)
 
 
-def organize_result(request: AgentRequest) -> dict[str, Any]:
+def organize_result(
+    request: AgentRequest,
+    evidence: EvidenceBundle | None = None,
+) -> dict[str, Any]:
     """Transform trait discovery output into flexible visualization sections."""
     sections: list[dict[str, str]] = []
 
@@ -150,10 +184,64 @@ def organize_result(request: AgentRequest) -> dict[str, Any]:
     if species:
         sections.append({"type": "species", "content": species})
 
+    if evidence and not evidence.skipped:
+        sections.extend(_evidence_to_sections(evidence))
+
     trait_payload = _get_trait_payload(request.context)
     sections.extend(_traits_to_sections(trait_payload))
 
     return {"visualization_input": {"sections": sections}}
+
+
+def _evidence_to_sections(evidence: EvidenceBundle) -> list[dict[str, str]]:
+    sections: list[dict[str, str]] = []
+
+    uniprot = evidence.uniprot
+    if uniprot and uniprot.success:
+        details = [f"accession {uniprot.accession}"]
+        if uniprot.protein_name:
+            details.append(uniprot.protein_name)
+        if uniprot.organism:
+            details.append(f"organism {uniprot.organism}")
+        if uniprot.sequence_length:
+            details.append(f"length {uniprot.sequence_length} aa")
+        sections.append({"type": "uniprot_evidence", "content": "; ".join(details)})
+
+    pdb = evidence.pdb
+    if pdb and pdb.found:
+        details = [f"{pdb.pdb_id}"]
+        if pdb.experimental_method:
+            details.append(pdb.experimental_method)
+        if pdb.resolution is not None:
+            details.append(f"{pdb.resolution:.2f} Å")
+        if pdb.sequence_coverage is not None:
+            details.append(f"{pdb.sequence_coverage:.0%} coverage")
+        if pdb.chain:
+            details.append(f"chain {pdb.chain}")
+        sections.append({"type": "pdb_structure", "content": "; ".join(details)})
+    elif pdb and pdb.message:
+        sections.append({"type": "pdb_structure", "content": pdb.message})
+
+    web = evidence.web_search
+    if web and web.success and web.results:
+        snippets = [
+            f"{hit.title}: {hit.snippet}".strip(": ")
+            for hit in web.results[:3]
+            if hit.title
+        ]
+        if snippets:
+            sections.append({"type": "web_evidence", "content": " | ".join(snippets)})
+
+    critic = evidence.critic
+    if critic:
+        sections.append(
+            {
+                "type": "scientific_critic",
+                "content": f"{critic.verdict}: {'; '.join(critic.reasons)}",
+            }
+        )
+
+    return sections
 
 
 def _get_trait_payload(context: dict[str, Any]) -> Any:
@@ -276,17 +364,33 @@ def extract_trait_labels(context: dict[str, Any]) -> list[str]:
 def compute_confidence_score(
     traits_used: list[str],
     organized: dict[str, Any],
+    evidence: EvidenceBundle | None = None,
 ) -> float:
-    """Heuristic confidence based on trait coverage and section richness."""
+    """Heuristic confidence based on trait coverage, section richness, and evidence."""
     sections = organized.get("visualization_input", {}).get("sections", [])
     trait_count = len(traits_used)
     section_count = len(sections)
 
     if trait_count == 0:
-        return 0.35
+        base = 0.35
+    else:
+        base = 0.45
+        trait_bonus = min(0.35, trait_count * 0.07)
+        section_bonus = min(0.15, max(0, section_count - trait_count) * 0.03)
+        base = min(0.95, base + trait_bonus + section_bonus)
 
-    base = 0.45
-    trait_bonus = min(0.35, trait_count * 0.07)
-    section_bonus = min(0.15, max(0, section_count - trait_count) * 0.03)
+    if evidence and not evidence.skipped:
+        critic = evidence.critic
+        if critic:
+            if critic.verdict == "ACCEPT":
+                base = min(0.95, base + 0.1)
+            elif critic.verdict == "REVISE":
+                base = max(0.2, base - 0.1)
+            else:
+                base = max(0.1, base - 0.25)
+        if evidence.uniprot and evidence.uniprot.success:
+            base = min(0.95, base + 0.05)
+        if evidence.pdb and evidence.pdb.found:
+            base = min(0.95, base + 0.05)
 
-    return round(min(0.95, base + trait_bonus + section_bonus), 2)
+    return round(base, 2)
