@@ -30,34 +30,52 @@ from .schema import SpeciesDistributionOutput
 
 
 # A minimal fixture catalogue - just enough species to write meaningful
-# tests without pretending to be GBIF. Coordinates are hand-picked to be
-# on-land and roughly in-range for each species.
-_FIXTURES: dict[str, list[tuple[float, float]]] = {
-    "loxodonta africana": [  # African elephant
-        (-1.29, 36.82),   # Nairobi NP, KE
-        (-2.65, 34.83),   # Serengeti, TZ
-        (-19.02, 23.44),  # Chobe, BW
-        (-13.19, 27.15),  # Kafue, ZM
-        (5.32, 20.06),    # Central African Republic
-    ],
-    "ursus maritimus": [   # Polar bear
-        (78.22, 15.65),   # Svalbard
-        (74.75, -94.99),  # Nunavut, CA
-        (71.29, -156.79),  # Alaska
-        (80.42, 58.05),   # Franz Josef Land, RU
-    ],
-    "panthera tigris": [   # Tiger
-        (28.02, 79.71),   # Corbett, IN
-        (21.32, 79.65),   # Pench, IN
-        (13.35, 100.99),  # Thailand
-        (11.02, 76.75),   # Nilgiri Biosphere, IN
-    ],
-    "canis lupus": [       # Wolf
-        (46.83, -110.72),
-        (60.13, 25.05),
-        (48.95, 15.10),
-        (52.13, -117.65),
-    ],
+# tests without pretending to be GBIF. Each entry is a list of dicts so
+# the renderer can populate rich popups (common name, country, region,
+# IUCN status). Real Sprint 3 records will have the same shape once GBIF
+# + IUCN are wired in.
+_FIXTURES: dict[str, dict] = {
+    "loxodonta africana": {
+        "common_name": "African elephant",
+        "conservation_status": "Endangered",
+        "observations": [
+            {"lat": -1.29,  "lon": 36.82, "country": "Kenya",       "region": "Nairobi National Park",  "year": 2024},
+            {"lat": -2.65,  "lon": 34.83, "country": "Tanzania",    "region": "Serengeti NP",           "year": 2023},
+            {"lat": -19.02, "lon": 23.44, "country": "Botswana",    "region": "Chobe NP",               "year": 2024},
+            {"lat": -13.19, "lon": 27.15, "country": "Zambia",      "region": "Kafue NP",               "year": 2022},
+            {"lat":  5.32,  "lon": 20.06, "country": "CAR",         "region": "Bamingui-Bangoran",      "year": 2023},
+        ],
+    },
+    "ursus maritimus": {
+        "common_name": "Polar bear",
+        "conservation_status": "Vulnerable",
+        "observations": [
+            {"lat": 78.22, "lon":  15.65, "country": "Norway",      "region": "Svalbard",              "year": 2024},
+            {"lat": 74.75, "lon": -94.99, "country": "Canada",      "region": "Nunavut",               "year": 2023},
+            {"lat": 71.29, "lon": -156.79,"country": "USA",         "region": "Alaska",                "year": 2024},
+            {"lat": 80.42, "lon":  58.05, "country": "Russia",      "region": "Franz Josef Land",      "year": 2022},
+        ],
+    },
+    "panthera tigris": {
+        "common_name": "Tiger",
+        "conservation_status": "Endangered",
+        "observations": [
+            {"lat": 28.02, "lon":  79.71, "country": "India",       "region": "Corbett NP",            "year": 2024},
+            {"lat": 21.32, "lon":  79.65, "country": "India",       "region": "Pench NP",              "year": 2023},
+            {"lat": 13.35, "lon": 100.99, "country": "Thailand",    "region": "Khao Ang Rue Nai",      "year": 2023},
+            {"lat": 11.02, "lon":  76.75, "country": "India",       "region": "Nilgiri Biosphere",     "year": 2024},
+        ],
+    },
+    "canis lupus": {
+        "common_name": "Gray wolf",
+        "conservation_status": "Least Concern",
+        "observations": [
+            {"lat": 46.83, "lon": -110.72, "country": "USA",        "region": "Yellowstone",           "year": 2024},
+            {"lat": 60.13, "lon":   25.05, "country": "Finland",    "region": "Nuuksio NP",            "year": 2023},
+            {"lat": 48.95, "lon":   15.10, "country": "Austria",    "region": "Thayatal NP",           "year": 2023},
+            {"lat": 52.13, "lon": -117.65, "country": "Canada",     "region": "Jasper NP",             "year": 2024},
+        ],
+    },
 }
 
 
@@ -73,15 +91,16 @@ class SpeciesDistributionMock:
                 source_agents=["Species Distribution Agent"],
             )
 
-        raw = _FIXTURES.get(species.lower())
-        if raw is None:
+        record = _FIXTURES.get(species.lower())
+        if record is None:
             return AgentResult(
                 status=AgentStatus.FAILED,
                 output=f"No occurrences found for '{species}' in the mock catalogue.",
                 source_agents=["Species Distribution Agent"],
             )
 
-        cleaned = self._clean_coordinates(raw)
+        raw_coords = [(o["lat"], o["lon"]) for o in record["observations"]]
+        cleaned, kept_indices = self._clean_coordinates_indexed(raw_coords)
         if not cleaned:
             return AgentResult(
                 status=AgentStatus.FAILED,
@@ -93,6 +112,22 @@ class SpeciesDistributionMock:
         # observation counts without hard-coding numbers in the fixtures.
         multiplier = self._deterministic_multiplier(species)
         observation_count = len(cleaned) * multiplier
+        confidence = self._confidence(observation_count)
+
+        # Build per-point metadata (common_name, country, region, status,
+        # year) so the renderer can populate rich popups. Any observation
+        # dropped by the cleaner is skipped here too via ``kept_indices``.
+        kept_obs = [record["observations"][i] for i in kept_indices]
+        metadata = [
+            {
+                "common_name":         record.get("common_name", ""),
+                "conservation_status": record.get("conservation_status", ""),
+                "country":             o.get("country", ""),
+                "region":              o.get("region", ""),
+                "year":                o.get("year"),
+            }
+            for o in kept_obs
+        ]
 
         # Try to render a real folium map. Falls back to the placeholder
         # URL if folium is missing or rendering fails - the contract stays
@@ -101,7 +136,12 @@ class SpeciesDistributionMock:
         try:
             from ...orchestrator.services.map_renderer import render_point_map
 
-            map_url = render_point_map(species, cleaned)
+            map_url = render_point_map(
+                species,
+                cleaned,
+                metadata=metadata,
+                confidence=confidence,
+            )
         except Exception:
             map_url = self._fake_map_url(species)
 
@@ -117,7 +157,7 @@ class SpeciesDistributionMock:
             output=payload,
             map_url=payload.map_url,
             observation_count=observation_count,
-            confidence=self._confidence(observation_count),
+            confidence=confidence,
             source_agents=["Species Distribution Agent"],
         )
 
@@ -133,9 +173,23 @@ class SpeciesDistributionMock:
     def _clean_coordinates(
         raw: list[tuple[float, float]],
     ) -> list[tuple[float, float]]:
+        """Backwards-compatible wrapper - returns just the cleaned coords."""
+
+        cleaned, _ = SpeciesDistributionMock._clean_coordinates_indexed(raw)
+        return cleaned
+
+    @staticmethod
+    def _clean_coordinates_indexed(
+        raw: list[tuple[float, float]],
+    ) -> tuple[list[tuple[float, float]], list[int]]:
+        """Same cleaning as ``_clean_coordinates`` but also returns the
+        index into ``raw`` for each kept point. Callers use those indices
+        to line the cleaned coords up with their metadata."""
+
         seen: set[tuple[float, float]] = set()
         cleaned: list[tuple[float, float]] = []
-        for lat, lon in raw:
+        kept_indices: list[int] = []
+        for idx, (lat, lon) in enumerate(raw):
             if (lat, lon) == (0.0, 0.0):
                 continue
             if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
@@ -145,7 +199,8 @@ class SpeciesDistributionMock:
                 continue
             seen.add(key)
             cleaned.append((lat, lon))
-        return cleaned
+            kept_indices.append(idx)
+        return cleaned, kept_indices
 
     @staticmethod
     def _deterministic_multiplier(species: str) -> int:
