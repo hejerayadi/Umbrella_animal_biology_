@@ -135,7 +135,13 @@ def to_result(state: GenomeAgentState) -> AgentResult:
     if visualization:
         output["visualization"] = _visualization_summary(visualization)
 
-    # ── NEW: hand off to Reconstruction Agent for gap-filled assemblies ──
+    # Reconstruction handoff takes priority over the visualization handoff
+    # below: get_genome_metadata_node (workflows/nodes/genome_data_nodes.py)
+    # sets reconstruction_need whenever assembly_level is Scaffold/Contig,
+    # and _route_after_join_parallel routes to reconstruction_resolver
+    # instead of generate_visualization in that case - so visualization
+    # never even runs. Checking reconstruction_need first here keeps this
+    # function's precedence consistent with the graph's own routing.
     need = state.reconstruction_need or {}
     if need.get("status") == "NEEDS_AGENT":
         _logger.info(
@@ -148,9 +154,11 @@ def to_result(state: GenomeAgentState) -> AgentResult:
             prompt_to_target_agent=need.get("prompt_to_target_agent"),
             output=output,
         )
-    # ─────────────────────────────────────────────────────────────────────
 
-    # Existing visualization NEEDS_AGENT check stays here.
+    # Separate handoff: a *requested* protein_structure visualization that
+    # this agent can't render itself. Mutually exclusive with the
+    # reconstruction_need branch above - the graph only reaches
+    # generate_visualization when reconstruction_need was NOT triggered.
     if visualization and visualization.get("status") == "NEEDS_AGENT":
         _logger.info("[Genome] needs another agent for the requested visualization")
         return AgentResult(
