@@ -29,6 +29,31 @@ class SequenceInput(BaseModel):
     description: str | None = None
 
 
+def _organism_from(context: dict[str, Any]) -> str | None:
+    """The target organism, under whichever key the caller used.
+
+    `organism` is this agent's own name for it, but nothing upstream writes
+    that key. The orchestrator's extractor seeds `species` from the user's
+    question, and the Genome agent publishes a `species_record`; both name the
+    same thing, and reading only `organism` meant the organism was silently
+    dropped on every orchestrated run. It is not cosmetic - reference ranking
+    and the Evolution Agent escalation are both written in terms of it.
+    """
+    for key in ("organism", "species", "species_name"):
+        value = context.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    record = context.get("species_record")
+    if isinstance(record, dict):
+        for key in ("scientific_name", "organism", "name", "common_name"):
+            value = record.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return None
+
+
 class ReconstructionRequest(BaseModel):
     """The typed form of one reconstruction job.
 
@@ -72,13 +97,15 @@ class ReconstructionRequest(BaseModel):
         ignored rather than rejected, because the orchestrator's context is a
         shared scratchpad that other agents also write to.
         """
+        organism = _organism_from(context)
+
         sequence: SequenceInput | None = None
         raw_sequence = context.get("sequence")
         if isinstance(raw_sequence, dict) and raw_sequence.get("residues"):
             sequence = SequenceInput(
                 identifier=str(raw_sequence.get("identifier") or "input_sequence"),
                 residues=str(raw_sequence["residues"]),
-                organism=raw_sequence.get("organism") or context.get("organism"),
+                organism=raw_sequence.get("organism") or organism,
                 description=raw_sequence.get("description"),
             )
         elif isinstance(raw_sequence, str) and raw_sequence.strip():
@@ -86,7 +113,7 @@ class ReconstructionRequest(BaseModel):
             sequence = SequenceInput(
                 identifier="input_sequence",
                 residues=raw_sequence,
-                organism=context.get("organism"),
+                organism=organism,
             )
 
         references = context.get("reference_organisms") or []
@@ -97,7 +124,7 @@ class ReconstructionRequest(BaseModel):
             instruction=instruction,
             sequence=sequence,
             accession=context.get("accession") or context.get("sequence_accession"),
-            organism=context.get("organism"),
+            organism=organism,
             reference_organisms=[str(item) for item in references],
             max_gap_length=context.get("max_gap_length"),
             min_confidence=context.get("min_confidence"),

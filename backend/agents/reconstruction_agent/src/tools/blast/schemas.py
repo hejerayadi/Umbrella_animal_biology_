@@ -16,6 +16,12 @@ class BlastSearchInput(ToolInput):
     # Widens the subject region fetched for a hit: the missing segment sits
     # between the flanks, so it is absent from every HSP by definition.
     gap_length: int = Field(default=0, ge=0, description="Width of the gap being filled.")
+    # Where the flanks meet in `sequence`. A reference that still carries the
+    # missing segment aligns with a gap run in the query row at exactly this
+    # point, which is how the mapper tells a donor from a look-alike.
+    left_flank_length: int | None = Field(
+        default=None, ge=0, description="End of the left flank within `sequence`."
+    )
     # EMBL-EBI partitions ENA by division and molecule type - there is no
     # single "em_rel" catch-all, and passing one is rejected as an invalid
     # parameter. Vertebrate coding sequence is the right default for an animal

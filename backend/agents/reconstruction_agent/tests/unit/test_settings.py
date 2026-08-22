@@ -119,3 +119,51 @@ class TestNvidiaSettings:
 
     def test_configured_with_a_key(self) -> None:
         assert NvidiaSettings(api_key="nvapi-xxx").configured is True
+
+
+class TestOrchestratorContextKeys:
+    """The keys the orchestrator actually sends, not the ones we wish it sent.
+
+    Nothing upstream writes `organism`: the orchestrator's extractor seeds
+    `species` from the user's question and the Genome agent publishes a
+    `species_record`. Reading only `organism` silently dropped the organism on
+    every orchestrated run, which costs reference ranking and the Evolution
+    Agent escalation prompt.
+    """
+
+    def test_species_is_read_as_the_organism(self) -> None:
+        from contracts.input import ReconstructionRequest
+
+        request = ReconstructionRequest.from_agent_request(
+            "Fill the gaps", {"species": "Mammuthus primigenius", "sequence": "ACGTN" * 10}
+        )
+
+        assert request.organism == "Mammuthus primigenius"
+        assert request.sequence is not None
+        assert request.sequence.organism == "Mammuthus primigenius"
+
+    def test_organism_wins_over_species_when_both_are_present(self) -> None:
+        from contracts.input import ReconstructionRequest
+
+        request = ReconstructionRequest.from_agent_request(
+            "Fill the gaps", {"organism": "Loxodonta africana", "species": "elephant"}
+        )
+
+        assert request.organism == "Loxodonta africana"
+
+    def test_the_genome_agents_species_record_is_read(self) -> None:
+        from contracts.input import ReconstructionRequest
+
+        request = ReconstructionRequest.from_agent_request(
+            "Fill the gaps",
+            {"species_record": {"scientific_name": "Vulpes lagopus", "common_name": "Arctic fox"}},
+        )
+
+        assert request.organism == "Vulpes lagopus"
+
+    def test_no_organism_anywhere_stays_none(self) -> None:
+        from contracts.input import ReconstructionRequest
+
+        request = ReconstructionRequest.from_agent_request("Fill the gaps", {"gene_name": "FGF5"})
+
+        assert request.organism is None
