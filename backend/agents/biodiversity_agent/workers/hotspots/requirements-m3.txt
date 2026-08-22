@@ -13,7 +13,7 @@ scikit-learn==1.5.2
 # The grid, the per-cell tables and the GBIF calls. pandas and numpy arrive with
 # streamlit, but the pipeline imports them directly so they are pinned here too.
 pandas>=2.0
-numpy>=1.26,<2
+numpy>=1.26
 requests==2.32.3
 
 # No database, no vector store, no embedding model, no LLM: the module needs

@@ -24,6 +24,7 @@ import math
 import re
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import Callable
 
 from ...schema import AgentRequest, AgentResult, AgentStatus
@@ -127,6 +128,26 @@ def _eps_grid_for(cell_size_km: float) -> list[float] | None:
         return None
     scale = cell_size_km / documented
     return [round(candidate * scale, 1) for candidate in M3_EPS_GRID]
+
+
+
+def _as_file_uri(path: str | None) -> str | None:
+    """A rendered map's path as a ``file://`` URI, the shape `map_url` promises.
+
+    Every other worker returns ``Path(...).resolve().as_uri()`` (see
+    ``orchestrator/services/map_renderer.py``); hotspots returned the raw
+    filesystem path, which on Windows is a bare drive path, not a URL a browser
+    will load. ``spec.html_path`` itself stays a plain path - the dashboard and
+    ``api_m3`` read it as one - so only the external contract changes here.
+    """
+    if not path:
+        return None
+    try:
+        return Path(path).resolve().as_uri()
+    except (ValueError, OSError):
+        # Already a URI, or something that is not a local path: hand it back
+        # untouched rather than losing the only pointer to the map.
+        return path
 
 
 class AmbiguousRegion(LookupError):
@@ -593,7 +614,7 @@ class HotspotsWorker:
         return AgentResult(
             status=status,
             output=payload,
-            map_url=spec.html_path,
+            map_url=_as_file_uri(spec.html_path),
             hotspots=[asdict(cluster) for cluster in ranked],
             confidence=payload.confidence,
             source_agents=["Biodiversity Hotspots Agent"],
@@ -760,7 +781,7 @@ class HotspotsWorker:
         return build_result(
             M3Outcome.COMPLETED if ranked else M3Outcome.PARTIAL,
             output=payload,
-            map_url=spec.html_path,
+            map_url=_as_file_uri(spec.html_path),
             hotspots=[asdict(cluster) for cluster in ranked],
             confidence=payload.confidence,
             source_agents=["Biodiversity Hotspots Agent"])

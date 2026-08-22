@@ -5,6 +5,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 from sentence_transformers import SentenceTransformer
 
 
@@ -55,33 +56,53 @@ try:
     migration_model = saved_model["model"]
     species_mapping = saved_model["species_mapping"]
 
-    print("✅ Modèle de migration chargé :", MODEL_PATH)
+    print("[migration] modele charge :", MODEL_PATH)
 
 except FileNotFoundError:
     migration_model = None
     species_mapping = {}
 
-    print("❌ Fichier migration_model.pkl introuvable")
+    print("[migration] fichier migration_model.pkl introuvable")
 
 
 # ============================================================
 # RECHERCHE DES OBSERVATIONS DANS QDRANT
 # ============================================================
 
-def process_agent_query(user_query: str):
+def process_agent_query(user_query: str, species_filter: str = None):
 
     """
     Recherche les observations pertinentes dans Qdrant.
+
+    ``species_filter`` est le nom commun français tel qu'il est stocké
+    dans le payload (ex: "cigogne blanche"). Sans lui, la recherche
+    vectorielle pioche dans toute la collection et peut répondre à une
+    question sur une espèce avec les observations d'une autre : la
+    similarité d'embedding seule ne sépare pas les espèces.
     """
 
     query_vector = embedding_model.encode(
         user_query
     ).tolist()
 
+    query_filter = None
+
+    if species_filter:
+
+        query_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="species",
+                    match=MatchValue(value=species_filter)
+                )
+            ]
+        )
+
     results = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
-        limit=10
+        limit=10,
+        query_filter=query_filter
     )
 
     routes = []
@@ -98,7 +119,8 @@ def process_agent_query(user_query: str):
             "animal"
         )
 
-        detected_species = species
+        if detected_species == "Animal Inconnu":
+            detected_species = species
 
         # ----------------------------------------------------
         # Récupération des coordonnées
@@ -362,4 +384,4 @@ if __name__ == "__main__":
         )
 
     print()
-    print("✅ Tous les tests sont terminés")
+    print("[migration] tous les tests sont termines")

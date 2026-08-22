@@ -35,8 +35,6 @@ renders the same visual language as the other three workers.
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -95,10 +93,17 @@ class MigrationWorker:
             )
 
         # 2. Search Qdrant for observed occurrences of the species.
+        # The filter is what keeps this honest: the collection holds every
+        # species, and vector similarity alone happily returns monarch
+        # butterfly records for a white stork query. Since step 3 seeds the
+        # Random Forest from observed_routes[0], one stray point is enough to
+        # produce a confident prediction for the wrong animal. `french` is the
+        # payload's own `species` value, so this is an exact keyword match.
         instruction = request.instruction or french
         try:
             _detected, observed_routes = predict_mod.process_agent_query(
-                instruction
+                instruction,
+                species_filter=french,
             )
         except Exception as exc:  # noqa: BLE001
             return self._failed(
@@ -108,8 +113,8 @@ class MigrationWorker:
         if not observed_routes:
             return self._failed(
                 f"No observations found in Qdrant for '{french}'. "
-                "Miriam's Qdrant collection may be empty or the query did "
-                "not match any indexed observation."
+                "Miriam's Qdrant collection has no indexed observation for "
+                "this species, or none carries usable coordinates."
             )
 
         # 3. Predict next position from the first observed point.
@@ -396,12 +401,16 @@ class MigrationWorker:
         )
         fmap.get_root().html.add_child(folium.Element(legend))
 
-        # Write to a temp HTML file and hand back a ``file://`` URI the
-        # dashboard can read and embed.
-        fd, path = tempfile.mkstemp(suffix=".html", prefix="migration_")
-        os.close(fd)
-        fmap.save(path)
-        return Path(path).resolve().as_uri()
+        # Write next to every other worker's map rather than into the system
+        # temp dir. One directory means the HTTP boundary can serve all four
+        # skills' maps from a single route, and a stable name per species means
+        # a re-run replaces its map instead of leaking a new temp file.
+        out_dir = Path(__file__).resolve().parents[2] / "outputs" / "maps"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        slug = french.lower().replace(" ", "_").replace("'", "")
+        path = out_dir / f"migration_{slug}.html"
+        fmap.save(str(path))
+        return path.resolve().as_uri()
 
     @staticmethod
     def _failed(message: str) -> AgentResult:

@@ -19,8 +19,11 @@ contract, so the orchestrator does not need to know which one is live.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+_logger = logging.getLogger(__name__)
 
 
 # ---------- offline fallback catalogue ----------
@@ -40,12 +43,24 @@ _OFFLINE_CATALOGUE: dict[str, str] = {
     "gray wolf": "Canis lupus",
     "arctic tern": "Sterna paradisaea",
     "sterne arctique": "Sterna paradisaea",
+    # The three species the migration Random Forest is trained on.
+    "white stork": "Ciconia ciconia",
+    "cigogne blanche": "Ciconia ciconia",
+    "humpback whale": "Megaptera novaeangliae",
+    "baleine a bosse": "Megaptera novaeangliae",
+    "baleine à bosse": "Megaptera novaeangliae",
+    "monarch butterfly": "Danaus plexippus",
+    "monarch": "Danaus plexippus",
+    "papillon monarque": "Danaus plexippus",
     # scientific names normalize to themselves
     "loxodonta africana": "Loxodonta africana",
     "ursus maritimus": "Ursus maritimus",
     "panthera tigris": "Panthera tigris",
     "canis lupus": "Canis lupus",
     "sterna paradisaea": "Sterna paradisaea",
+    "ciconia ciconia": "Ciconia ciconia",
+    "megaptera novaeangliae": "Megaptera novaeangliae",
+    "danaus plexippus": "Danaus plexippus",
 }
 
 
@@ -73,13 +88,18 @@ class SpeciesTaxonomyService:
         """Pick the Qdrant backend if credentials are configured, else offline."""
         url = os.environ.get("QDRANT_URL")
         api_key = os.environ.get("QDRANT_API_KEY")
+        # Cheapest first: in-memory dict, then GBIF's resolver over the network.
+        fallbacks: list[TaxonomyBackend] = [_OfflineBackend(), _GbifBackend()]
         if url and api_key:
             try:
-                return cls(_QdrantBackend(url=url, api_key=api_key))
+                # Chained, not either/or: Qdrant stays authoritative when it
+                # answers, and the fallbacks cover it when it does not.
+                return cls(_ChainedBackend(
+                    [_QdrantBackend(url=url, api_key=api_key), *fallbacks]))
             except Exception:  # pragma: no cover — surfaces on first real call
                 # Never crash the orchestrator because Qdrant is down; degrade.
-                return cls(_OfflineBackend())
-        return cls(_OfflineBackend())
+                return cls(_ChainedBackend(fallbacks))
+        return cls(_ChainedBackend(fallbacks))
 
     def normalize(self, query: str) -> str | None:
         """Return the scientific name for ``query`` or ``None`` if unknown."""
@@ -125,6 +145,70 @@ class _OfflineBackend(TaxonomyBackend):
         return None
 
 
+
+
+class _GbifBackend(TaxonomyBackend):
+    """GBIF's own name resolver - the broadest backend, so it goes last.
+
+    ``workers.common.gbif.match_species`` already does the work the taxonomy
+    collection was meant to do, and does it for every animal GBIF knows rather
+    than the handful in the catalogue above: a common-name table, ``/species/
+    match`` for binomials and misspellings, an exact vernacular search, and
+    plural handling ("African elephants" -> ``Loxodonta africana``). It costs a
+    network call, which is why the in-memory catalogue is consulted first.
+    """
+
+    def lookup(self, query: str) -> str | None:
+        match = self.top_match(query)
+        return match.scientific_name if match else None
+
+    def top_match(self, query: str) -> TaxonomyMatch | None:
+        # Imported here, not at module scope: this package is imported by the
+        # workers, and a top-level import would close the loop.
+        from ...workers.common.gbif import match_species
+
+        resolved = match_species(query)
+        if not resolved:
+            return None
+        _key, scientific = resolved
+        if not scientific:
+            return None
+        # No similarity score to report - GBIF either resolves a name or does
+        # not, so a hit is a hit.
+        return TaxonomyMatch(scientific_name=scientific, common_names=[query], score=1.0)
+
+
+class _ChainedBackend(TaxonomyBackend):
+    """Try each backend in order, first non-empty answer wins.
+
+    Exists because a configured Qdrant URL is not the same thing as a usable
+    taxonomy: the collection may be missing, empty, or unreachable. Treating
+    "credentials present" as "Qdrant works" let a silent miss propagate all
+    the way to GBIF as an unresolved common name.
+    """
+
+    def __init__(self, backends: list[TaxonomyBackend]) -> None:
+        self._backends = backends
+
+    def lookup(self, query: str) -> str | None:
+        match = self.top_match(query)
+        return match.scientific_name if match else None
+
+    def top_match(self, query: str) -> TaxonomyMatch | None:
+        for backend in self._backends:
+            try:
+                match = backend.top_match(query)
+            except Exception as exc:  # noqa: BLE001 - a backend may fail anyhow
+                _logger.warning(
+                    "[Taxonomy] %s raised for %r (%s); trying the next backend",
+                    type(backend).__name__, query, type(exc).__name__,
+                )
+                continue
+            if match is not None:
+                return match
+        return None
+
+
 class _QdrantBackend(TaxonomyBackend):  # pragma: no cover — requires live cluster
     """Real Qdrant-backed backend.
 
@@ -141,6 +225,9 @@ class _QdrantBackend(TaxonomyBackend):  # pragma: no cover — requires live clu
 
         self._client = QdrantClient(url=url, api_key=api_key, timeout=10)
         self._embedder = None
+        # A missing collection fails identically on every lookup; warn once
+        # rather than once per request.
+        self._warned = False
 
     def _embed(self, text: str) -> list[float]:
         if self._embedder is None:
@@ -160,7 +247,18 @@ class _QdrantBackend(TaxonomyBackend):  # pragma: no cover — requires live clu
                 query_vector=self._embed(query),
                 limit=1,
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - any client/collection failure
+            # Logged once per lookup rather than swallowed: a missing
+            # ``species_taxonomy`` collection is indistinguishable from an
+            # unknown species otherwise, and the two need different fixes.
+            if not self._warned:
+                self._warned = True
+                _logger.warning(
+                    "[Taxonomy] Qdrant lookup failed (%s: %s); falling back to "
+                    "the offline catalogue for this and later lookups. If the "
+                    "%r collection is missing, seed it or unset QDRANT_URL.",
+                    type(exc).__name__, exc, self.COLLECTION_NAME,
+                )
             return None
         if not hits:
             return None

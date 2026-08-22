@@ -49,7 +49,7 @@ def search(query: str, top_k: int = 3, species_filter: str = None):
         query_filter=query_filter,
     )
 
-    print(f"\n🔍 Requête: '{query}'" + (f" (filtré sur: {species_filter})" if species_filter else ""))
+    print(f"\n[search] Requête: '{query}'" + (f" (filtré sur: {species_filter})" if species_filter else ""))
     print("-" * 60)
     for point in results.points:
         print(f"Score: {point.score:.3f} | Espèce: {point.payload['species']}")
