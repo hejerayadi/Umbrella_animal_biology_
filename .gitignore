@@ -1,45 +1,5 @@
-# Local environment files
-.env
-.env.*
-!.env.example
-
-# Local tool configuration
-# `.claude/` in full, as main has it - narrowing this to
-# settings.local.json would start tracking the rest of the directory.
-.claude/
-docker/.env
-
-# Python
+.venv/
+.pytest_cache/
 __pycache__/
 *.py[cod]
-*$py.class
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# Virtual environments and package caches
-.venv/
-venv/
-env/
-ENV/
-.uv-cache/
-
-# Node / frontend outputs
-node_modules/
-dist/
-dist-ssr/
-.output/
-.tanstack/
-.nitro/
-.vinxi/
-
-# Build and runtime artifacts
-build/
-*.log
-*.tmp
-*.sqlite
-*.sqlite3
-*.db
+.env

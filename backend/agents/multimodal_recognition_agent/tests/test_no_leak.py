@@ -29,12 +29,12 @@ from ..domain.errors import RecognitionError
 from ..schema import AgentRequest
 from ..validation import validate_paired_request
 from .conftest import (
-    StubRetriever,
+    StubClassifier,
     data_url,
     image_entry,
     make_config,
     png_bytes,
-    reference,
+    prediction,
 )
 
 E1_LABEL = "encoded-surface"
@@ -123,7 +123,7 @@ def test_markers_absent_from_every_log_record(config, caplog):
     with caplog.at_level(logging.DEBUG, logger=AGENT_PACKAGE_LOGGER):
         agent = RecognitionAgent(
             make_config(),
-            retriever=StubRetriever([reference("panthera_leo", 0.9)]),
+            classifier=StubClassifier([prediction("panthera_leo", 0.9)]),
         )
         agent.run(AgentRequest(instruction="Identify this animal.", context=context))
 
@@ -179,7 +179,7 @@ def test_markers_absent_from_the_agent_result(config):
     _, e1, context = _payload_and_markers()
 
     agent = RecognitionAgent(
-        make_config(), retriever=StubRetriever([reference("panthera_leo", 0.9)])
+        make_config(), classifier=StubClassifier([prediction("panthera_leo", 0.9)])
     )
     result = agent.run(AgentRequest(instruction="Identify this animal.", context=context))
 
@@ -200,7 +200,7 @@ def test_failure_result_carries_no_request_data(config):
     context = {**context, RECOGNITION_IMAGE_CONTEXT_KEY: {
         "data_url": "data:image/png;base64,!!!" + e1, "filename": "x.png"}}
 
-    agent = RecognitionAgent(make_config(), retriever=StubRetriever([]))
+    agent = RecognitionAgent(make_config(), classifier=StubClassifier([]))
     result = agent.run(AgentRequest(instruction="Identify this animal.", context=context))
 
     _assert_absent(json.dumps(result.output, default=str), e1, where="failed output")
@@ -212,7 +212,7 @@ def test_delegation_prompt_carries_no_request_data(config):
     _, e1, context = _payload_and_markers()
 
     agent = RecognitionAgent(
-        make_config(), retriever=StubRetriever([reference("panthera_leo", 0.95)])
+        make_config(), classifier=StubClassifier([prediction("panthera_leo", 0.95)])
     )
     result = agent.run(
         AgentRequest(

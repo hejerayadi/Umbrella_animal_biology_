@@ -1,0 +1,78 @@
+{
+  "_fixture_note": "SPRINT 2 TEST ORACLE - NOT BioCLIP-2 INFERENCE. Every score below is a hand-written deterministic test value chosen to exercise a specific branch of the confidence gate. Nothing here was produced by a model, nothing here is a calibrated probability, and nothing here is a scientific dataset. Keys are the SHA-256 of the DECODED image bytes, as computed by validation.decode_image. Regenerate the demo images and their digests with fixtures/make_demo_images.py. An image whose digest is absent returns NO candidates - the agent never guesses a taxon for an unknown photograph.",
+  "provider_version": "sprint2-mock-bioclip2-classifier-v1",
+  "model_target": "BioCLIP-2",
+  "recognition_mode": "mock_classification",
+  "score_kind": "deterministic_sprint2_test_score",
+  "images": {
+    "0dee42d186457af19e6835d5b6844d92ff3fe0663ee733157f1b1f701ed072a5": [
+      {
+        "species_id": "panthera_leo",
+        "scientific_name": "Panthera leo",
+        "common_name": "lion",
+        "rank": "species",
+        "classification_score": 0.91
+      },
+      {
+        "species_id": "panthera_pardus",
+        "scientific_name": "Panthera pardus",
+        "common_name": "leopard",
+        "rank": "species",
+        "classification_score": 0.42
+      },
+      {
+        "species_id": "panthera_tigris",
+        "scientific_name": "Panthera tigris",
+        "common_name": "tiger",
+        "rank": "species",
+        "classification_score": 0.31
+      }
+    ],
+    "7e83d925047140adf252656bfb9b966eb959cc99ab2667547861ce434532a0aa": [
+      {
+        "species_id": "panthera_pardus",
+        "scientific_name": "Panthera pardus",
+        "common_name": "leopard",
+        "rank": "species",
+        "classification_score": 0.81
+      },
+      {
+        "species_id": "panthera_tigris",
+        "scientific_name": "Panthera tigris",
+        "common_name": "tiger",
+        "rank": "species",
+        "classification_score": 0.78
+      },
+      {
+        "species_id": "panthera_leo",
+        "scientific_name": "Panthera leo",
+        "common_name": "lion",
+        "rank": "species",
+        "classification_score": 0.55
+      }
+    ],
+    "0195c9138b222a55674761c68d6f100da5f1ea38fa91a233c213bf9521f12ced": [
+      {
+        "species_id": "ursus_maritimus",
+        "scientific_name": "Ursus maritimus",
+        "common_name": "polar bear",
+        "rank": "species",
+        "classification_score": 0.88
+      },
+      {
+        "species_id": "vulpes_lagopus",
+        "scientific_name": "Vulpes lagopus",
+        "common_name": "arctic fox",
+        "rank": "species",
+        "classification_score": 0.35
+      },
+      {
+        "species_id": "canis_lupus",
+        "scientific_name": "Canis lupus",
+        "common_name": "grey wolf",
+        "rank": "species",
+        "classification_score": 0.22
+      }
+    ]
+  }
+}

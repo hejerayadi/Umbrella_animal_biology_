@@ -75,17 +75,14 @@ def test_invalid_input_returns_a_controlled_failure_never_a_500(instruction, con
 
 
 @pytest.mark.parametrize("instruction", ["", "   "])
-def test_an_absent_instruction_is_accepted_over_http(instruction):
-    """Per the validated decisions the instruction is optional; the request
-    proceeds on the image alone."""
+def test_an_empty_instruction_is_refused_over_http(instruction):
+    """Both halves are required: one image AND one non-empty text instruction."""
     response = post(instruction, valid_context())
 
-    assert response.status_code == 200
+    assert response.status_code == 200, "the boundary must never leak a 500"
     body = response.json()
-    assert body["status"] == "completed"
-    assert body["output"]["recognition"]["decision"] in (
-        "identified", "uncertain", "not_identified"
-    )
+    assert body["status"] == "failed"
+    assert body["output"]["error_code"] == "EMPTY_INSTRUCTION"
 
 
 def test_a_non_text_instruction_is_rejected_at_the_schema_boundary():
