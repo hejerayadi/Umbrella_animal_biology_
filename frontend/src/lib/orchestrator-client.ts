@@ -106,20 +106,6 @@ export function generatedImageFrom(response: ChatResponse): string | undefined {
   return apiUrl(path);
 }
 
-/**
- * Absolute URL for an image the backend generated, or undefined if there wasn't one.
- *
- * The backend returns a root-relative path so it does not have to know what host
- * it is reached on; the API lives on a different origin from the dev server, so
- * it has to be resolved against the orchestrator's base URL rather than the page.
- */
-export function generatedImageFrom(response: ChatResponse): string | undefined {
-  const path = response.image_url;
-  if (typeof path !== "string" || !path) return undefined;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${ORCHESTRATOR_API_URL}${path.startsWith("/") ? "" : "/"}${path}`;
-}
-
 /** The context key the Protein Visualization Agent publishes its Mol* scene under. */
 const PROTEIN_VIEWER_KEY = "protein_viewer";
 
