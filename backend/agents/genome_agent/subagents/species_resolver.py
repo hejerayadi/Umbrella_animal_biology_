@@ -162,6 +162,24 @@ async def resolve_species(species_name: str) -> dict:
     data = resp.json()
     assembly_info = data.get("result", {}).get(uid, {})
 
+    assembly_level = assembly_info.get("assemblystatus")
+
+    if assembly_level in ("Scaffold", "Contig"):
+        return {
+            "assembly_id": assembly_id,
+            "scientific_name": assembly_info.get("organism"),
+            "common_name": assembly_info.get("organism"),
+            "confidence": 1.0 if assembly_id else 0.0,
+            "assembly_level": assembly_level,
+            "status": "NEEDS_AGENT",
+            "target_agent": "Reconstruction Agent",
+            "prompt_to_target_agent": (
+                f"Genome assembly {assembly_id} for {assembly_info.get('organism')} is at "
+                f"'{assembly_level}' level with gaps/unresolved regions. "
+                f"Reconstruct the complete genome sequence before metadata and annotation can be retrieved."
+            ),
+        }
+
     # NCBI esummary only gives us the organism name once (no separate
     # common/scientific split), so both fields carry the same value —
     # matches the behavior species_resolver_node already expects.
@@ -173,6 +191,7 @@ async def resolve_species(species_name: str) -> dict:
         "scientific_name": scientific_name,
         "common_name": common_name,
         "confidence": 1.0 if assembly_id else 0.0,
+        "assembly_level": assembly_level,
     }
 
 

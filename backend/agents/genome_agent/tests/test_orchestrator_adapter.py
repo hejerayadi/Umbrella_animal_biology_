@@ -145,6 +145,31 @@ def test_protein_structure_request_escalates():
     assert result.output["gene_list"] == ["TP53", "BRCA1"]
 
 
+def test_species_resolver_needs_agent_for_fragmented_assembly():
+    result = to_result(
+        _resolved_state(
+            species={
+                "assembly_id": "GCF_002915635.1",
+                "scientific_name": "Ambystoma mexicanum",
+                "common_name": "Axolotl",
+                "confidence": 1.0,
+                "assembly_level": "Scaffold",
+                "status": "NEEDS_AGENT",
+                "target_agent": "Reconstruction Agent",
+                "prompt_to_target_agent": (
+                    "Genome assembly GCF_002915635.1 for Ambystoma mexicanum is at "
+                    "'Scaffold' level with gaps/unresolved regions. "
+                    "Reconstruct the complete genome sequence before metadata and "
+                    "annotation can be retrieved."
+                ),
+            }
+        )
+    )
+    assert result.status is AgentStatus.NEEDS_AGENT
+    assert result.target_agent == "Reconstruction Agent"
+    assert "GCF_002915635.1" in result.prompt_to_target_agent
+
+
 def test_errors_become_warnings_not_a_failure():
     result = to_result(_resolved_state(errors=["NCBI timed out for chromosome count"]))
     assert result.status is AgentStatus.COMPLETED

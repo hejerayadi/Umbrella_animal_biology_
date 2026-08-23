@@ -108,6 +108,19 @@ def to_result(state: GenomeAgentState) -> AgentResult:
             ),
         )
 
+    species = state.species or {}
+    if species.get("status") == "NEEDS_AGENT":
+        _logger.info(
+            "[Genome] assembly %s is incomplete — needs reconstruction agent",
+            state.assembly_id,
+        )
+        return AgentResult(
+            status=AgentStatus.NEEDS_AGENT,
+            target_agent=species.get("target_agent"),
+            prompt_to_target_agent=species.get("prompt_to_target_agent"),
+            output={"assembly_id": state.assembly_id, "species_record": species},
+        )
+
     output: dict[str, Any] = {
         "genome": _summarise(state),
         "assembly_id": state.assembly_id,

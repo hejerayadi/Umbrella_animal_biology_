@@ -10,6 +10,7 @@ class SpeciesResolverOutput:
     scientific_name: str | None
     common_name: str | None
     confidence: float
+    assembly_level: str | None = None
 
 
 @dataclass
