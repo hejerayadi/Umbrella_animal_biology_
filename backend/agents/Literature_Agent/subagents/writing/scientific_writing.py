@@ -1,32 +1,28 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
+
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from ...llm.client import WRITING, call_llm
+from ...llm.client import WRITING, call_llm, call_llm_with_tools
 from ...llm.prompts import (
     PUBLICATION_SUPPORT_PROMPT,
     SCIENTIFIC_WRITING_PROMPT,
     WRITING_SUB_ROUTING_PROMPT,
 )
 from ...schema import AgentRequest, AgentResult, AgentStatus
+from .kb.retrieval import search_papers, search_related_work, search_citations
 
 _logger = logging.getLogger(__name__)
 
-# An abstract runs several hundred tokens, and on a reasoning deployment this
-# budget covers reasoning tokens as well as the visible answer - too tight a
-# ceiling comes back as finish_reason="length" with empty content.
 _DRAFT_TOKENS = 2000
 _ROUTING_TOKENS = 256
+_MAX_TOOL_ROUNDS = 4  # safety cap so a confused model can't loop forever
 
-# Returned when the LLM cannot be reached. Labelled and FAILED rather than
-# quietly empty, because the Global Orchestrator merges this dict into shared
-# context and the Responder writes the user's final answer from it: handed an
-# unlabelled stub for a "write my abstract" request, the Responder fills the
-# gap from its own memory and produces a fabricated abstract - the exact
-# failure this platform exists to avoid.
 UNAVAILABLE_NOTICE = (
     "The Literature Agent's writing support could not reach its language model, "
     "so no draft was produced."
@@ -38,12 +34,7 @@ PLACEHOLDER_REFERENCES_NOTICE = (
 
 
 def _references(context: dict) -> tuple[list, bool]:
-    """The papers discovery found, and whether they are real.
-
-    `is_placeholder` is set by `discovery/sources.py` while it is still a stub.
-    It is carried through rather than dropped, so a draft built on stand-in
-    papers cannot be presented as if it were grounded in literature.
-    """
+    """The papers discovery found, and whether they are real."""
     discovery = context.get("discovery_output")
     if not isinstance(discovery, dict):
         return [], False
@@ -51,7 +42,6 @@ def _references(context: dict) -> tuple[list, bool]:
 
 
 def _unavailable(field: str, papers: list) -> AgentResult:
-    """The honest empty answer, used whenever the model produced nothing."""
     return AgentResult(
         status=AgentStatus.FAILED,
         output={
@@ -64,53 +54,308 @@ def _unavailable(field: str, papers: list) -> AgentResult:
 
 
 # ---------------------------------------------------------------------------
+# KB tools -- three separate, LLM-callable retrieval tools. None of their
+# output is ever a citable source: only `references_available`, built from
+# real discovery output, may be cited. Each tool's own docstring/description
+# (used as its function-calling description) makes this explicit to the model.
+# ---------------------------------------------------------------------------
+
+
+def _tool_get_abstract_examples(query: str, limit: int = 2) -> str:
+    """Retrieves example abstracts (structure/tone only, never citable) from
+    the knowledge base, related to `query`."""
+    try:
+        hits = search_papers(query, section_type="abstract", limit=limit)
+        examples = [h.payload.get("target_text", "")[:500] for h in hits]
+        examples = [e for e in examples if e.strip()]
+        if not examples:
+            return "No abstract examples found."
+        return "\n\n".join(f"Example {i+1}: {e}" for i, e in enumerate(examples))
+    except Exception as exc:  # noqa: BLE001 - tool failure must not crash the loop
+        _logger.warning("get_abstract_examples failed: %s", exc)
+        return "Abstract-example retrieval is currently unavailable."
+
+
+def _tool_get_related_work_examples(query: str, limit: int = 2) -> str:
+    """Retrieves example related-work syntheses (structure only, never
+    citable) from the knowledge base, related to `query`."""
+    try:
+        hits = search_related_work(query, limit=limit)
+        examples = [h.payload.get("target_text", "")[:500] for h in hits]
+        examples = [e for e in examples if e.strip()]
+        if not examples:
+            return "No related-work examples found."
+        return "\n\n".join(f"Example {i+1}: {e}" for i, e in enumerate(examples))
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("get_related_work_examples failed: %s", exc)
+        return "Related-work-example retrieval is currently unavailable."
+
+
+def _tool_get_citation_examples(query: str, limit: int = 2) -> str:
+    """Retrieves example citation phrasings (labelled by rhetorical intent --
+    Background / Method / Result Comparison -- phrasing only, never citable)
+    from the knowledge base, related to `query`."""
+    try:
+        hits = search_citations(query, limit=limit)
+        examples = [
+            f"[{h.payload.get('intent', 'Background')}] {h.payload.get('context', '')}"
+            for h in hits
+            if h.payload.get("context", "").strip()
+        ]
+        if not examples:
+            return "No citation-phrasing examples found."
+        return "\n".join(examples)
+    except Exception as exc:  # noqa: BLE001
+        _logger.warning("get_citation_examples failed: %s", exc)
+        return "Citation-example retrieval is currently unavailable."
+
+
+_TOOL_EXECUTORS = {
+    "get_abstract_examples": _tool_get_abstract_examples,
+    "get_related_work_examples": _tool_get_related_work_examples,
+    "get_citation_examples": _tool_get_citation_examples,
+}
+
+_TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_abstract_examples",
+            "description": (
+                "Retrieve example academic abstracts for structure and tone "
+                "guidance. Use this when drafting an abstract. These examples "
+                "are NEVER citable sources - only for style/structure."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A short description of the abstract's topic.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_related_work_examples",
+            "description": (
+                "Retrieve example related-work syntheses for structure "
+                "guidance. Use this when drafting a related-work section. "
+                "These examples are NEVER citable sources - only for structure."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A short description of the related-work topic.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_citation_examples",
+            "description": (
+                "Retrieve example citation phrasings, each labelled by "
+                "rhetorical intent (Background / Method / Result Comparison). "
+                "Use this when deciding how to phrase an in-text citation. "
+                "These examples are NEVER citable sources - only for phrasing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "A short description of the citation's context.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Style tool -- grammar/coherence correction, applied automatically as a
+# post-processing step once the draft exists (not an LLM-selectable tool:
+# there is nothing to correct before a draft exists, so the model is never
+# asked to decide whether to invoke it).
+# ---------------------------------------------------------------------------
+
+
+#Motif binomial simple : Genre (majuscule) + espece/sous-espece (minuscules),
+# ex. "Panthera tigris", "Panthera tigris altaica". Volontairement large :
+# mieux vaut proteger un peu trop de faux positifs latins que d'abimer un
+# vrai nom scientifique.
+_SCIENTIFIC_NAME_PATTERN = re.compile(r"\b[A-Z][a-z]+ [a-z]+(?: [a-z]+)?\b")
+ 
+ 
+import re
+
+# Motif binomial simple : Genre (majuscule) + espece/sous-espece (minuscules),
+# ex. "Panthera tigris", "Panthera tigris altaica". Volontairement large :
+# mieux vaut proteger un peu trop de faux positifs latins que d'abimer un
+# vrai nom scientifique.
+_SCIENTIFIC_NAME_PATTERN = re.compile(r"\b[A-Z][a-z]+ [a-z]+(?: [a-z]+)?\b")
+
+
+def _apply_style_correction(text: str) -> tuple[str, bool]:
+    """Runs LanguageTool grammar/coherence correction on `text`, while
+    protecting binomial scientific names (e.g. "Panthera tigris altaica")
+    from being mangled -- LanguageTool's naive `.correct()` treats unknown
+    Latin species names as spelling errors and rewrites them, which is worse
+    than not correcting at all for a scientific-writing agent.
+
+    Returns (corrected_text, was_applied). Degrades gracefully - if
+    LanguageTool is not installed or fails to start, the original text is
+    returned unchanged rather than blocking the draft.
+    """
+    try:
+        import language_tool_python
+
+        tool = language_tool_python.LanguageTool("en-US")
+        matches = tool.check(text)
+
+        protected_spans = [
+            (m.start(), m.end()) for m in _SCIENTIFIC_NAME_PATTERN.finditer(text)
+        ]
+
+        def _overlaps_protected(match) -> bool:
+            start, end = match.offset, match.offset + match.error_length
+            return any(start < p_end and end > p_start for p_start, p_end in protected_spans)
+
+        filtered_matches = [m for m in matches if not _overlaps_protected(m)]
+
+        corrected = language_tool_python.utils.correct(text, filtered_matches)
+        tool.close()
+        return corrected, True
+    except Exception as exc:  # noqa: BLE001 - style correction is a nice-to-have
+        _logger.warning("style correction unavailable: %s", exc)
+        return text, False
+# ---------------------------------------------------------------------------
 # Leaf agents
 # ---------------------------------------------------------------------------
 
 
 class WritingSupportAgent:
-    """Drafts scientific text (abstract, introduction, section ...) with the LLM."""
+    """Drafts scientific text (abstract, introduction, section ...) with the
+    LLM, using real function-calling: the model itself decides whether and
+    when to call get_abstract_examples / get_related_work_examples /
+    get_citation_examples while drafting. Grammar/coherence correction runs
+    automatically afterwards on the finished draft."""
 
     def run(self, request: AgentRequest) -> AgentResult:
-        papers, refs_are_placeholder = _references(request.context or {})
+        context = request.context or {}
+        papers, refs_are_placeholder = _references(context)
 
-        # The reference list is handed over explicitly and the prompt forbids
-        # citing anything outside it. An empty list means "write without
-        # citations", never "make some up".
         reference_block = (
             "\n".join(f"- {paper}" for paper in papers)
             if papers
             else "(none - write the text without any citations)"
         )
+
+        # Explicit source content the user wants condensed/expanded (e.g.
+        # "write an abstract from this content: <paper body>"). Kept separate
+        # from `instruction` so the model always sees clearly what is the
+        # task and what is the raw material to work from.
+        source_content = context.get("source_content", "")
+        source_block = (
+            f"\n\nSource content to work from:\n{source_content}"
+            if source_content.strip()
+            else ""
+        )
+
         user_message = (
             f"{request.instruction}\n\n"
             f"References available to cite:\n{reference_block}"
+            f"{source_block}"
         )
 
+        messages = [
+            {"role": "system", "content": SCIENTIFIC_WRITING_PROMPT},
+            {"role": "user", "content": user_message},
+        ]
+
+        tools_used: list[str] = []
+
         try:
-            draft = call_llm(
-                messages=[
-                    {"role": "system", "content": SCIENTIFIC_WRITING_PROMPT},
-                    {"role": "user", "content": user_message},
-                ],
-                max_completion_tokens=_DRAFT_TOKENS,
-                reasoning_effort="low",
-                role=WRITING,
-            ).strip()
+            for _ in range(_MAX_TOOL_ROUNDS):
+                message = call_llm_with_tools(
+                    messages=messages,
+                    tools=_TOOL_SCHEMAS,
+                    max_completion_tokens=_DRAFT_TOKENS,
+                    reasoning_effort="low",
+                    role=WRITING,
+                )
+
+                if not message.tool_calls:
+                    draft = (message.content or "").strip()
+                    break
+
+                # The model asked for one or more tools - run them and hand
+                # the results back, then let it continue.
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": message.content,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                            }
+                            for tc in message.tool_calls
+                        ],
+                    }
+                )
+                for tool_call in message.tool_calls:
+                    executor = _TOOL_EXECUTORS.get(tool_call.function.name)
+                    if executor is None:
+                        result_text = f"Unknown tool: {tool_call.function.name}"
+                    else:
+                        try:
+                            args = json.loads(tool_call.function.arguments or "{}")
+                        except json.JSONDecodeError:
+                            args = {}
+                        result_text = executor(args.get("query", request.instruction))
+                        tools_used.append(tool_call.function.name)
+
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result_text,
+                        }
+                    )
+            else:
+                # Loop exhausted _MAX_TOOL_ROUNDS without a final answer.
+                draft = ""
+
         except Exception as exc:  # noqa: BLE001 - degrade honestly, never invent
             _logger.warning("writing support LLM unavailable: %s", exc)
             return _unavailable("draft", papers)
 
-        # An empty completion means truncated or filtered, not "no text needed".
-        # Reported rather than passed on as a blank the Responder would fill in.
         if not draft:
             _logger.warning("writing support returned an empty draft")
             return _unavailable("draft", papers)
+
+        draft, style_corrected = _apply_style_correction(draft)
 
         output = {
             "draft": draft,
             "references_used": papers,
             "style": "academic",
+            "style_corrected": style_corrected,
+            "tools_used": tools_used,
         }
         if refs_are_placeholder:
             output["references_are_placeholder"] = True
@@ -133,8 +378,6 @@ class PublicationSupportAgent:
 
         user_message = request.instruction
         if draft:
-            # Recommend against the text that was actually written, not just
-            # the instruction - that is the point of running writing first.
             user_message += f"\n\nThe manuscript text under consideration:\n{draft}"
 
         try:
@@ -147,7 +390,7 @@ class PublicationSupportAgent:
                 reasoning_effort="low",
                 role=WRITING,
             ).strip()
-        except Exception as exc:  # noqa: BLE001 - degrade honestly, never invent
+        except Exception as exc:  # noqa: BLE001
             _logger.warning("publication support LLM unavailable: %s", exc)
             recommendations = ""
 
@@ -170,7 +413,7 @@ class PublicationSupportAgent:
 
 class WritingState(TypedDict):
     request: AgentRequest
-    route: str                        # "writing" | "publication" | "both"
+    route: str
     writing_result: AgentResult | None
     publication_result: AgentResult | None
     final_result: AgentResult | None
@@ -197,10 +440,6 @@ class ScientificWritingOrchestrator:
         self._publication_support = PublicationSupportAgent()
         self._graph = self._build_graph()
 
-    # ------------------------------------------------------------------
-    # Graph construction
-    # ------------------------------------------------------------------
-
     def _build_graph(self):
         graph = StateGraph(WritingState)
 
@@ -210,26 +449,15 @@ class ScientificWritingOrchestrator:
         graph.add_node("aggregate", self._aggregate)
 
         graph.set_entry_point("classify")
-
-        # After classify -> branch to first relevant node
         graph.add_conditional_edges("classify", self._route_after_classify)
-
-        # After writing_support -> either move to publication (both) or aggregate
         graph.add_conditional_edges("writing_support", self._route_after_writing)
-
-        # publication_support always leads to aggregate
         graph.add_edge("publication_support", "aggregate")
         graph.add_edge("aggregate", END)
 
         return graph.compile()
 
-    # ------------------------------------------------------------------
-    # Node implementations
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _classify_by_keyword(instruction: str) -> str:
-        """Deterministic fallback for when the LLM is unavailable."""
         lowered = instruction.lower()
         needs_pub = any(
             k in lowered
@@ -246,7 +474,6 @@ class ScientificWritingOrchestrator:
         return "publication"
 
     def _classify(self, state: WritingState) -> dict:
-        """Decide which writing tasks are required, preferring the LLM."""
         instruction = state["request"].instruction
 
         try:
@@ -263,7 +490,7 @@ class ScientificWritingOrchestrator:
                 .strip()
                 .lower()
             )
-        except Exception:  # noqa: BLE001 - routing must never fail the request
+        except Exception:  # noqa: BLE001
             answer = ""
 
         mapped = {
@@ -278,7 +505,6 @@ class ScientificWritingOrchestrator:
         return {"writing_result": self._writing_support.run(state["request"])}
 
     def _run_publication(self, state: WritingState) -> dict:
-        """Run publication support, passing the draft along when there is one."""
         request = state["request"]
         context = dict(request.context or {})
         writing = state.get("writing_result")
@@ -290,12 +516,6 @@ class ScientificWritingOrchestrator:
         return {"publication_result": result}
 
     def _aggregate(self, state: WritingState) -> dict:
-        """Merge writing + publication outputs into a single AgentResult.
-
-        FAILED propagates: if the branch that ran could not produce anything,
-        the parent must hear about it rather than receive an empty COMPLETED
-        that reads like a successful blank answer.
-        """
         writing = state.get("writing_result")
         publication = state.get("publication_result")
         route = state["route"]
@@ -320,23 +540,15 @@ class ScientificWritingOrchestrator:
 
         return {"final_result": AgentResult(status=status, output=final_output)}
 
-    # ------------------------------------------------------------------
-    # Conditional edge functions
-    # ------------------------------------------------------------------
-
     def _route_after_classify(self, state: WritingState) -> str:
         if state["route"] == "publication":
             return "publication_support"
-        return "writing_support"  # writing or both
+        return "writing_support"
 
     def _route_after_writing(self, state: WritingState) -> str:
         if state["route"] == "both":
             return "publication_support"
         return "aggregate"
-
-    # ------------------------------------------------------------------
-    # Public interface (called by the parent LiteratureOrchestrator)
-    # ------------------------------------------------------------------
 
     def run(self, request: AgentRequest) -> AgentResult:
         result = self._graph.invoke(

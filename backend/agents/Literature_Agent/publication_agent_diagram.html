@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Publication Support Agent – Architecture Diagram</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 32px 16px;
+  }
+
+  .page {
+    width: 1100px;
+    background: #fff;
+  }
+
+  /* ── Title ── */
+  .title-bar {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .title-bar h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1a2e;
+    letter-spacing: .5px;
+  }
+  .title-bar p {
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+  }
+
+  /* ── Three-column grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 240px 1fr 240px;
+    gap: 20px;
+    align-items: start;
+  }
+
+  /* ── Section panel ── */
+  .panel {
+    border: 1.5px solid #d0dce8;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-header.blue   { background: #1565C0; color: #fff; }
+  .panel-header.teal   { background: #00695C; color: #fff; }
+  .panel-body {
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: #f8fafd;
+  }
+
+  /* ── Cards inside panels ── */
+  .card {
+    background: #ffffff;
+    border: 1px solid #dce6f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .card-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #1565C0;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-title.green { color: #2e7d32; }
+  .card-title.teal  { color: #00695C; }
+  .card ul {
+    list-style: none;
+    padding: 0;
+  }
+  .card ul li {
+    font-size: 10.5px;
+    color: #333;
+    padding: 2px 0;
+    padding-left: 14px;
+    position: relative;
+  }
+  .card ul li::before {
+    content: "•";
+    position: absolute;
+    left: 3px;
+    color: #1565C0;
+  }
+  .card ul li.green-dot::before { color: #2e7d32; }
+  .card ul li.teal-dot::before  { color: #00695C; }
+
+  /* badge */
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    letter-spacing: .4px;
+  }
+  .badge-blue  { background: #e3eefa; color: #1565C0; }
+  .badge-green { background: #e8f5e9; color: #2e7d32; }
+  .badge-teal  { background: #e0f2f1; color: #00695C; }
+  .badge-gray  { background: #f0f0f0; color: #555; }
+
+  .sep { height: 1px; background: #e0e7ef; margin: 6px 0; }
+
+  .meta-tag {
+    display: inline-block;
+    font-size: 9.5px;
+    background: #eef3fb;
+    border: 1px solid #c5d5ea;
+    color: #1a3a6b;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin: 2px 2px 0 0;
+  }
+
+  /* ── Central workflow column ── */
+  .workflow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .flow-node {
+    width: 100%;
+    border-radius: 10px;
+    padding: 12px 18px;
+    text-align: center;
+    position: relative;
+  }
+  .flow-node .node-icon {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  .flow-node .node-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .flow-node .node-sub {
+    font-size: 10.5px;
+    opacity: .85;
+  }
+
+  /* colors */
+  .node-user      { background: #e8eaf6; border: 1.5px solid #5c6bc0; color: #283593; }
+  .node-llm       { background: #e3f2fd; border: 1.5px solid #1565C0; color: #0d47a1; }
+  .node-retrieval { background: #e8f5e9; border: 1.5px solid #2e7d32; color: #1b5e20; }
+  .node-qdrant    { background: #e0f2f1; border: 1.5px solid #00695C; color: #004d40; }
+  .node-output    { background: #fff3e0; border: 1.5px solid #e65100; color: #bf360c; }
+  .node-inter     { background: #fce4ec; border: 1.5px solid #c62828; color: #b71c1c; }
+  .node-final     { background: #f3e5f5; border: 1.5px solid #6a1b9a; color: #4a148c; }
+
+  /* arrow */
+  .arrow {
+    width: 2px;
+    height: 22px;
+    background: #90a4ae;
+    position: relative;
+    margin: 0 auto;
+    flex-shrink: 0;
+  }
+  .arrow::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 7px solid #90a4ae;
+  }
+  .arrow-label {
+    font-size: 9.5px;
+    color: #607d8b;
+    text-align: center;
+    background: #fff;
+    padding: 0 6px;
+    border-radius: 4px;
+    border: 1px solid #cfd8dc;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    top: 6px;
+  }
+  .arrow-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .6px;
+    color: #888;
+    text-transform: uppercase;
+    text-align: center;
+    margin: 4px 0 2px;
+  }
+
+  /* connector lines between center and side panels */
+  .connector-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: center;
+    position: relative;
+  }
+  .h-line {
+    height: 2px;
+    background: #90a4ae;
+    flex: 1;
+    max-width: 30px;
+  }
+
+  /* icon placeholder (emoji fallback) */
+  .ico { font-style: normal; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Title -->
+  <div class="title-bar">
+    <h1>Publication Support Agent — Technical Architecture</h1>
+    <p>Journal Recommendation · Semantic Retrieval · LLM Re-ranking</p>
+  </div>
+
+  <!-- Three-column grid -->
+  <div class="grid">
+
+    <!-- ══════════════════════════════════════
+         LEFT — LLM / AI MODELS
+    ══════════════════════════════════════ -->
+    <div class="panel">
+      <div class="panel-header blue">
+        <span class="ico">🧠</span> LLM / AI Models
+      </div>
+      <div class="panel-body">
+
+        <!-- GPT-4.1-mini -->
+        <div class="card">
+          <div class="card-title">
+            <span class="ico">⚡</span> GPT-4.1-mini
+            <span class="badge badge-blue">Azure OpenAI</span>
+          </div>
+          <ul>
+            <li>Query interpretation</li>
+            <li>Constraint extraction</li>
+            <li>Tool selection (function-calling)</li>
+            <li>LLM Re-ranking of candidates</li>
+            <li>Response generation</li>
+          </ul>
+          <div class="sep"></div>
+          <div style="font-size:10px;color:#555;">
+            <strong>Roles:</strong><br>
+            <span class="meta-tag">ROUTER</span>
+            <span class="meta-tag">WRITING</span>
+          </div>
+        </div>
+
+        <!-- Embedding -->
+        <div class="card">
+          <div class="card-title green">
+            <span class="ico">📐</span> Embedding Model
+          </div>
+          <ul>
+            <li class="green-dot">all-MiniLM-L6-v2</li>
+            <li class="green-dot">384-dimensional vectors</li>
+            <li class="green-dot">Semantic search encoding</li>
+            <li class="green-dot">Cosine similarity scoring</li>
+          </ul>
+        </div>
+
+        <!-- Function Tools -->
+        <div class="card">
+          <div class="card-title">
+            <span class="ico">🔧</span> Agent Tools
+            <span class="badge badge-gray">function-calling</span>
+          </div>
+          <ul>
+            <li>retrieve_and_rank_journals</li>
+            <li>explain_journal_score</li>
+            <li>compare_journals</li>
+          </ul>
+        </div>
+
+      </div>
+    </div><!-- /left panel -->
+
+
+    <!-- ══════════════════════════════════════
+         CENTER — WORKFLOW PIPELINE
+    ══════════════════════════════════════ -->
+    <div class="workflow">
+
+      <!-- 1. User Request -->
+      <div class="flow-node node-user" style="width:100%;">
+        <div class="node-icon">👤</div>
+        <div class="node-title">User Request</div>
+        <div class="node-sub">Manuscript text · research domain · constraints</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 2. LLM Query Interpretation -->
+      <div class="flow-node node-llm" style="width:100%;">
+        <div class="node-icon">🧠</div>
+        <div class="node-title">GPT-4.1-mini — Query Interpretation</div>
+        <div class="node-sub">Extract intent · identify constraints · select tools</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 3. Journal Retrieval -->
+      <div class="flow-node node-retrieval" style="width:100%;">
+        <div class="node-icon">🔍</div>
+        <div class="node-title">Journal Retrieval</div>
+        <div class="node-sub">Apply metadata filters · OA status · APC · DOAJ</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 4. Qdrant Semantic Search -->
+      <div class="flow-node node-qdrant" style="width:100%;">
+        <div class="node-icon">🗄️</div>
+        <div class="node-title">Qdrant Semantic Search</div>
+        <div class="node-sub">Vector similarity · cosine distance · filtered ANN</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 5. Top 30 -->
+      <div class="flow-node node-output" style="width:100%; padding:9px 18px;">
+        <div class="node-title" style="font-size:11.5px;">Top 30 Candidates</div>
+        <div class="node-sub">Raw semantic matches from knowledge base</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 6. LLM Re-ranking -->
+      <div class="flow-node node-llm" style="width:100%;">
+        <div class="node-icon">⚖️</div>
+        <div class="node-title">GPT-4.1-mini — LLM Re-ranking</div>
+        <div class="node-sub">Score · compare · explain relevance scores</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 7. Top Recommendations -->
+      <div class="flow-node node-inter" style="width:100%; padding:9px 18px;">
+        <div class="node-title" style="font-size:11.5px;">Top 3–5 Recommendations</div>
+        <div class="node-sub">Best-matching venues for the manuscript</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 8. Response Generation -->
+      <div class="flow-node node-llm" style="width:100%;">
+        <div class="node-icon">✍️</div>
+        <div class="node-title">GPT-4.1-mini — Response Generation</div>
+        <div class="node-sub">Format recommendations · add justifications</div>
+      </div>
+
+      <div class="arrow-wrap" style="height:28px;">
+        <div class="arrow" style="height:28px;"></div>
+      </div>
+
+      <!-- 9. Final Output -->
+      <div class="flow-node node-final" style="width:100%;">
+        <div class="node-icon">📋</div>
+        <div class="node-title">Structured Output</div>
+        <div class="node-sub">recommended_journals · rationale · open-access flags</div>
+      </div>
+
+    </div><!-- /center workflow -->
+
+
+    <!-- ══════════════════════════════════════
+         RIGHT — KNOWLEDGE BASE & TOOLS/APIs
+    ══════════════════════════════════════ -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <!-- Tools & APIs -->
+      <div class="panel">
+        <div class="panel-header blue">
+          <span class="ico">🔌</span> Tools &amp; APIs
+        </div>
+        <div class="panel-body">
+
+          <div class="card">
+            <div class="card-title">
+              <span class="ico">🌐</span> OpenAlex API
+              <span class="badge badge-blue">External</span>
+            </div>
+            <ul>
+              <li>Journal metadata source</li>
+              <li>Citation & publication counts</li>
+              <li>OpenAlex ID lookup</li>
+              <li>Topic hierarchy enrichment</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title teal">
+              <span class="ico">☁️</span> Qdrant Cloud
+              <span class="badge badge-teal">Vector DB</span>
+            </div>
+            <ul>
+              <li class="teal-dot">Cloud-hosted ANN index</li>
+              <li class="teal-dot">Filtered vector search</li>
+              <li class="teal-dot">REST + Python client</li>
+              <li class="teal-dot">Payload index filtering</li>
+            </ul>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Knowledge Base -->
+      <div class="panel">
+        <div class="panel-header teal">
+          <span class="ico">🗃️</span> Knowledge Base — Qdrant
+        </div>
+        <div class="panel-body">
+
+          <div class="card">
+            <div class="card-title teal">
+              <span class="ico">📚</span> Collection: Journals
+            </div>
+            <ul>
+              <li class="teal-dot">1,000 journal records</li>
+              <li class="teal-dot">384-dim embeddings</li>
+              <li class="teal-dot">Cosine similarity</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title green">
+              <span class="ico">🏷️</span> Stored Metadata
+            </div>
+            <div style="display:flex;flex-wrap:wrap;">
+              <span class="meta-tag">Journal name</span>
+              <span class="meta-tag">Publisher</span>
+              <span class="meta-tag">ISSN</span>
+              <span class="meta-tag">OpenAlex ID</span>
+              <span class="meta-tag">Citation count</span>
+              <span class="meta-tag">Publication count</span>
+              <span class="meta-tag">Country</span>
+              <span class="meta-tag">Homepage</span>
+              <span class="meta-tag">Open-access status</span>
+              <span class="meta-tag">DOAJ status</span>
+              <span class="meta-tag">APC (USD)</span>
+              <span class="meta-tag">Topic hierarchy</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <span class="ico">⚡</span> Payload Indexes
+              <span class="badge badge-blue">filterable</span>
+            </div>
+            <ul>
+              <li><code style="font-size:10px;background:#eef;padding:1px 4px;border-radius:3px;">is_oa</code> — Open Access flag</li>
+              <li><code style="font-size:10px;background:#eef;padding:1px 4px;border-radius:3px;">is_in_doaj</code> — DOAJ membership</li>
+              <li><code style="font-size:10px;background:#eef;padding:1px 4px;border-radius:3px;">apc_usd</code> — Article Processing Charge</li>
+            </ul>
+          </div>
+
+        </div>
+      </div><!-- /KB panel -->
+
+    </div><!-- /right column -->
+
+  </div><!-- /grid -->
+
+  <!-- Footer legend -->
+  <div style="margin-top:24px;padding:12px 18px;background:#f8fafd;border:1px solid #dce6f0;border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;justify-content:center;">
+    <span style="font-size:10.5px;color:#333;"><span style="display:inline-block;width:12px;height:12px;background:#e3f2fd;border:1.5px solid #1565C0;border-radius:3px;margin-right:4px;vertical-align:middle;"></span>LLM Step (Azure OpenAI)</span>
+    <span style="font-size:10.5px;color:#333;"><span style="display:inline-block;width:12px;height:12px;background:#e8f5e9;border:1.5px solid #2e7d32;border-radius:3px;margin-right:4px;vertical-align:middle;"></span>Retrieval / Filtering</span>
+    <span style="font-size:10.5px;color:#333;"><span style="display:inline-block;width:12px;height:12px;background:#e0f2f1;border:1.5px solid #00695C;border-radius:3px;margin-right:4px;vertical-align:middle;"></span>Qdrant Vector Search</span>
+    <span style="font-size:10.5px;color:#333;"><span style="display:inline-block;width:12px;height:12px;background:#e8eaf6;border:1.5px solid #5c6bc0;border-radius:3px;margin-right:4px;vertical-align:middle;"></span>User I/O</span>
+    <span style="font-size:10.5px;color:#333;"><span style="display:inline-block;width:12px;height:12px;background:#f3e5f5;border:1.5px solid #6a1b9a;border-radius:3px;margin-right:4px;vertical-align:middle;"></span>Final Output</span>
+    <span style="font-size:10.5px;color:#666;">Framework: LangGraph · Agent: PublicationSupportAgent · Port: 8004</span>
+  </div>
+
+</div>
+</body>
+</html>
