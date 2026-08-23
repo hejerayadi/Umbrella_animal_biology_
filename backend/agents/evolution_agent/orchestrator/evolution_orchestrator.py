@@ -56,7 +56,7 @@ from ..schema import (
     PlannerDecision,
 )
 from ..explainer import explain as _default_explainer, fallback_explanation
-from ..workers.molecular_comparison.mock import MolecularComparisonMock
+from ..workers.molecular_comparison.logic import MolecularComparisonAgent
 from ..workers.phylogenetic_tree.worker import PhylogeneticTreeWorker
 from .services.species_resolver import SpeciesResolverService
 
@@ -124,7 +124,7 @@ class EvolutionOrchestrator:
         resolver:     SpeciesResolverService | None = None,
         explainer:    Any | None = None,
     ) -> None:
-        self._mc_worker    = mc_worker    or MolecularComparisonMock()
+        self._mc_worker    = mc_worker    or MolecularComparisonAgent()
         self._phylo_worker = phylo_worker or PhylogeneticTreeWorker()
         self._resolver     = resolver     or SpeciesResolverService.from_env()
         # LLM #2. Injectable so tests never touch a real backend.
@@ -373,7 +373,6 @@ class EvolutionOrchestrator:
                 }
                 for e in mc.similarity_scores
             ]
-            alignment_url = mc.alignment_url
 
         return {
             "warnings": warnings,
@@ -471,7 +470,7 @@ class EvolutionOrchestrator:
                      "mean_score": g.mean_score}
                     for g in mc.species_groups
                 ],
-                "network_nodes": len(mc.similarity_network),
+                "network_nodes": len(mc.similarity_network["nodes"]),
             }
 
         phylo = analysis.phylogenetic

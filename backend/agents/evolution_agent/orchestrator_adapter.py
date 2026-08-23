@@ -191,7 +191,6 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
             for g in mc.species_groups
         ]
         output["similarity_network"] = mc.similarity_network
-        output["alignment_url"]      = mc.alignment_url
 
     # Branch-specific: phylogenetic tree fields
     if phylo:
@@ -218,7 +217,6 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
             {"species_a": e.species_a, "species_b": e.species_b, "score": e.score}
             for e in mc.similarity_scores
         ] if mc else None,
-        alignment_url=mc.alignment_url if mc else None,
         confidence=analysis.overall_confidence,
         source_agents=analysis.source_agents,
         interpretation=result.interpretation,

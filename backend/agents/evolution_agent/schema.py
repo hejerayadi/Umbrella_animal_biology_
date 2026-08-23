@@ -221,16 +221,29 @@ class SpeciesGroup:
 class MolecularComparisonResult:
     """Output of Subagent 1 (Molecular Comparison).
 
-    Tools mocked in Sprint 2: NCBI, UniProt, MAFFT, ESM-C, NetworkX.
+    Real pipeline (Sprint 3+): NCBI GenBank / UniProt (raw sequence
+    retrieval), ESM-2 (esm2_t12_35M_UR50D) protein embeddings, NetworkX
+    (similarity graph construction).
+
+    No alignment step runs here. MAFFT is exclusive to Subagent 2
+    (Phylogenetic Reconstruction) — alignment gap characters would
+    corrupt ESM-2 embeddings. Both sub-agents receive the same raw,
+    unaligned sequences as parallel siblings, reconverging only at the
+    evidence grounding layer.
+
+    Fields
+    ------
+    similarity_network
+        Output of ``nx.node_link_data(graph, edges="edges")`` — a dict
+        with "nodes" (list of {"id": species}) and "edges" (list of
+        {"source", "target", "score"}). Serialized directly from the
+        NetworkX graph so schema and implementation never drift apart.
     """
 
     species_list:       list[str]
-    alignment:          str
-    alignment_url:      str
     similarity_scores:  list[SimilarityEdge]
     species_groups:     list[SpeciesGroup]
-    similarity_network: dict[str, list[dict[str, Any]]]
-
+    similarity_network: dict[str, Any]
 
 @dataclass
 class PhylogeneticResult:
