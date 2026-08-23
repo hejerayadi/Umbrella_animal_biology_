@@ -15,6 +15,7 @@ import {
   imageUrlFor,
   parseExecutionHistory,
   biodiversityMapFrom,
+  genomeChartFrom,
   proteinViewerFrom,
   recognitionFrom,
   type UploadedImage,
@@ -182,6 +183,10 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 ...(() => {
                   const map = biodiversityMapFrom(response.context);
                   return map ? { biodiversityMap: map } : {};
+                })(),
+                ...(() => {
+                  const chart = genomeChartFrom(response.context);
+                  return chart ? { genomeChart: chart } : {};
                 })(),
               },
             ],

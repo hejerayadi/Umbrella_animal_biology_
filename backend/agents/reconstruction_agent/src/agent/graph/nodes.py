@@ -12,6 +12,7 @@ reasons over).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from dataclasses import dataclass, replace
 from typing import Any, cast
@@ -49,6 +50,26 @@ _log = get_logger(__name__)
 #: before being abandoned. Two attempts, not more: a third rarely differs and
 #: every attempt is charged to the budget.
 _MAX_ATTEMPTS_PER_TOOL = 2
+
+
+def _request_fingerprint(payload: object) -> str | None:
+    """A stable digest of what a submit-and-poll tool was asked to do.
+
+    Pairs with `pending_jobs` so a remote job is only ever resumed for the
+    request that created it. `job_id` itself is excluded: it is the one field
+    that legitimately differs between the submission and the resume, and
+    including it would mean no stored job ever matched.
+
+    None for a payload with no `job_id` field at all - that tool has no remote
+    job to resume, so there is nothing to fingerprint.
+    """
+    if not hasattr(payload, "job_id"):
+        return None
+    try:
+        serialised = payload.model_dump_json(exclude={"job_id"})
+    except AttributeError:
+        return None
+    return hashlib.sha256(serialised.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(slots=True)
@@ -248,6 +269,8 @@ class ReconstructionNodes:
             return_exceptions=True,
         )
 
+        # Every key a node may return has to be named here AND handled in the
+        # loop below: anything unlisted is dropped on the floor, silently.
         merged: dict[str, Any] = {
             "references": {},
             "alignments": {},
@@ -255,6 +278,7 @@ class ReconstructionNodes:
             "errors": [],
             "observations": [],
             "attempts": {},
+            "pending_jobs": {},
         }
         for result in results:
             if isinstance(result, BaseException):
@@ -266,7 +290,7 @@ class ReconstructionNodes:
                     # BLAST measuring homology, NCBI supplying residues. A
                     # plain overwrite kept whichever finished last.
                     merged[key] = accumulate_references(merged[key], value)
-                elif key in ("alignments", "attempts"):
+                elif key in ("alignments", "attempts", "pending_jobs"):
                     merged[key].update(value)
                 elif key in ("tool_calls", "errors", "observations"):
                     merged[key].extend(value)
@@ -299,6 +323,12 @@ class ReconstructionNodes:
 
         update: dict[str, Any] = {
             "attempts": {key: attempt},
+            # A call that actually returned - with hits or with nothing - has
+            # no job left to resume. Cleared here rather than only on success,
+            # because a semantic failure is retried with relaxed parameters and
+            # must run a NEW search: resuming the old job would hand the
+            # relaxed attempt the strict attempt's results.
+            "pending_jobs": {key: None},
             "tool_calls": [
                 {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": True}
             ],
@@ -338,10 +368,25 @@ class ReconstructionNodes:
             `attempts` is deliberately left untouched - the next slice must be
             free to make the same call again as a first attempt, rather than
             inheriting a relaxed retry it never earned.
+
+            "The same call again" no longer means "from scratch", though. A
+            submit-and-poll tool writes its remote job id onto the payload as
+            soon as it has one, so when there is one to keep it is carried into
+            `pending_jobs` and the next slice resumes that job instead of
+            paying the submission cost twice. Measured: an EBI BLAST job takes
+            ~205 s and a slice grants at most 75 s, so without this no run of
+            four slices could ever complete a single search.
             """
             detail = f"aborted after {remaining:.0f}s: the slice ran out of wall clock"
             self.events.emit(EventType.TOOL_FAILED, run_id, detail, {"tool": invocation.tool})
+            resumable = getattr(invocation.payload, "job_id", None)
+            keep = (
+                f"{_request_fingerprint(invocation.payload)}:{resumable}"
+                if resumable
+                else None
+            )
             return {
+                "pending_jobs": {key: keep} if keep else {},
                 "tool_calls": [
                     {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": False}
                 ],
@@ -360,6 +405,24 @@ class ReconstructionNodes:
                     )
                 ],
             }
+
+        # A job an earlier slice submitted and did not live long enough to
+        # collect. Handing the id back turns this call into a poll of work
+        # already in flight rather than a fresh submission.
+        #
+        # Only when the request is byte-identical, which is what the
+        # fingerprint checks. A deadline abort leaves attempts untouched, so
+        # the next slice may re-plan the same (tool, gap) with DIFFERENT
+        # inputs - a widened BLAST query, or an alignment over a reference set
+        # that grew since. Resuming then would hand back an answer computed
+        # from the old inputs while the payload says otherwise, which is worse
+        # than paying for the search again: it is wrong rather than slow.
+        fingerprint = _request_fingerprint(invocation.payload)
+        pending = (state.get("pending_jobs") or {}).get(key)
+        if pending and fingerprint is not None:
+            stored_fingerprint, _, stored_job = pending.partition(":")
+            if stored_fingerprint == fingerprint and stored_job:
+                invocation.payload.job_id = stored_job
 
         # Whatever is left of this slice is all this call may take. Zero means
         # the slice is already over, so the call is not started at all.

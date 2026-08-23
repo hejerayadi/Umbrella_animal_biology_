@@ -82,9 +82,57 @@ _AGENT_ENV: dict[str, dict[str, str]] = {
 }
 
 
+def _agent_dotenv(agent_name: str) -> dict[str, str]:
+    """The variables in one agent's own `.env`, or an empty dict if it has none.
+
+    Most agents load their `.env` themselves, somewhere in the import chain that
+    builds their LLM client. Not all do: the Multimodal Recognition Agent reads
+    `os.environ` and nothing else on purpose - `config.py` says so, so that no
+    credential is ever read or cached by that module - and it leaves populating
+    the environment to whoever starts the service. That is this launcher, and
+    until this function existed nobody did it: the agent's `remote`/`real`/
+    `azure` settings were never seen, every provider fell back to its mock
+    default, and the UI labelled real requests "Demonstration data".
+
+    Deliberately NOT fixed inside that agent's `api.py`: four of its test modules
+    import `api.py`, and its suite asserts that no offline test ever loads a
+    `.env`. Loading one there would put live Azure credentials into the pytest
+    process and turn a credential-leak test green for the wrong reason.
+
+    `dotenv_values` parses the file without touching this process's environment,
+    so the launcher itself stays clean and only the child sees these values.
+    """
+    env_file = _AGENTS_DIR / _AGENT_FOLDERS[agent_name] / ".env"
+    if not env_file.is_file():
+        return {}
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        # Loudly, not silently: an agent configured for real providers that
+        # starts on its mocks looks like it is working, which is the worse
+        # failure. Nothing here prints a value - only the path.
+        print(
+            f"  ! {agent_name}: {env_file} exists but python-dotenv is not "
+            f"installed in {sys.executable}, so it will start on its defaults. "
+            f"Install python-dotenv to have it read.",
+            file=sys.stderr,
+        )
+        return {}
+    return {key: value for key, value in dotenv_values(env_file).items() if value is not None}
+
+
 def _agent_environment(agent_name: str) -> dict[str, str]:
-    """The environment for one agent: this process's, plus its own defaults."""
+    """The environment for one agent: this process's, its `.env`, its defaults.
+
+    Precedence, strongest first: anything exported in the shell, then the
+    agent's own `.env`, then the launcher's per-agent defaults below. The shell
+    keeping the last word is the contract `_AGENT_ENV` already stated; an
+    agent's `.env` outranking a launcher default is the same idea one level
+    down - explicit per-agent configuration beats a blanket nudge.
+    """
     environment = dict(os.environ)
+    for key, value in _agent_dotenv(agent_name).items():
+        environment.setdefault(key, value)
     for key, value in _AGENT_ENV.get(agent_name, {}).items():
         environment.setdefault(key, value)
     return environment

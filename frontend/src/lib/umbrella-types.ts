@@ -199,6 +199,34 @@ export interface BiodiversityMapSpec {
   isIllustrative: boolean;
 }
 
+/** One species' bar in a genome-size comparison chart. */
+export interface GenomeComparison {
+  scientificName?: string | null;
+  commonName?: string | null;
+  genomeSizeBp?: number | null;
+  assemblyId?: string | null;
+}
+
+export interface GenomeChartSpec {
+  /** Raw SVG markup, rendered as an image so it cannot execute anything. */
+  svg: string;
+  speciesName?: string | null;
+  assemblyId?: string | null;
+  genomeSizeBp?: number | null;
+  chromosomeCount?: number | null;
+  /**
+   * "Chromosome", "Scaffold", "Contig"... Carried because it qualifies
+   * `chromosomeCount`: a scaffold-level assembly reports the chromosomes it
+   * managed to assemble, not the species' karyotype, and the polar bear's
+   * "2" means the former. Shown next to the count so it cannot be read as
+   * the latter.
+   */
+  assemblyLevel?: string | null;
+  comparisons: GenomeComparison[];
+  /** The agent's own caveat about this chart, when it set one. */
+  note?: string | null;
+}
+
 export type MessageSender = "user" | "assistant";
 
 export interface Message {
@@ -245,6 +273,13 @@ export interface Message {
    * the iframe when the panel mounts, and never persisted with the message.
    */
   biodiversityMap?: BiodiversityMapSpec;
+  /**
+   * The chart the Genome Agent rendered for this answer, when it ran.
+   * The SVG travels inline because it is small (~1.4 KB for a size
+   * comparison, ~9.5 KB for a chromosome map) - unlike the biodiversity map,
+   * which is a 700 KB document fetched from the agent by URL.
+   */
+  genomeChart?: GenomeChartSpec;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

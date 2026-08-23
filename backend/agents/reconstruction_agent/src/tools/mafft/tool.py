@@ -38,7 +38,14 @@ class MafftAlignmentTool(Tool[AlignmentInput, AlignmentOutput]):
 
         try:
             fasta = build_fasta(payload.target_id, payload.target_sequence, payload.references)
-            job_id = await self._client.submit(fasta)
+            job_id = payload.job_id
+            if job_id:
+                _log.info("mafft_resuming_job", job_id=job_id, gap_id=payload.gap_id)
+            else:
+                job_id = await self._client.submit(fasta)
+                # Published before the poll, which is the call that gets
+                # cancelled at the slice deadline. See `AlignmentInput.job_id`.
+                payload.job_id = job_id
             aligned = await self._client.result(job_id)
 
             alignment = to_alignment(
