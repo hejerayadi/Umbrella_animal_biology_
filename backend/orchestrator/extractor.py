@@ -129,6 +129,55 @@ def _looks_like_residues(text: str) -> bool:
     return core / len(upper) >= _MIN_CORE_SHARE
 
 
+def _merge_wrapped_runs(user_query: str) -> list[str]:
+    """Residue runs, with ones separated only by whitespace joined back together.
+
+    `_SEQUENCE_RUN` matches whitespace-free runs, and `_find_sequence` returned
+    the FIRST one. A sequence pasted out of a viewer, an email or a wrapped
+    terminal carries whitespace inside it, so one stray space split it in two
+    and everything after that space was dropped - silently, with nothing in the
+    result to say so. Measured: a real 293-base paste with a single space after
+    base 58 came back as 58 bases, and since the run of Ns sat in the discarded
+    remainder, Reconstruction was handed a fragment with nothing to repair and
+    correctly reported that there was nothing to do.
+
+    Two guards keep this from over-reaching:
+
+    * a blank line ends a span, because that is what separates one pasted
+      record from the next, and merging two sequences would be a worse failure
+      than truncating one;
+    * every piece has to look like residues on its own. The IUPAC alphabet
+      spells real words - "AND" is three of its letters - and checking only the
+      joined result would not catch that, since one stray letter cannot move
+      the core-base share of several hundred bases below the threshold.
+    """
+    spans: list[str] = []
+    current: list[str] = []
+    position = 0
+
+    for match in re.finditer(rf"[{_IUPAC_NUCLEOTIDES}]+", user_query, re.IGNORECASE):
+        gap = user_query[position:match.start()]
+        piece = match.group(0)
+        position = match.end()
+
+        # A gap that is not pure whitespace, or that contains a blank line,
+        # ends whatever span was being collected.
+        breaks_span = bool(current) and (gap.strip() != "" or len(gap.splitlines()) >= 2)
+        if breaks_span:
+            spans.append("".join(current))
+            current = []
+
+        if _looks_like_residues(piece):
+            current.append(piece)
+        elif current:
+            spans.append("".join(current))
+            current = []
+
+    if current:
+        spans.append("".join(current))
+    return spans
+
+
 def _find_sequence(user_query: str) -> str | None:
     """The nucleotide sequence pasted into the message, if there is one.
 
@@ -157,9 +206,9 @@ def _find_sequence(user_query: str) -> str | None:
         if len(joined) >= 20:
             return joined
 
-    for match in _SEQUENCE_RUN.finditer(user_query):
-        candidate = match.group(0).upper()
-        if _looks_like_residues(candidate):
+    for span in _merge_wrapped_runs(user_query):
+        candidate = span.upper()
+        if len(candidate) >= 20 and _looks_like_residues(candidate):
             return candidate
 
     return None

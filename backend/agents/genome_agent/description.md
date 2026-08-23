@@ -10,10 +10,16 @@ Retrieve, explain, and visualize genomic information about animal species.
 - Support researchers exploring animal genomics through clear, concise answers.
 
 ## Example Questions
-- Show me the genome of the woolly mammoth.
+- Show me the genome of the tiger.
 - What is the genome size of the tiger?
 - How many chromosomes does the Asian elephant have?
 - Show gene annotations for the polar bear.
+
+An example here must name a species that actually has an NCBI genome assembly.
+"Show me the genome of the woolly mammoth" headed this list until it was found
+to be impossible: *Mammuthus primigenius* is in NCBI's taxonomy (taxid 37349)
+but has zero assemblies, so the agent correctly refuses it. Extinct species are
+the usual trap - being in the taxonomy says nothing about a genome existing.
 
 ## Two agent cards, and why
 

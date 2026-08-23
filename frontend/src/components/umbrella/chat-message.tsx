@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { BiodiversityMap } from "@/components/umbrella/biodiversity-map";
+import { GenomeChart } from "@/components/umbrella/genome-chart";
 import { Markdown } from "@/components/umbrella/markdown";
 import { UmbrellaMark } from "@/components/umbrella/logo";
 import { ProteinViewer } from "@/components/umbrella/protein-viewer";
@@ -78,7 +79,7 @@ export function ChatMessage({
               </a>
             )}
             {message.content && (
-              <div className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-[0.95rem] leading-7 text-primary-foreground">
+              <div className="wrap-anywhere rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-[0.95rem] leading-7 text-primary-foreground">
                 {message.content}
               </div>
             )}
@@ -118,6 +119,10 @@ export function ChatMessage({
             {/* Held back like the panels above: the frame pulls a ~700 KB
                 document, and starting that download while the text is still
                 reflowing on every tick just makes both feel slower. */}
+            {/* Inline SVG, so there is nothing to fetch - but it is still
+                held until the text settles, so the answer does not reflow
+                around a chart appearing mid-sentence. */}
+            {message.genomeChart && done && <GenomeChart spec={message.genomeChart} />}
             {message.biodiversityMap && done && (
               <BiodiversityMap spec={message.biodiversityMap} />
             )}

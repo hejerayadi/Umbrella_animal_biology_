@@ -24,14 +24,36 @@ class BlastSearchInput(ToolInput):
     )
     # EMBL-EBI partitions ENA by division and molecule type - there is no
     # single "em_rel" catch-all, and passing one is rejected as an invalid
-    # parameter. Vertebrate coding sequence is the right default for an animal
-    # genomics agent; `GET /ncbiblast/parameterdetails/database` lists the rest.
-    database: str = Field(default="em_cds_std_vrt", description="EMBL-EBI database code.")
+    # parameter. `GET /ncbiblast/parameterdetails/database` lists them.
+    #
+    # `em_std_vrt` ("ENA Sequence Standard Vertebrate") rather than
+    # `em_cds_std_vrt` ("ENA Coding Standard Vertebrate"), which was the
+    # default and searched coding sequence only. A mitochondrial gene gap is
+    # inside a CDS and matched fine; a gap in a nuclear scaffold - which is
+    # what the Genome agent hands over, and what most real assemblies need -
+    # is usually intronic or intergenic and could never match a coding-only
+    # database, so those runs came back with no evidence whatever the query.
+    database: str = Field(default="em_std_vrt", description="EMBL-EBI database code.")
     program: str = "blastn"
     max_hits: int = Field(default=50, ge=1, le=1000)
     # 1e-5 is strict enough to exclude chance similarity over a few hundred
     # bases while still admitting genuinely divergent homologues.
     expect: float = 1e-5
+    # An EMBL-EBI job already submitted for this same search, to be polled
+    # instead of submitted again.
+    #
+    # This field travels in BOTH directions, which is unusual for a tool input
+    # and is the point. An EBI BLAST job takes ~205 s (measured); one slice
+    # grants at most 75 s. The tool therefore writes the id here the moment
+    # `submit` returns, BEFORE the long poll it is going to be cancelled in -
+    # so when `asyncio.wait_for` kills the call, the caller still holds the
+    # payload and can read the id off it. The next slice passes it back and the
+    # tool resumes polling the same job. Without this the id died with the
+    # cancelled coroutine, every slice resubmitted from zero, and four slices
+    # of 70 s could never finish one 205 s job.
+    job_id: str | None = Field(
+        default=None, description="Resume this EMBL-EBI job instead of submitting a new one."
+    )
 
 
 class BlastHit(ToolOutput):

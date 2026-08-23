@@ -6,7 +6,7 @@ never has to know a tool's input schema.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from agent.planning.planner import PlanStep
@@ -15,6 +15,8 @@ from configuration.logging import get_logger
 from domain.models import GapContext, Reference
 from domain.policies.reference_quality import ReferenceQualityPolicy
 from domain.services import ReferenceRanker
+from domain.services.alignment_window import window_residues
+from domain.services.organism_affinity import organism_affinity
 from tools.blast.schemas import BlastSearchInput
 from tools.evo.schemas import EvolutionaryContextInput, PlausibilityInput
 from tools.mafft.schemas import AlignmentInput
@@ -194,6 +196,7 @@ class ToolSelector:
                 detail="Every reference stops short of the gap; alignment cannot fill it.",
             )
 
+        candidates = self._with_organism_affinity(candidates, state.get("organism"))
         usable = self._ranker.rank(candidates, limit=_MAX_ALIGNMENT_REFERENCES)
 
         if relaxed:
@@ -223,11 +226,106 @@ class ToolSelector:
                 gap_id=context.identifier,
                 target_sequence=context.query_sequence(),
                 left_flank_length=len(context.left_flank),
-                references={
-                    reference.accession: reference.residues or "" for reference in usable
-                },
+                references=self._alignment_references(usable, context),
             ),
         )
+
+    def _with_organism_affinity(
+        self, references: list[Reference], target: str | None
+    ) -> list[Reference]:
+        """Fill in relatedness from the organism names when nothing measured it.
+
+        `ReferenceRanker` weights relatedness at 0.3, but its only writer is
+        `evolutionary_context`, which in practice returns no usable evidence -
+        so the weight was multiplying zero for every reference and the ranking
+        ran on identity and coverage alone. A cross-species hit that aligned
+        marginally better than a conspecific one therefore won, and on a human
+        mtDNA gap the consensus drifted onto the mammalian sequence: 19 of 21
+        bases, reported at 0.82 confidence.
+
+        A measured relatedness is a real phylogenetic distance and is never
+        overwritten here; this only fills the gap where there is none. When the
+        organism is unknown on either side, `organism_affinity` returns None and
+        the reference is passed through untouched - the ranking is then exactly
+        what it was.
+        """
+        if not target:
+            return references
+
+        adjusted: list[Reference] = []
+        boosted = 0
+        for reference in references:
+            if reference.relatedness is not None:
+                adjusted.append(reference)
+                continue
+            affinity = organism_affinity(target, reference.organism)
+            if affinity is None:
+                adjusted.append(reference)
+                continue
+            boosted += 1
+            adjusted.append(replace(reference, relatedness=affinity))
+
+        if boosted:
+            _log.info(
+                "organism_affinity_applied",
+                target_organism=target,
+                references_scored=boosted,
+                total=len(references),
+            )
+        return adjusted
+
+    def _alignment_references(
+        self, usable: list[Reference], context: GapContext
+    ) -> dict[str, str]:
+        """Residues for each reference, cut to the region worth aligning.
+
+        A BLAST-derived reference arrives already short - the tool fetches only
+        the subject span of its hit - but an `ncbi_search` record is the whole
+        published sequence, ~16,000 bases for a mitogenome. MAFFT is a polled
+        job with roughly 75 seconds of slice to finish in, and a 400-base target
+        against several whole genomes does not: it is killed on every slice the
+        run is granted, which reads downstream as "no usable reference evidence"
+        even though the evidence was there. Measured on one prompt: 8.9 s when
+        the planner opened with BLAST, never finishing when it opened with
+        `ncbi_search`.
+
+        Only the region homologous to the flanks can say anything about what
+        lies between them, so the discarded sequence costs no information - as
+        long as the window is genuinely on that region. `locate_window` refuses
+        to guess: a reference it cannot anchor is passed through whole and left
+        slow rather than being cut at an arbitrary offset, which would align the
+        target against unrelated sequence and produce a confident wrong fill.
+        """
+        references: dict[str, str] = {}
+        trimmed = 0
+        for reference in usable:
+            residues = reference.residues or ""
+            windowed, anchor = window_residues(
+                residues,
+                metadata=reference.metadata,
+                left_flank=context.left_flank,
+                right_flank=context.right_flank,
+            )
+            if anchor != "none":
+                trimmed += 1
+                _log.info(
+                    "alignment_reference_windowed",
+                    gap_id=context.identifier,
+                    accession=reference.accession,
+                    anchor=anchor,
+                    original_length=len(residues),
+                    windowed_length=len(windowed),
+                )
+            references[reference.accession] = windowed
+
+        if trimmed:
+            _log.info(
+                "alignment_references_windowed",
+                gap_id=context.identifier,
+                windowed=trimmed,
+                total=len(usable),
+            )
+        return references
 
     def _ncbi(
         self,

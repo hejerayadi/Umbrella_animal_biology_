@@ -4,6 +4,8 @@ import type {
   BiodiversityMapSpec,
   BiodiversityMapStat,
   BiodiversitySkill,
+  GenomeChartSpec,
+  GenomeComparison,
   ProteinDomain,
   ProteinSelection,
   ProteinViewerSpec,
@@ -465,5 +467,65 @@ export function biodiversityMapFrom(
     stats: statsFrom(skill, findings, report),
     sourceAgents,
     isIllustrative: sourceAgents.some((agent) => PLACEHOLDER_AGENTS.includes(agent)),
+  };
+}
+
+/**
+ * The context keys the Genome Agent publishes, per its card.json. Like every
+ * other agent, its `output` is merged straight into the shared context.
+ */
+const GENOME_VISUALIZATION_KEY = "visualization";
+const GENOME_METADATA_KEY = "genome_metadata";
+const GENOME_SPECIES_KEY = "species_record";
+
+function comparisonsFrom(value: unknown): GenomeComparison[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((row) => ({
+    scientificName: asString(row.scientific_name),
+    commonName: asString(row.common_name),
+    genomeSizeBp: asNumber(row.genome_size_bp),
+    assemblyId: asString(row.assembly_id),
+  }));
+}
+
+/**
+ * Reads the Genome Agent's rendered chart out of a chat response's context.
+ *
+ * Returns undefined unless there is actual SVG to show. The agent reports a
+ * `visualization` object on several paths that carry no picture at all - a
+ * `protein_structure` request becomes a NEEDS_AGENT handoff, and a species
+ * with no gene table completes with `chart_data: null` - so the presence of
+ * the key says nothing about whether there is anything to render.
+ */
+export function genomeChartFrom(
+  context: Record<string, unknown>,
+): GenomeChartSpec | undefined {
+  const visualization = context[GENOME_VISUALIZATION_KEY];
+  if (!isRecord(visualization)) return undefined;
+
+  const svg = asString(visualization.chart_svg);
+  // Guard the shape as well as the presence: this is rendered into an <img>
+  // data URI, and anything that is not really an SVG document would show as a
+  // broken image rather than fail loudly.
+  if (!svg || !svg.trimStart().startsWith("<svg")) return undefined;
+
+  const metadata = isRecord(context[GENOME_METADATA_KEY])
+    ? (context[GENOME_METADATA_KEY] as Record<string, unknown>)
+    : {};
+  const species = isRecord(context[GENOME_SPECIES_KEY])
+    ? (context[GENOME_SPECIES_KEY] as Record<string, unknown>)
+    : {};
+
+  return {
+    svg,
+    // `common_name` currently repeats the combined "Scientific (common)"
+    // string, so preferring the scientific name avoids showing it twice.
+    speciesName: asString(species.scientific_name) ?? asString(species.common_name),
+    assemblyId: asString(context.assembly_id) ?? asString(species.assembly_id),
+    genomeSizeBp: asNumber(metadata.genome_size_bp),
+    chromosomeCount: asNumber(metadata.chromosome_count),
+    assemblyLevel: asString(metadata.assembly_level),
+    comparisons: comparisonsFrom(visualization.comparisons),
+    note: asString(visualization.note),
   };
 }

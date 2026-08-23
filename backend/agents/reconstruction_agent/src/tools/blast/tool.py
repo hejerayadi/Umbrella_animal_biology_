@@ -59,13 +59,24 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
 
     async def run(self, payload: BlastSearchInput) -> BlastSearchOutput:
         try:
-            job_id = await self._client.submit(
-                payload.sequence,
-                database=payload.database,
-                program=payload.program,
-                max_hits=payload.max_hits,
-                expect=payload.expect,
-            )
+            job_id = payload.job_id
+            if job_id:
+                # Resuming a job an earlier slice submitted and ran out of
+                # wall clock waiting for. EBI keeps results for days, so the
+                # work already done is still there to collect.
+                _log.info("blast_resuming_job", job_id=job_id)
+            else:
+                job_id = await self._client.submit(
+                    payload.sequence,
+                    database=payload.database,
+                    program=payload.program,
+                    max_hits=payload.max_hits,
+                    expect=payload.expect,
+                )
+                # Published before the poll, not after: the poll is what gets
+                # cancelled at the slice deadline, and an id recorded after it
+                # would never be recorded at all. See `BlastSearchInput.job_id`.
+                payload.job_id = job_id
             raw = await self._client.result(job_id)
             references, pending = to_references(
                 raw,

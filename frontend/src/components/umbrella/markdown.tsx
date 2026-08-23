@@ -27,7 +27,7 @@ export function Markdown({ content }: { content: string }) {
             if (!isBlock) {
               return (
                 <code
-                  className="rounded bg-muted px-1.5 py-0.5 font-[family-name:var(--font-mono-custom)] text-[0.85em]"
+                  className="wrap-anywhere rounded bg-muted px-1.5 py-0.5 font-[family-name:var(--font-mono-custom)] text-[0.85em]"
                   {...rest}
                 >
                   {children}

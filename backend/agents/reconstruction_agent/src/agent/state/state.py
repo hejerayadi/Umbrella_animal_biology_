@@ -100,6 +100,12 @@ class ReconstructionState(TypedDict, total=False):
     budget_llm_tokens: int
     #: Set when the slice ran out of wall clock. Becomes a CONTINUE.
     yielded: bool
+    #: EMBL-EBI job ids for calls a slice deadline cut short, keyed the same
+    #: way as `attempts`. A BLAST job takes far longer than one slice grants,
+    #: so the next slice polls the job already running instead of paying for a
+    #: new one; without this the work of every slice was thrown away and the
+    #: run could never finish. Cleared as soon as a call returns.
+    pending_jobs: Annotated[dict[str, str], merge_by_gap]
 
     # --- Outcome -----------------------------------------------------------
     warnings: Annotated[list[str], operator.add]
@@ -159,6 +165,7 @@ def initial_state(
         budget_tool_calls_by_name={},
         budget_llm_tokens=0,
         yielded=False,
+        pending_jobs={},
         warnings=[],
         errors=[],
         needs_agent=None,
