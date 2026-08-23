@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Writing Support – Literature Agent Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #ffffff;
+    color: #1a1a2e;
+    padding: 32px;
+  }
+
+  /* ── Page header ── */
+  .page-title {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .page-title h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1a2e;
+    letter-spacing: 0.5px;
+  }
+  .page-title p {
+    font-size: 13px;
+    color: #6b7280;
+    margin-top: 6px;
+  }
+
+  /* ── Three-column layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 260px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* ── Section card ── */
+  .section-card {
+    border-radius: 12px;
+    border: 1.5px solid #e5e7eb;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .section-header {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-header.blue   { background: #2563eb; }
+  .section-header.indigo { background: #4f46e5; }
+  .section-header.teal   { background: #0d9488; }
+
+  .section-body { padding: 14px 14px 18px; }
+
+  /* ── Sub-group inside a section ── */
+  .sub-group {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    background: #f8fafc;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .sub-group:last-child { margin-bottom: 0; }
+  .sub-group-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #6b7280;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 5px;
+  }
+
+  /* ── Chip / pill ── */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 11px;
+    color: #1e40af;
+    margin: 3px 2px;
+    font-weight: 500;
+  }
+  .chip.green  { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+  .chip.purple { background:#faf5ff; border-color:#d8b4fe; color:#6b21a8; }
+  .chip.teal   { background:#f0fdfa; border-color:#99f6e4; color:#115e59; }
+  .chip.gray   { background:#f9fafb; border-color:#d1d5db; color:#374151; }
+  .chip.amber  { background:#fffbeb; border-color:#fcd34d; color:#92400e; }
+
+  /* ── Metadata tag list ── */
+  .meta-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .meta-tag {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    color: #475569;
+  }
+
+  /* small label */
+  .label {
+    font-size: 10.5px;
+    color: #6b7280;
+    margin: 5px 0 3px;
+    font-weight: 500;
+  }
+
+  /* ── Central pipeline ── */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .pipeline-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #1a1a2e;
+    margin-bottom: 16px;
+    text-align: center;
+    padding: 6px 20px;
+    border-bottom: 2px solid #2563eb;
+  }
+
+  /* Step box */
+  .step {
+    width: 100%;
+    border-radius: 10px;
+    border: 1.5px solid #e5e7eb;
+    background: #ffffff;
+    padding: 12px 16px;
+    position: relative;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .step.highlight { border-color: #2563eb; background: #eff6ff; }
+  .step.highlight-indigo { border-color: #4f46e5; background: #f5f3ff; }
+  .step.highlight-teal { border-color: #0d9488; background: #f0fdfa; }
+
+  .step-icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  .step-icon.blue   { background: #dbeafe; }
+  .step-icon.indigo { background: #ede9fe; }
+  .step-icon.teal   { background: #ccfbf1; }
+  .step-icon.green  { background: #dcfce7; }
+  .step-icon.amber  { background: #fef3c7; }
+  .step-icon.gray   { background: #f3f4f6; }
+
+  .step-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  .step-sub {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 3px;
+  }
+  .step-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 7px;
+  }
+  .step-tag {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .step-tag.blue   { background:#dbeafe; color:#1e40af; }
+  .step-tag.indigo { background:#ede9fe; color:#4338ca; }
+  .step-tag.green  { background:#dcfce7; color:#166534; }
+  .step-tag.teal   { background:#ccfbf1; color:#0f766e; }
+  .step-tag.gray   { background:#f3f4f6; color:#374151; }
+
+  /* Arrow between steps */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    padding: 4px 0;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 18px;
+    background: #94a3b8;
+  }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #94a3b8;
+  }
+  .arrow-label {
+    font-size: 9.5px;
+    color: #94a3b8;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin: 2px 0;
+  }
+
+  /* Branch box */
+  .branch-box {
+    width: 100%;
+    border-radius: 10px;
+    border: 1.5px dashed #d1d5db;
+    background: #f9fafb;
+    padding: 10px 14px;
+  }
+  .branch-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #6b7280;
+    margin-bottom: 8px;
+  }
+  .branch-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .branch-item {
+    border-radius: 7px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    padding: 8px 10px;
+  }
+  .branch-item-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  .branch-item-sub {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+
+  /* Sprint badge */
+  .sprint-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+    justify-content: center;
+  }
+  .sprint-badge {
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .sprint-badge.done   { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+  .sprint-badge.active { background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; }
+
+  /* footer */
+  .footer {
+    margin-top: 36px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+  }
+  .footer-card {
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    padding: 12px;
+    background: #f8fafc;
+  }
+  .footer-card-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #374151;
+    margin-bottom: 8px;
+  }
+  .footer-item {
+    font-size: 11px;
+    color: #4b5563;
+    padding: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+  .dot.blue   { background:#2563eb; }
+  .dot.green  { background:#16a34a; }
+  .dot.indigo { background:#4f46e5; }
+  .dot.teal   { background:#0d9488; }
+  .dot.amber  { background:#d97706; }
+</style>
+</head>
+<body>
+
+<!-- PAGE HEADER -->
+<div class="page-title">
+  <h1>Writing Support — Literature Agent Architecture</h1>
+  <p>Sprint 3 · Umbrella Animal Biology Platform · Scientific Writing Pipeline</p>
+</div>
+
+<!-- THREE-COLUMN LAYOUT -->
+<div class="layout">
+
+  <!-- ════════════ LEFT COLUMN – LLM / AI Models ════════════ -->
+  <div>
+    <div class="section-card">
+      <div class="section-header blue">
+        <span>🤖</span> LLM / AI Models
+      </div>
+      <div class="section-body">
+
+        <!-- Azure OpenAI -->
+        <div class="sub-group">
+          <div class="sub-group-title">Azure OpenAI (Primary LLM)</div>
+          <div class="chip">⚙️ Configurable deployment</div>
+          <div class="label">Roles</div>
+          <div class="chip green">WRITING – text drafting</div>
+          <div class="chip green">ROUTER – request classification</div>
+          <div class="label">Capabilities</div>
+          <div class="chip">🔧 Tool / function calling</div>
+          <div class="chip">📝 Query interpretation</div>
+          <div class="chip">🔀 Route selection</div>
+          <div class="chip">✍️ Response generation</div>
+          <div class="label">Token limits</div>
+          <div class="chip gray">Draft: 2 000 tokens</div>
+          <div class="chip gray">Routing: 256 tokens</div>
+          <div class="chip gray">Max tool rounds: 4</div>
+        </div>
+
+        <!-- Embedding -->
+        <div class="sub-group">
+          <div class="sub-group-title">Embedding Model</div>
+          <div class="chip purple">sentence-transformers<br>all-MiniLM-L6-v2</div>
+          <div class="label">Used for</div>
+          <div class="chip teal">🔍 Semantic vector search</div>
+          <div class="chip gray">384-dim · Cosine similarity</div>
+          <div class="chip gray">via Azure OpenAI endpoint</div>
+        </div>
+
+        <!-- Grammar -->
+        <div class="sub-group">
+          <div class="sub-group-title">Post-Processing</div>
+          <div class="chip amber">📖 LanguageTool</div>
+          <div class="label">Rules</div>
+          <div class="chip gray">Grammar correction</div>
+          <div class="chip gray">Scientific name protection</div>
+          <div class="chip gray">Regex: Panthera tigris…</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ CENTRE – Pipeline ════════════ -->
+  <div class="pipeline">
+    <div class="pipeline-title">Central Workflow – Writing Support</div>
+
+    <!-- Step 1: User Request -->
+    <div class="step highlight">
+      <div class="step-icon blue">👤</div>
+      <div class="step-name">User Request</div>
+      <div class="step-sub">Instruction + optional context (discovered papers)</div>
+      <div class="step-tags">
+        <span class="step-tag blue">AgentRequest</span>
+        <span class="step-tag gray">instruction · context</span>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 2: Literature Orchestrator -->
+    <div class="step">
+      <div class="step-icon blue">🔀</div>
+      <div class="step-name">LiteratureOrchestrator</div>
+      <div class="step-sub">LangGraph – top-level routing</div>
+      <div class="step-tags">
+        <span class="step-tag blue">discovery</span>
+        <span class="step-tag indigo">writing</span>
+        <span class="step-tag green">both_sequential</span>
+        <span class="step-tag teal">both_parallel</span>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 3: ScientificWritingOrchestrator -->
+    <div class="step highlight-indigo">
+      <div class="step-icon indigo">🧠</div>
+      <div class="step-name">ScientificWritingOrchestrator</div>
+      <div class="step-sub">LangGraph – inner writing routing</div>
+      <div class="step-tags">
+        <span class="step-tag indigo">classify → writing / publication / both</span>
+      </div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">BRANCH</div>
+      <div class="arrow-head"></div>
+    </div>
+
+    <!-- Branch -->
+    <div class="branch-box">
+      <div class="branch-title">Agent Routing (LLM-classified)</div>
+      <div class="branch-grid">
+        <div class="branch-item">
+          <div class="step-icon blue" style="width:22px;height:22px;font-size:11px;margin-bottom:4px;">✍️</div>
+          <div class="branch-item-name">WritingSupport<br>Agent</div>
+          <div class="branch-item-sub">Draft: abstract, intro, section…</div>
+        </div>
+        <div class="branch-item">
+          <div class="step-icon green" style="width:22px;height:22px;font-size:11px;margin-bottom:4px;">📚</div>
+          <div class="branch-item-name">Publication<br>SupportAgent</div>
+          <div class="branch-item-sub">Recommend journals / venues</div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 4: Tool calling -->
+    <div class="step highlight">
+      <div class="step-icon blue">🔧</div>
+      <div class="step-name">Azure OpenAI – Tool Calling</div>
+      <div class="step-sub">Up to 4 rounds · function calling loop</div>
+      <div class="step-tags">
+        <span class="step-tag blue">get_abstract_examples</span>
+        <span class="step-tag blue">get_related_work_examples</span>
+        <span class="step-tag blue">get_citation_examples</span>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 5: Qdrant Search -->
+    <div class="step highlight-teal">
+      <div class="step-icon teal">🔍</div>
+      <div class="step-name">Qdrant Semantic Search</div>
+      <div class="step-sub">Vector similarity · 384-dim · Cosine</div>
+      <div class="step-tags">
+        <span class="step-tag teal">ghaya_papers_fulltext</span>
+        <span class="step-tag teal">ghaya_related_work</span>
+        <span class="step-tag teal">ghaya_citation_examples</span>
+      </div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">TOP-K EXAMPLES</div>
+      <div class="arrow-head"></div>
+    </div>
+
+    <!-- Step 6: LLM Generation -->
+    <div class="step highlight-indigo">
+      <div class="step-icon indigo">✨</div>
+      <div class="step-name">Azure OpenAI – Response Generation</div>
+      <div class="step-sub">Peer-reviewed style · strict citation rules</div>
+      <div class="step-tags">
+        <span class="step-tag indigo">NEVER invent citations</span>
+        <span class="step-tag indigo">Cite provided refs only</span>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 7: Grammar -->
+    <div class="step">
+      <div class="step-icon amber">📖</div>
+      <div class="step-name">LanguageTool Post-Processing</div>
+      <div class="step-sub">Grammar correction · scientific name guard</div>
+      <div class="step-tags">
+        <span class="step-tag gray">style_corrected flag</span>
+        <span class="step-tag gray">Binomial name regex</span>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 8: Aggregate -->
+    <div class="step">
+      <div class="step-icon green">🔗</div>
+      <div class="step-name">Aggregate Results</div>
+      <div class="step-sub">Merge writing + publication agent outputs</div>
+      <div class="step-tags">
+        <span class="step-tag green">AgentResult</span>
+        <span class="step-tag gray">references · tools_used · status</span>
+      </div>
+    </div>
+    <div class="arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+
+    <!-- Step 9: Output -->
+    <div class="step highlight">
+      <div class="step-icon green">📤</div>
+      <div class="step-name">Final Output → Orchestrator</div>
+      <div class="step-sub">Returned to LiteratureOrchestrator → Main Orchestrator</div>
+      <div class="step-tags">
+        <span class="step-tag blue">draft text</span>
+        <span class="step-tag green">journal recommendations</span>
+        <span class="step-tag gray">metadata</span>
+      </div>
+    </div>
+
+    <!-- Sprint 3 badges -->
+    <div class="sprint-badges">
+      <span class="sprint-badge done">✅ LLM connected</span>
+      <span class="sprint-badge done">✅ Tools implemented</span>
+      <span class="sprint-badge done">✅ RAG pipeline integrated</span>
+      <span class="sprint-badge done">✅ LangGraph orchestration</span>
+      <span class="sprint-badge active">🔵 Sprint 3</span>
+    </div>
+  </div>
+
+  <!-- ════════════ RIGHT COLUMN – Tools & Knowledge Base ════════════ -->
+  <div style="display:flex;flex-direction:column;gap:18px;">
+
+    <!-- Tools & APIs -->
+    <div class="section-card">
+      <div class="section-header indigo">
+        <span>🛠️</span> Tools &amp; APIs
+      </div>
+      <div class="section-body">
+
+        <div class="sub-group">
+          <div class="sub-group-title">Agent Tools (Function Calling)</div>
+          <div class="chip purple">get_abstract_examples</div>
+          <div class="chip gray" style="font-size:10px;margin-left:6px;">→ search_papers(section_type="abstract")</div>
+          <div class="chip purple" style="margin-top:6px;">get_related_work_examples</div>
+          <div class="chip gray" style="font-size:10px;margin-left:6px;">→ search_related_work(query)</div>
+          <div class="chip purple" style="margin-top:6px;">get_citation_examples</div>
+          <div class="chip gray" style="font-size:10px;margin-left:6px;">→ search_citations(intent filter)</div>
+          <div class="label" style="margin-top:8px;">Citation intents</div>
+          <div class="chip teal">Background</div>
+          <div class="chip teal">Method</div>
+          <div class="chip teal">Result Comparison</div>
+        </div>
+
+        <div class="sub-group">
+          <div class="sub-group-title">External Integrations</div>
+          <div class="chip amber">🌐 Azure OpenAI API</div>
+          <div class="chip amber">☁️ Qdrant Cloud</div>
+          <div class="chip gray">📖 LanguageTool (local)</div>
+          <div class="chip gray">🤗 HuggingFace Datasets</div>
+        </div>
+
+        <div class="sub-group">
+          <div class="sub-group-title">Ingestion Sources</div>
+          <div class="chip green">arXiv – biodiversity filtered</div>
+          <div class="chip green">PubMed – biodiversity filtered</div>
+          <div class="chip gray">Multi-XScience – structure</div>
+          <div class="chip gray">SciCite – citation phrasing</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Knowledge Base -->
+    <div class="section-card">
+      <div class="section-header teal">
+        <span>🗄️</span> Knowledge Base – Qdrant Cloud
+      </div>
+      <div class="section-body">
+
+        <div class="sub-group">
+          <div class="sub-group-title">Collection: ghaya_papers_fulltext</div>
+          <div class="chip teal">arXiv + PubMed papers</div>
+          <div class="chip gray">384-dim · Cosine · KEYWORD indexes</div>
+          <div class="label">Filterable</div>
+          <div class="meta-list">
+            <span class="meta-tag">section_type</span>
+            <span class="meta-tag">domain</span>
+          </div>
+          <div class="label">Payload</div>
+          <div class="meta-list">
+            <span class="meta-tag">doc_id</span>
+            <span class="meta-tag">source_dataset</span>
+            <span class="meta-tag">input_text</span>
+            <span class="meta-tag">target_text</span>
+            <span class="meta-tag">n_tokens</span>
+            <span class="meta-tag">chunk_id</span>
+          </div>
+        </div>
+
+        <div class="sub-group">
+          <div class="sub-group-title">Collection: ghaya_related_work</div>
+          <div class="chip teal">Multi-XScience syntheses</div>
+          <div class="chip gray">Structure learning – domain-agnostic</div>
+          <div class="label">Payload</div>
+          <div class="meta-list">
+            <span class="meta-tag">doc_id</span>
+            <span class="meta-tag">section_type: related_work</span>
+            <span class="meta-tag">target_text</span>
+          </div>
+        </div>
+
+        <div class="sub-group">
+          <div class="sub-group-title">Collection: ghaya_citation_examples</div>
+          <div class="chip teal">SciCite phrasing examples</div>
+          <div class="chip gray">384-dim · intent KEYWORD index</div>
+          <div class="label">Filterable</div>
+          <div class="meta-list">
+            <span class="meta-tag">intent</span>
+          </div>
+          <div class="label">Payload</div>
+          <div class="meta-list">
+            <span class="meta-tag">citing_paper_id</span>
+            <span class="meta-tag">cited_paper_id</span>
+            <span class="meta-tag">intent</span>
+            <span class="meta-tag">section_name</span>
+            <span class="meta-tag">context</span>
+          </div>
+        </div>
+
+        <div class="sub-group">
+          <div class="sub-group-title">Common Config (all collections)</div>
+          <div class="chip gray">384-dimensional vectors</div>
+          <div class="chip gray">Cosine distance</div>
+          <div class="chip gray">200 tokens / chunk</div>
+          <div class="chip gray">UUID5 deterministic IDs</div>
+          <div class="chip gray">Batch size: 20</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER – Sprint 3 checklist -->
+<div class="footer">
+
+  <div class="footer-card">
+    <div class="footer-card-title">Agent Framework</div>
+    <div class="footer-item"><span class="dot indigo"></span>LangGraph StateGraph</div>
+    <div class="footer-item"><span class="dot blue"></span>WritingState TypedDict</div>
+    <div class="footer-item"><span class="dot blue"></span>Conditional edges</div>
+    <div class="footer-item"><span class="dot blue"></span>Sequential &amp; parallel routes</div>
+  </div>
+
+  <div class="footer-card">
+    <div class="footer-card-title">Agent Tools</div>
+    <div class="footer-item"><span class="dot green"></span>get_abstract_examples</div>
+    <div class="footer-item"><span class="dot green"></span>get_related_work_examples</div>
+    <div class="footer-item"><span class="dot green"></span>get_citation_examples</div>
+    <div class="footer-item"><span class="dot blue"></span>Max 4 tool rounds</div>
+  </div>
+
+  <div class="footer-card">
+    <div class="footer-card-title">Schemas</div>
+    <div class="footer-item"><span class="dot teal"></span>AgentRequest (input)</div>
+    <div class="footer-item"><span class="dot teal"></span>AgentResult (output)</div>
+    <div class="footer-item"><span class="dot teal"></span>DocPayload (papers)</div>
+    <div class="footer-item"><span class="dot teal"></span>CitationPayload</div>
+  </div>
+
+  <div class="footer-card">
+    <div class="footer-card-title">Error Handling</div>
+    <div class="footer-item"><span class="dot amber"></span>LLM unavailable → FAILED</div>
+    <div class="footer-item"><span class="dot amber"></span>Tool fail → log + continue</div>
+    <div class="footer-item"><span class="dot amber"></span>Grammar fail → raw text</div>
+    <div class="footer-item"><span class="dot amber"></span>Empty draft → notice</div>
+  </div>
+
+  <div class="footer-card">
+    <div class="footer-card-title">Sprint 3 Status</div>
+    <div class="footer-item"><span class="dot green"></span>✅ LLM connected</div>
+    <div class="footer-item"><span class="dot green"></span>✅ Tools implemented</div>
+    <div class="footer-item"><span class="dot green"></span>✅ RAG pipeline (Qdrant)</div>
+    <div class="footer-item"><span class="dot green"></span>✅ Orchestrator integrated</div>
+  </div>
+
+</div>
+
+</body>
+</html>

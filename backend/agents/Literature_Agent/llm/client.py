@@ -23,6 +23,7 @@ own entries where it actually differs.
 """
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -123,13 +124,13 @@ def call_llm(
     reasoning_effort: str = "low",
     role: str = ROUTER,
 ) -> str:
-    """Call the deployment configured for `role`.
+    """Call the deployment configured for `role`, return the text answer.
 
     Raises RuntimeError when that role has no Azure configuration, so callers
     can fall back to a deterministic path instead of failing the request.
+    Unchanged from before - existing callers (routing, publication support)
+    keep working exactly as before.
     """
-    # Read at call time, not import time: settings can arrive from a .env
-    # loaded after this module was first imported.
     deployment = _setting(role, "deployment")
     if not deployment:
         raise RuntimeError(
@@ -144,3 +145,35 @@ def call_llm(
     )
     content = response.choices[0].message.content
     return content or ""
+
+
+def call_llm_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    max_completion_tokens: int = 500,
+    reasoning_effort: str = "low",
+    role: str = ROUTER,
+):
+    """Call the deployment configured for `role`, with function-calling tools
+    available. Returns the raw `message` object from the API response (not
+    just text), because the caller needs to inspect `.tool_calls` to know
+    whether the model asked to invoke a tool or produced a final answer.
+
+    Raises RuntimeError when that role has no Azure configuration, same as
+    `call_llm`.
+    """
+    deployment = _setting(role, "deployment")
+    if not deployment:
+        raise RuntimeError(
+            f"Azure OpenAI is not configured for the Literature Agent's {role} role."
+        )
+
+    response = _get_client(role).chat.completions.create(
+        model=deployment,
+        messages=messages,
+        max_completion_tokens=max_completion_tokens,
+        reasoning_effort=reasoning_effort,
+        tools=tools,
+        tool_choice="auto",
+    )
+    return response.choices[0].message
