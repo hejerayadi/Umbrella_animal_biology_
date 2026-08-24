@@ -1,6 +1,6 @@
 """Where LangGraph stores run state between steps - and between HTTP calls.
 
-This is what makes CONTINUE work. The orchestrator allows 120 s per call and
+This is what makes CONTINUE work. The orchestrator allows 600 s per call and
 retries a CONTINUE three times, so one reconstruction is spread over up to four
 HTTP calls. Each picks up from the checkpoint written by the last, keyed by the
 orchestrator's trace id.
@@ -52,7 +52,7 @@ def _libpq_url(url: str, connect_timeout: int = 5) -> str:
        `missing "=" after ...` and falls back to in-memory checkpointing.
 
     2. **Connect timeout.** psycopg waits ~130 s by default, which outlives
-       the orchestrator's whole 120 s request budget - so an unreachable
+       one slice's whole wall-clock budget - so an unreachable
        database would blow the deadline rather than degrade to in-memory.
 
     No search path is set: the agent shares one schema with the rest of

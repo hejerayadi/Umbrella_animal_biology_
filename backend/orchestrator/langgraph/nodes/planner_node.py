@@ -33,8 +33,15 @@ def make_planner_node(planner: Planner) -> Callable[[WorkflowState], dict[str, A
 
         # LangGraph nodes don't mutate the state directly - they return a
         # dict of "here's what changed", and LangGraph merges it in.
+        # A follow-up agent is scheduled here and dispatched by the router once
+        # the initial agent's line of work ends - see `route_after_worker`.
+        follow_ups = [plan.follow_up_agent] if plan.follow_up_agent else []
+        if follow_ups:
+            step = f"{step} then {plan.follow_up_agent}"
+
         return {
             "current_agent": plan.initial_agent,
+            "follow_up_agents": follow_ups,
             "execution_history": [*state.execution_history, f"Planner -> {step}"],
         }
 

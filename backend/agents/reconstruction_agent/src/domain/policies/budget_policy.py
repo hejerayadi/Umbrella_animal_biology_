@@ -1,7 +1,7 @@
 """What one reconstruction is allowed to spend, and what it has spent.
 
 The agent runs inside someone else's HTTP request. The orchestrator allows
-120 s per call and only three CONTINUE retries, so an unbounded loop does not
+600 s per call and only three CONTINUE retries, so an unbounded loop does not
 merely cost money - it gets the whole run force-failed and every finding
 discarded. Budgets are therefore a correctness concern, not a cost control.
 
@@ -30,14 +30,16 @@ class BudgetKind(str, Enum):
 class Budgets:
     """The allowance for one run, across every slice."""
 
-    max_tool_calls: int = 12
+    max_tool_calls: int = 24
     #: Per-tool caps for the expensive submit-and-poll tools. A tool absent
     #: from this map is limited only by `max_tool_calls`.
     per_tool: dict[str, int] = field(default_factory=dict)
     max_llm_tokens: int = 60_000
-    #: Yield back to the orchestrator after this long, well inside its 120 s
-    #: read timeout.
-    yield_after_seconds: float = 90.0
+    #: Yield back to the orchestrator after this long, well inside its 600 s
+    #: read timeout. Kept in step with `ContinuationSettings.
+    #: yield_after_seconds`, which is what the running agent actually uses;
+    #: this default only applies to a `Budgets()` built by hand, in tests.
+    yield_after_seconds: float = 480.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +53,7 @@ class BudgetUsage:
 
     `elapsed_seconds` is deliberately per-slice, not cumulative. The wall-clock
     budget exists to return control before one HTTP call times out, and time
-    spent in an earlier slice is not part of this call's 120 s.
+    spent in an earlier slice is not part of this call's 600 s.
     """
 
     tool_calls: int = 0
@@ -119,7 +121,7 @@ class BudgetPolicy:
         This is what one tool call may be allowed to take. The yield check
         happens between graph nodes, so without bounding the call itself a
         single submit-and-poll tool - MAFFT at EMBL-EBI polls for up to 600 s -
-        holds the slice open long past the orchestrator's 120 s read timeout.
+        holds the slice open long past the orchestrator's 600 s read timeout.
         The orchestrator then records the agent as unreachable and every
         finding in the slice is lost, which is strictly worse than yielding.
         """

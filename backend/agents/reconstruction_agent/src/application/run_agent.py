@@ -3,7 +3,7 @@
 Sits between the service (which knows about requests and results) and the graph
 (which knows about state), so neither has to know about the other.
 
-The unit of work here is a **slice**, not a run. The orchestrator allows 120 s
+The unit of work here is a **slice**, not a run. The orchestrator allows 600 s
 per HTTP call and retries a CONTINUE three times, so one reconstruction may span
 four slices. Each is a fresh `/execute` call that resumes the checkpoint written
 by the previous one, keyed by the orchestrator's trace id.

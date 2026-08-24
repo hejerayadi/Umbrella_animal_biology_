@@ -26,10 +26,18 @@ class ResultBuilder:
         target = state["target"]
         skipped = state.get("skipped") or {}
 
+        timed_out = self._timed_out_gap_ids(state)
+
         reconstructions = list((state.get("reconstructions") or {}).values())
         reconstructions.extend(self._skipped_entries(state, skipped))
-        reconstructions.extend(self._unresolved_entries(state, skipped))
+        reconstructions.extend(self._unresolved_entries(state, skipped, timed_out))
         reconstructions.sort(key=lambda item: item.start)
+
+        unresolved_by_clock = sum(
+            1
+            for item in reconstructions
+            if item.status is ReconstructionStatus.UNRESOLVED and item.gap_id in timed_out
+        )
 
         applied = self._synthesizer.apply(target, reconstructions)
 
@@ -58,6 +66,7 @@ class ResultBuilder:
                 reconstructions,
                 skipped=skipped,
                 iterations=state.get("iteration", 0),
+                timed_out=unresolved_by_clock,
             ),
             iterations=state.get("iteration", 0),
             tools_used=sorted(
@@ -104,8 +113,32 @@ class ResultBuilder:
         return entries
 
     @staticmethod
+    def _timed_out_gap_ids(state: ReconstructionState) -> set[str]:
+        """Gaps whose evidence never arrived because the wall clock ran out.
+
+        "The search was cut off" and "the references hold nothing" are
+        different answers to the caller, and reporting the first as the second
+        is what made a timed-out run look like a scientific abstention. Only
+        the gap's *last* observation counts: one aborted by a deadline early on
+        and searched successfully later really did get its answer.
+
+        Reads `diagnostics["slice_deadline"]`, which `StopPolicy` already
+        branches on for the same reason - it is the one diagnostic key that is
+        a fact about the run rather than about a tool.
+        """
+        last_seen: dict[str, bool] = {}
+        for observation in state.get("observations") or []:
+            if observation.gap_id:
+                last_seen[observation.gap_id] = bool(
+                    (observation.diagnostics or {}).get("slice_deadline")
+                )
+        return {gap_id for gap_id, cut_off in last_seen.items() if cut_off}
+
+    @staticmethod
     def _unresolved_entries(
-        state: ReconstructionState, skipped: dict[str, str]
+        state: ReconstructionState,
+        skipped: dict[str, str],
+        timed_out: set[str],
     ) -> list[GapReconstruction]:
         """Report attempted gaps that produced nothing.
 
@@ -129,7 +162,11 @@ class ResultBuilder:
                     length=context.gap.length,
                     status=ReconstructionStatus.UNRESOLVED,
                     explanation=(
-                        "The agent attempted this region but gathered no reference "
+                        "The run ran out of time before this region's homology search "
+                        "returned, so no evidence was gathered for it. This is not a "
+                        "finding about the sequence: re-running may resolve it."
+                        if gap_id in timed_out
+                        else "The agent attempted this region but gathered no reference "
                         "evidence spanning it."
                     ),
                 )

@@ -12,7 +12,6 @@ reasons over).
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import time
 from dataclasses import dataclass, replace
 from typing import Any, cast
@@ -52,24 +51,47 @@ _log = get_logger(__name__)
 _MAX_ATTEMPTS_PER_TOOL = 2
 
 
-def _request_fingerprint(payload: object) -> str | None:
-    """A stable digest of what a submit-and-poll tool was asked to do.
+def _park_payload(payload: object) -> str | None:
+    """The whole request a submit-and-poll tool was cut off mid-way through.
 
-    Pairs with `pending_jobs` so a remote job is only ever resumed for the
-    request that created it. `job_id` itself is excluded: it is the one field
-    that legitimately differs between the submission and the resume, and
-    including it would mean no stored job ever matched.
+    Stored in `pending_jobs` so a later slice can resume that job by re-issuing
+    the *identical* request, job id included - the payload carries it, because
+    the tool writes it there as soon as the job is submitted.
 
-    None for a payload with no `job_id` field at all - that tool has no remote
-    job to resume, so there is nothing to fingerprint.
+    Storing the request rather than a digest of it is what makes resumption
+    unconditional. The previous design stored `fingerprint:job_id` and resumed
+    only when the freshly planned payload hashed the same, which quietly made
+    every resume depend on an LLM re-planning the step byte for byte. One
+    differently-chosen argument - `expect: 1e-3` where the last slice took the
+    default - and a ~193 s BLAST was abandoned and resubmitted from zero.
+
+    None for a payload with no `job_id` field: that tool has no remote job to
+    resume, so there is nothing worth parking.
     """
     if not hasattr(payload, "job_id"):
         return None
     try:
-        serialised = payload.model_dump_json(exclude={"job_id"})
+        return payload.model_dump_json()
     except AttributeError:
         return None
-    return hashlib.sha256(serialised.encode("utf-8")).hexdigest()[:16]
+
+
+def _resume_payload(fresh: Any, parked: str) -> Any | None:
+    """The parked request, restored, or None if it cannot be used.
+
+    Deliberately discards the newly planned payload in favour of the parked
+    one. That is not a lost widening: a deadline abort leaves `attempts`
+    untouched precisely so the interrupted call still counts as its first
+    attempt, so the strict search is collected now and any relaxed retry is
+    planned after it comes back empty. Resuming a job under a payload that says
+    something different would be worse than slow - it would be wrong.
+    """
+    try:
+        restored = type(fresh).model_validate_json(parked)
+    except Exception:  # noqa: BLE001 - a stale or unreadable park costs a resubmit
+        _log.info("parked_job_unreadable", tool=type(fresh).__name__)
+        return None
+    return restored if getattr(restored, "job_id", None) else None
 
 
 @dataclass(slots=True)
@@ -97,7 +119,7 @@ class ReconstructionNodes:
         The graph is re-entered on every CONTINUE retry with the checkpointed
         state already loaded, so this does not restore anything itself - it
         marks the new slice and restarts the wall clock, which is per-slice
-        because the 120 s timeout it guards is per HTTP call.
+        because the 600 s timeout it guards is per HTTP call.
         """
         slice_index = state.get("slice_index", 0)
         resumed = bool(state.get("gap_contexts"))
@@ -371,18 +393,17 @@ class ReconstructionNodes:
 
             "The same call again" no longer means "from scratch", though. A
             submit-and-poll tool writes its remote job id onto the payload as
-            soon as it has one, so when there is one to keep it is carried into
-            `pending_jobs` and the next slice resumes that job instead of
-            paying the submission cost twice. Measured: an EBI BLAST job takes
-            ~205 s and a slice grants at most 75 s, so without this no run of
-            four slices could ever complete a single search.
+            soon as it has one, so the entire payload is parked in
+            `pending_jobs` and the next slice re-issues it verbatim, resuming
+            that job instead of paying the submission cost twice. Measured: an
+            EBI BLAST job takes ~193 s, so a run whose slices are shorter than
+            that could never complete a single search without this.
             """
             detail = f"aborted after {remaining:.0f}s: the slice ran out of wall clock"
             self.events.emit(EventType.TOOL_FAILED, run_id, detail, {"tool": invocation.tool})
-            resumable = getattr(invocation.payload, "job_id", None)
             keep = (
-                f"{_request_fingerprint(invocation.payload)}:{resumable}"
-                if resumable
+                _park_payload(invocation.payload)
+                if getattr(invocation.payload, "job_id", None)
                 else None
             )
             return {
@@ -407,22 +428,19 @@ class ReconstructionNodes:
             }
 
         # A job an earlier slice submitted and did not live long enough to
-        # collect. Handing the id back turns this call into a poll of work
-        # already in flight rather than a fresh submission.
+        # collect. Re-issuing the parked request turns this call into a poll of
+        # work already in flight rather than a fresh submission.
         #
-        # Only when the request is byte-identical, which is what the
-        # fingerprint checks. A deadline abort leaves attempts untouched, so
-        # the next slice may re-plan the same (tool, gap) with DIFFERENT
-        # inputs - a widened BLAST query, or an alignment over a reference set
-        # that grew since. Resuming then would hand back an answer computed
-        # from the old inputs while the payload says otherwise, which is worse
-        # than paying for the search again: it is wrong rather than slow.
-        fingerprint = _request_fingerprint(invocation.payload)
-        pending = (state.get("pending_jobs") or {}).get(key)
-        if pending and fingerprint is not None:
-            stored_fingerprint, _, stored_job = pending.partition(":")
-            if stored_fingerprint == fingerprint and stored_job:
-                invocation.payload.job_id = stored_job
+        # The parked payload replaces the one just planned, rather than merely
+        # lending it a job id. Both stay coherent that way: the answer that
+        # comes back is the answer to the question actually asked, and no
+        # re-plan can silently strand a search that is already running. See
+        # `_resume_payload` for why discarding this round's plan is right.
+        parked = (state.get("pending_jobs") or {}).get(key)
+        if parked:
+            restored = _resume_payload(invocation.payload, parked)
+            if restored is not None:
+                invocation = replace(invocation, payload=restored)
 
         # Whatever is left of this slice is all this call may take. Zero means
         # the slice is already over, so the call is not started at all.

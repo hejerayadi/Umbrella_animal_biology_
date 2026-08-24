@@ -50,12 +50,21 @@ class EvidenceSynthesizer:
         *,
         skipped: dict[str, str],
         iterations: int,
+        timed_out: int = 0,
     ) -> str:
         """A plain-language account of the run.
 
         Deliberately leads with what was not resolved when that dominates: a
         summary that opens with three successes and buries nine failures
         misrepresents the run.
+
+        `timed_out` is how many of the unresolved regions were cut off by the
+        wall clock rather than answered. It is reported separately because the
+        two mean opposite things to whoever reads this: "the references hold
+        nothing" is a finding about the sequence and ends the enquiry, while
+        "the search did not come back in time" is a fact about this run and
+        invites another. Collapsing them let a starved run pass for a
+        scientific abstention.
         """
         by_status = {status: 0 for status in ReconstructionStatus}
         for reconstruction in reconstructions:
@@ -95,6 +104,14 @@ class EvidenceSynthesizer:
                 f"Reconstructed {resolved} region(s), {bases} bases in total, with "
                 f"confidence between {min(confidences):.0%} and {max(confidences):.0%}."
             )
+        elif timed_out and timed_out >= total_gaps:
+            # Nothing was reconstructed and nothing was actually examined
+            # either. Saying "not to the required confidence" here would blame
+            # the evidence for a verdict the evidence never got to give.
+            parts.append(
+                "No region was reconstructed, but none was ruled out either: the run "
+                "ran out of time before its homology searches returned."
+            )
         else:
             parts.append("No region could be reconstructed to the required confidence.")
 
@@ -105,11 +122,22 @@ class EvidenceSynthesizer:
                 "not be treated as resolved."
             )
 
-        if by_status[ReconstructionStatus.UNRESOLVED]:
+        unresolved = by_status[ReconstructionStatus.UNRESOLVED]
+        if unresolved and timed_out:
+            examined = unresolved - timed_out
             parts.append(
-                f"{by_status[ReconstructionStatus.UNRESOLVED]} region(s) had no usable "
-                "reference evidence."
+                f"{timed_out} region(s) were cut off by the run's time limit before "
+                "their homology search returned - that is a limit of this run, not a "
+                "finding about the sequence, and re-running may resolve them."
+                + (
+                    f" A further {examined} region(s) were examined and had no usable "
+                    "reference evidence."
+                    if examined > 0
+                    else ""
+                )
             )
+        elif unresolved:
+            parts.append(f"{unresolved} region(s) had no usable reference evidence.")
 
         if skipped:
             parts.append(
