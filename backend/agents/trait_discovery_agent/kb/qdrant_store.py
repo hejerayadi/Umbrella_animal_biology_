@@ -6,7 +6,6 @@ Shared Qdrant access layer for all three cacheable subagents
                         -> changed/new: embed -> upsert
 """
 import hashlib
-from http import client
 import logging
 import os
 from typing import Any, Optional
@@ -21,7 +20,7 @@ except ModuleNotFoundError:
     Distance = PointStruct = VectorParams = Any  # type: ignore[assignment]
     _QDRANT_AVAILABLE = False
 
-from kb.embeddings import embed_text, EMBEDDING_DIM
+from kb.embeddings import embed_text, EMBEDDING_DIM, EMBEDDINGS_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +118,13 @@ async def upsert_point(
         return None
     """Re-embeds only if `text_to_embed` changed since the last upsert (hash check)."""
     if not _QDRANT_AVAILABLE:
+        return payload
+
+    # A point is stored with its vector, so there is nothing to write without an
+    # embedder. Returning the payload leaves the caller with the data it just
+    # fetched from the live source - the same outcome as a cache miss.
+    if not EMBEDDINGS_AVAILABLE:
+        logger.warning("sentence-transformers is not installed; skipping cache write")
         return payload
 
     client = get_client()

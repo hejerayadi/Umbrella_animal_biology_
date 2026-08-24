@@ -18,6 +18,7 @@ id, and only the agent that can actually look at it is given the bytes. See
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Callable
 from typing import Any
@@ -44,7 +45,21 @@ _logger = logging.getLogger(__name__)
 
 # Connect fast (a missing agent should fail immediately, not hang the graph),
 # but allow a slow agent plenty of time to actually do its work.
-_TIMEOUT = httpx.Timeout(120.0, connect=5.0)
+#
+# 120s was not "plenty" for the agents that call an LLM per item rather than
+# once per request. Measured: the Trait Discovery Agent takes ~300s to resolve
+# a single gene against a rate-limited NVIDIA NIM key, because Gene Mapper,
+# Pathways, Protein Data, Literature Support and the explanation writer each
+# make their own call and a free-tier 429 costs 10-60s of backoff apiece. It
+# never returned inside the old limit, so the orchestrator reported it as
+# unreachable and the Responder told the user the agent was down - a transport
+# error standing in for work that was still running and would have succeeded.
+#
+# The read timeout is the one that moves. `connect` stays low so an agent that
+# is genuinely not running still fails in seconds, which is what stops a
+# missing service from hanging the graph.
+_READ_TIMEOUT_SECONDS = float(os.getenv("AGENT_READ_TIMEOUT_SECONDS", "600"))
+_TIMEOUT = httpx.Timeout(_READ_TIMEOUT_SECONDS, connect=5.0)
 
 # One pooled client for the whole process, reused across every agent call.
 _client = httpx.Client(timeout=_TIMEOUT)
