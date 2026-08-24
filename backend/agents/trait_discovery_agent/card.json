@@ -15,13 +15,16 @@
   ],
   "capabilities": [
     "Trait discovery",
-    "Gene-trait association"
+    "Gene-trait association",
+    "Gene Ontology annotation",
+    "Pathway and protein evidence for a trait"
   ],
   "input": {
     "instruction": "string",
     "context": "dict"
   },
   "output": {
-    "traits": "list"
+    "traits": "list",
+    "trait_discovery": "dict"
   }
 }

@@ -75,8 +75,19 @@ _VENV_PYTHON = Path("Scripts/python.exe") if os.name == "nt" else Path("bin/pyth
 #
 # Anything already exported in the shell wins, so `set TRAIT_AGENT_IMPL=mock`
 # still gets you the stub for an offline demo.
+#
+# The Trait Discovery Agent also reaches the Literature Agent directly, rather
+# than through the orchestrator, for the evidence behind a trait-gene link. It
+# defaults that URL to `http://literature-agent:8000/execute` - a compose
+# service name, because the client was written for a deployment where the two
+# are containers on one network. Nothing resolves that hostname when the agents
+# are nine local uvicorn processes, so it is pointed at the port this launcher
+# actually starts the Literature Agent on.
 _AGENT_ENV: dict[str, dict[str, str]] = {
-    "Trait": {"TRAIT_AGENT_IMPL": "workflow"},
+    "Trait": {
+        "TRAIT_AGENT_IMPL": "workflow",
+        "LITERATURE_AGENT_URL": f"{AGENT_ENDPOINTS['Literature']}/execute",
+    },
     "Evolution": {"EVOLUTION_AGENT_IMPL": "orchestrator"},
     "Biodiversity": {"BIODIVERSITY_AGENT_IMPL": "orchestrator"},
 }
