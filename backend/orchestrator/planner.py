@@ -57,6 +57,16 @@ _SYSTEM_PROMPT = (
     "agent that owns the CORE of the question as `initial_agent`. Do not try to list "
     "every agent involved: if the starting agent needs something from another agent, it "
     "will request that automatically later.\n\n"
+    "`follow_up_agent` is for ONE case only: the message asks for a rendered image, "
+    "illustration, drawing or visual depiction ON TOP OF a research question - "
+    "'what traits let the Arctic fox survive the cold, AND DRAW IT'. That is two "
+    "requests in one sentence, and `initial_agent` only covers the first. Put the "
+    "agent that answers the question in `initial_agent` and the image-generating "
+    "agent in `follow_up_agent`.\n\n"
+    "Leave `follow_up_agent` empty otherwise. A message that ONLY asks for a picture "
+    "('draw an Arctic fox') needs the image agent as `initial_agent` and no "
+    "follow-up. It is not a general 'second agent' field: agents pull in what they "
+    "need by themselves, so never use it to pre-plan an ordinary dependency.\n\n"
     "Each agent's description below spells out the specific topics it covers. Match the "
     "topics named in the user's message against those descriptions rather than guessing "
     "from the agent's name alone.\n\n"
@@ -119,6 +129,12 @@ class _PlannerOutput(BaseModel):
         default=None,
         description="Exact name of the agent to start with. Empty when needs_agent is false.",
     )
+    follow_up_agent: str | None = Field(
+        default=None,
+        description="Exact name of the agent that must run after the initial agent's "
+        "line of work finishes. Used only when the message asks for a rendered image "
+        "in addition to a research question. Empty in every other case.",
+    )
 
 
 @dataclass(frozen=True)
@@ -131,6 +147,10 @@ class ExecutionPlan:
 
     initial_agent: str | None
     reasoning: str
+    # Runs after `initial_agent`'s line of work ends, whether that work
+    # succeeded or failed. See `WorkflowState.follow_up_agents` for why the
+    # graph needs to be told about this second agent up front.
+    follow_up_agent: str | None = None
 
 
 class Planner:
@@ -185,16 +205,42 @@ class Planner:
                 f"known agents: {sorted(self._agent_cards)}"
             )
 
+        # An unknown follow-up is dropped rather than raised on, unlike the
+        # unknown `initial_agent` above. The two failures are not equivalent:
+        # without a starting agent there is no run at all, whereas a follow-up
+        # is an extra step on top of an answer that is already complete.
+        # Refusing the whole question because the optional half was misnamed
+        # would trade a partial answer for none.
+        follow_up = response.follow_up_agent
+        if follow_up is not None and follow_up not in self._agent_cards:
+            _logger.warning(
+                "[Planner] ignoring unknown follow-up agent %r; known agents: %s",
+                follow_up,
+                sorted(self._agent_cards),
+            )
+            follow_up = None
+
+        # Naming the same agent twice would run it, then run it again on a
+        # context it just wrote - at best a wasted call, at worst a second
+        # image replacing the first.
+        if follow_up == response.initial_agent:
+            _logger.info(
+                "[Planner] follow-up %r is the initial agent; dropping it", follow_up
+            )
+            follow_up = None
+
         _logger.info(
-            "[Planner] query=%r -> %s (%s)",
+            "[Planner] query=%r -> %s%s (%s)",
             user_query,
             response.initial_agent,
+            f" then {follow_up}" if follow_up else "",
             response.reasoning,
         )
 
         return ExecutionPlan(
             initial_agent=response.initial_agent,
             reasoning=response.reasoning,
+            follow_up_agent=follow_up,
         )
 
 

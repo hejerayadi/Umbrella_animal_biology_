@@ -48,12 +48,26 @@ def make_responder_node(
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
-        # If the last agent failed, hand its error text to the responder so
-        # it can explain honestly instead of inventing an answer.
-        failure = None
+        # Every failure from the run, so the responder can explain honestly
+        # instead of inventing an answer.
+        #
+        # Read from `state.failures` rather than `last_result`: a
+        # planner-scheduled follow-up runs after a failure, so on a request
+        # like "explain X and draw it" the drawing succeeds last and
+        # `last_result` no longer carries the failure that the user still
+        # needs to be told about.
+        failures = list(state.failures)
+
+        # `last_result` still contributes, for the runs that never recorded a
+        # failure into state (a stub worker in a test, an older state object
+        # restored from elsewhere).
         result = state.last_result
         if result is not None and result.status.value == "failed":
-            failure = str(result.output)
+            text = str(result.output)
+            if not any(text in recorded for recorded in failures):
+                failures.append(text)
+
+        failure = "; ".join(failures) if failures else None
 
         answer = responder.synthesize(
             user_query=state.user_query,

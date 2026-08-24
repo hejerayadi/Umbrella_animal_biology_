@@ -273,6 +273,32 @@ def make_worker_node(
             ],
         }
 
+        # This agent has now had its turn, so it is no longer pending as a
+        # planner-scheduled follow-up. Removing it here rather than in the
+        # router is what keeps the router pure: the router only reads state,
+        # and something has to write the fact that the step was taken. Without
+        # it, a completed follow-up would route back through
+        # `_next_follow_up`, still find itself listed, and run again forever.
+        if agent_name in state.follow_up_agents:
+            updates["follow_up_agents"] = [
+                pending for pending in state.follow_up_agents if pending != agent_name
+            ]
+
+        if status == "failed":
+            # Kept for the responder, which can no longer read the failure off
+            # `last_result`: a follow-up runs after this point and would
+            # overwrite it. See `WorkflowState.failures`.
+            updates["failures"] = [*state.failures, f"{agent_name}: {result.output}"]
+
+            # The research line is over. Anyone still parked on the waiting
+            # stack was waiting on work that just died, so a follow-up
+            # completing must not "resume" them into a branch whose dependency
+            # never arrived - it would send the graph back into the same
+            # unsatisfiable escalation the failure just ended.
+            if state.follow_up_agents:
+                updates["waiting_agent"] = None
+                updates["waiting_stack"] = []
+
         retry_counts = dict(state.continue_retry_counts)
         if status == "continue":
             retry_counts[agent_name] = retries_used + 1

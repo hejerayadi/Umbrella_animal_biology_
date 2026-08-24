@@ -97,6 +97,36 @@ class WorkflowState:
     # Every agent reads from this and adds to it.
     context: dict[str, Any] = field(default_factory=dict)
 
+    # Agents the planner scheduled to run AFTER the main line of work, whatever
+    # that work returned. Only the rendering step uses this today.
+    #
+    # It exists because the graph had exactly one way in - `initial_agent` - and
+    # only one way to add an agent after that: another agent escalating with
+    # `needs_agent`. The Image Generation Agent is reachable by neither. Nobody
+    # escalates *to* it (no agent knows the user asked for a picture; that is in
+    # the user's sentence, which only the planner reads), and it deliberately no
+    # longer escalates *from* itself - see the note at the top of its
+    # `orchestrator_logic.py`.
+    #
+    # So "What traits let the Arctic fox survive extreme cold, and draw it" put
+    # Trait in the single slot, Trait failed on an unannotated assembly, and
+    # `failed` routes straight to the responder: the drawing half of the request
+    # was dropped without ever appearing in the execution history. This list is
+    # what carries it.
+    #
+    # Entries are removed as they run (see `worker_node`), so a follow-up agent
+    # runs exactly once and cannot loop.
+    follow_up_agents: list[str] = field(default_factory=list)
+
+    # Every failure reported during the run, in order.
+    #
+    # The responder used to read the failure off `last_result` alone, which was
+    # correct only while a failure was necessarily the last thing that happened.
+    # A follow-up agent runs *after* a failure, so its success would overwrite
+    # the failure and the user would never be told the analytical half fell
+    # over. Recorded here instead so the responder can report both.
+    failures: list[str] = field(default_factory=list)
+
     # A simple, human-readable log of everything that happened, in order.
     # Useful for debugging and for showing the user what the orchestrator did.
     execution_history: list[str] = field(default_factory=list)

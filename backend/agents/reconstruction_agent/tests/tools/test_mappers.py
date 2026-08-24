@@ -348,4 +348,131 @@ class TestGapCarryingReferences:
         # None, not 0: an NCBI record that never went through a search is
         # unmeasured, and that must not read as "carries nothing".
         assert refs[0].gap_bases is None
+
+
+class TestBracketingReferencesCarryTheGap:
+    """The other shape a donor arrives in - two HSPs, one per flank.
+
+    A 45-base insertion costs far more under an affine gap penalty than ending
+    one alignment and starting another, so BLAST reports a real donor as two
+    HSPs bracketing the missing segment rather than as one gapped HSP. Measuring
+    only the gapped shape scored every one of these at zero, so `carries_gap`
+    was False for exactly the hits the mapper had just decided to fetch a
+    subject region for - and the selector, finding no carriers at all, aligned
+    the non-carriers instead and MAFFT opened no column at the junction.
+    """
+
+    @staticmethod
+    def _bracketing(
+        *,
+        left_hit: tuple[int, int],
+        right_hit: tuple[int, int],
+        left_flank_length: int = 500,
+    ) -> str:
+        """One hit whose two HSPs meet exactly at the query junction."""
+        import json
+
+        return json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "TEST002.1",
+                        "hit_hsps": [
+                            {
+                                "hsp_query_from": 1,
+                                "hsp_query_to": left_flank_length,
+                                "hsp_hit_from": left_hit[0],
+                                "hsp_hit_to": left_hit[1],
+                                "hsp_identity": 96.0,
+                                "hsp_expect": 1e-50,
+                            },
+                            {
+                                "hsp_query_from": left_flank_length + 1,
+                                "hsp_query_to": left_flank_length * 2,
+                                "hsp_hit_from": right_hit[0],
+                                "hsp_hit_to": right_hit[1],
+                                "hsp_identity": 95.0,
+                                "hsp_expect": 1e-48,
+                            },
+                        ],
+                    }
+                ]
+            }
+        )
+
+    def test_bracketed_subject_bases_are_counted_as_carried(self) -> None:
+        from tools.blast.mapper import to_references
+
+        # The subject runs 1000..1499, then 45 bases we do not have, then
+        # 1545..2044. Those 45 are the fill.
+        refs, _ = to_references(
+            self._bracketing(left_hit=(1000, 1499), right_hit=(1545, 2044)),
+            left_flank_length=500,
+        )
+
+        assert refs[0].gap_bases == 45
+        assert refs[0].carries_gap is True
+
+    def test_a_minus_strand_donor_is_measured_the_same(self) -> None:
+        from tools.blast.mapper import to_references
+
+        # EBI reports a minus-strand HSP with hit_from above hit_to. Subtracting
+        # raw would give a negative width for exactly these hits.
+        refs, _ = to_references(
+            self._bracketing(left_hit=(2044, 1545), right_hit=(1499, 1000)),
+            left_flank_length=500,
+        )
+
+        assert refs[0].gap_bases == 45
+        assert refs[0].carries_gap is True
+
+    def test_abutting_hsps_carry_nothing(self) -> None:
+        from tools.blast.mapper import to_references
+
+        # The subject continues straight through: it has no extra bases, so it
+        # is homologous but not a donor.
+        refs, _ = to_references(
+            self._bracketing(left_hit=(1000, 1499), right_hit=(1500, 1999)),
+            left_flank_length=500,
+        )
+
+        assert refs[0].gap_bases == 0
+        assert refs[0].carries_gap is False
+
+    def test_hsps_that_do_not_meet_at_the_junction_are_not_a_bracket(self) -> None:
+        import json
+
+        from tools.blast.mapper import to_references
+
+        # Two HSPs against the same subject, but both inside the left flank -
+        # a repeat, not a donor. Nothing here spans the junction at 500.
+        raw = json.dumps(
+            {
+                "hits": [
+                    {
+                        "hit_acc": "TEST003.1",
+                        "hit_hsps": [
+                            {
+                                "hsp_query_from": 1,
+                                "hsp_query_to": 100,
+                                "hsp_hit_from": 1000,
+                                "hsp_hit_to": 1099,
+                                "hsp_expect": 1e-20,
+                            },
+                            {
+                                "hsp_query_from": 150,
+                                "hsp_query_to": 250,
+                                "hsp_hit_from": 1200,
+                                "hsp_hit_to": 1300,
+                                "hsp_expect": 1e-20,
+                            },
+                        ],
+                    }
+                ]
+            }
+        )
+        refs, _ = to_references(raw, left_flank_length=500)
+
+        assert refs[0].gap_bases == 0
+        assert refs[0].carries_gap is False
         assert refs[0].carries_gap is False

@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if not settings.database.configured:
         # Worth saying out loud: without a checkpoint store the agent cannot
-        # resume a CONTINUE, so any reconstruction too slow for one 120 s call
+        # resume a CONTINUE, so any reconstruction too slow for one 600 s call
         # restarts from nothing on every retry and then fails.
         _log.warning(
             "checkpoints_not_durable",

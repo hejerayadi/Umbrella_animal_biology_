@@ -47,7 +47,7 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
         "context as the query, and retrieve the matching sequence for each hit. Returns "
         "hits ranked by identity and coverage, ready to align. Use when the informative "
         "relatives are unknown, or to confirm that a named reference really is homologous "
-        "over this region. Slow: submits a job and polls, often 30-120 seconds."
+        "over this region. Slow: submits a job and polls; ~193 seconds measured."
     )
     estimated_seconds = 60.0
 

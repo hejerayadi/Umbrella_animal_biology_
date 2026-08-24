@@ -170,6 +170,78 @@ def _gap_bases_carried(hsp: dict[str, Any], left_flank_length: int) -> int:
     return 0
 
 
+def _subject_bases_between(left: dict[str, Any], right: dict[str, Any]) -> int:
+    """Subject bases lying strictly between two HSPs' subject ranges.
+
+    Coordinates are sorted before comparing, so this reads the same on either
+    strand: EBI reports a minus-strand HSP with `hit_from` above `hit_to`, and
+    subtracting them raw would give a negative width for exactly the hits that
+    are hardest to find another way.
+    """
+    bounds = []
+    for hsp in (left, right):
+        start = _int_or_none(hsp.get("hsp_hit_from"))
+        stop = _int_or_none(hsp.get("hsp_hit_to"))
+        if start is None or stop is None:
+            return 0
+        bounds.append(sorted((start, stop)))
+
+    (a_lo, a_hi), (b_lo, b_hi) = bounds
+    if b_lo > a_hi:
+        return b_lo - a_hi - 1
+    if a_lo > b_hi:
+        return a_lo - b_hi - 1
+    # Overlapping or abutting: the subject has nothing extra between them.
+    return 0
+
+
+def _gap_bases_bracketed(hsps: list[dict[str, Any]], left_flank_length: int) -> int:
+    """Subject bases held between two HSPs that meet at the query junction.
+
+    The *other* shape a gap carrier takes, and in practice the common one.
+    `_gap_bases_carried` finds the missing segment when BLAST reports it as one
+    HSP with a gap run in the query row; but a 45-base insertion costs far more
+    under an affine gap penalty than simply ending the alignment and starting a
+    new one, so a real donor is usually reported as two HSPs - one per flank -
+    with the segment sitting between them in the subject.
+
+    That shape was measured as zero, which made `carries_gap` False for the
+    very hits `_subject_span` had just decided to fetch a region for. The
+    selector then found no carriers at all and aligned the non-carriers
+    instead, which is the failure its own comment describes: MAFFT opens no
+    column at the junction and the run reports "no reference aligned across the
+    gap" while the donors sat in the input.
+    """
+    if len(hsps) < 2:
+        return 0
+
+    ends_at_junction: list[dict[str, Any]] = []
+    starts_at_junction: list[dict[str, Any]] = []
+
+    for hsp in hsps:
+        query_from = _int_or_none(hsp.get("hsp_query_from"))
+        query_to = _int_or_none(hsp.get("hsp_query_to"))
+        if query_from is None or query_to is None:
+            continue
+        low, high = sorted((query_from, query_to))
+        # The query is the flanks joined, so the left flank ends at
+        # `left_flank_length` and the right flank opens at the base after it.
+        if abs(high - left_flank_length) <= _JUNCTION_TOLERANCE:
+            ends_at_junction.append(hsp)
+        if abs(low - (left_flank_length + 1)) <= _JUNCTION_TOLERANCE:
+            starts_at_junction.append(hsp)
+
+    return max(
+        (
+            _subject_bases_between(left, right)
+            for left in ends_at_junction
+            for right in starts_at_junction
+            if left is not right
+        ),
+        default=0,
+    )
+
+
 def _residues_from_hsp(hsp: dict[str, Any], strand: int) -> str | None:
     """The subject's residues for one HSP, ungapped and on the target's strand.
 
@@ -230,10 +302,18 @@ def to_references(
         # Measured across every HSP, not just the best one: the HSP that
         # carries the missing segment is not always the one with the strongest
         # e-value, and one that does carry it settles the question for the hit.
+        #
+        # Both shapes count. A donor reported as one gapped HSP is found by
+        # `_gap_bases_carried`; the same donor reported as two HSPs bracketing
+        # the segment is found by `_gap_bases_bracketed`. Measuring only the
+        # first left every bracketing hit looking like it carried nothing.
         gap_bases = (
             max(
-                (_gap_bases_carried(hsp, left_flank_length) for hsp in hsps),
-                default=0,
+                max(
+                    (_gap_bases_carried(hsp, left_flank_length) for hsp in hsps),
+                    default=0,
+                ),
+                _gap_bases_bracketed(hsps, left_flank_length),
             )
             if left_flank_length is not None
             else None

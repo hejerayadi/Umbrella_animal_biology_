@@ -234,11 +234,27 @@ class ScriptedBlast(Tool[BlastSearchInput, BlastSearchOutput]):
         self.mode = mode
         self.delay = delay
         self.calls: list[BlastSearchInput] = []
+        #: Only the calls that started a new remote job. The distinction is the
+        #: whole point of the resume path: a slice that re-polls a job costs
+        #: nothing at EMBL-EBI, while a slice that resubmits pays ~193 s again.
+        self.submissions: list[BlastSearchInput] = []
 
     async def run(self, payload: BlastSearchInput) -> BlastSearchOutput:
         self.calls.append(payload)
-        if self.delay:
-            await asyncio.sleep(self.delay)
+
+        if payload.job_id is None:
+            # Mirror the real tool exactly: the job id is written onto the
+            # payload the moment the job is submitted, BEFORE the poll that a
+            # slice deadline may cancel. Without this the stand-in could never
+            # exercise the resume path at all - it left `job_id` unset, so
+            # nothing was ever parked and every scenario silently tested the
+            # resubmit-from-scratch behaviour instead.
+            self.submissions.append(payload)
+            payload.job_id = f"scripted-blast-{len(self.submissions)}"
+            if self.delay:
+                await asyncio.sleep(self.delay)
+        # Resuming: the job has been running remotely since the last slice, so
+        # collecting it is immediate. That is what makes a resumed slice cheap.
 
         if self.mode == "outage":
             raise ExternalServiceError("blast", "service unavailable (simulated outage)")
@@ -521,7 +537,7 @@ async def s_continue_resume(r: ScenarioResult) -> None:
     outcome1, _, service = await run_once(
         settings, tools, GAPPED_ONE, trace_id="qa-resume-trace", checkpointer=checkpointer
     )
-    calls_after_slice1 = len(blast.calls)
+    submissions_after_slice1 = len(blast.submissions)
 
     outcome2, _, _ = await run_once(
         settings, tools, GAPPED_ONE, trace_id="qa-resume-trace", checkpointer=checkpointer
@@ -530,21 +546,31 @@ async def s_continue_resume(r: ScenarioResult) -> None:
     r.evidence = {
         "slice1_finished": outcome1.finished,
         "slice1_continuation_reason": outcome1.continuation_reason,
-        "blast_calls_after_slice1": calls_after_slice1,
+        "blast_submissions_after_slice1": submissions_after_slice1,
+        "blast_submissions_total": len(blast.submissions),
         "blast_calls_total": len(blast.calls),
         "slice2_finished": outcome2.finished,
     }
     assert outcome1.finished is False, "first slice should have yielded (0.01s budget)"
     assert outcome1.continuation_reason is not None
-    assert calls_after_slice1 >= 1
-    # The resumed slice must not redo the BLAST call slice 1 already paid for.
-    assert len(blast.calls) == calls_after_slice1, (
-        f"resume repeated {len(blast.calls) - calls_after_slice1} BLAST call(s) "
-        "that slice 1 already completed"
+    assert submissions_after_slice1 >= 1
+
+    # Measured in SUBMISSIONS, not calls. The resumed slice is *expected* to
+    # call the tool again - `deadline_abort` deliberately leaves `attempts`
+    # untouched so it can - and the earlier version of this assertion counted
+    # calls, so it demanded behaviour the agent is documented not to have and
+    # could never pass. What must not happen is a second remote job: that is
+    # the ~193 s the resume exists to save.
+    assert len(blast.submissions) == submissions_after_slice1, (
+        f"resume submitted {len(blast.submissions) - submissions_after_slice1} new BLAST "
+        "job(s) instead of collecting the one slice 1 already paid for"
     )
+    # And the second slice must actually have gone back for the parked job,
+    # rather than finishing by never touching BLAST at all.
+    assert len(blast.calls) > submissions_after_slice1, "slice 2 never resumed the parked job"
     r.actual = (
-        f"slice1 yielded (retryable), {calls_after_slice1} BLAST call(s); "
-        f"slice2 resumed with 0 additional BLAST calls, finished={outcome2.finished}"
+        f"slice1 yielded (retryable) after {submissions_after_slice1} BLAST submission(s); "
+        f"slice2 resumed the same job with 0 new submissions, finished={outcome2.finished}"
     )
     r.verdict = "PASS"
 

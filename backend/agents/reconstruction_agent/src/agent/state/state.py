@@ -5,7 +5,7 @@ reducers declared in the annotations - see `reducers.py` for why the list
 fields append rather than overwrite.
 
 This state is **checkpointed and resumed across HTTP calls**. The orchestrator
-allows 120 s per call and three CONTINUE retries, so one reconstruction is
+allows 600 s per call and three CONTINUE retries, so one reconstruction is
 spread over up to four slices, each picking up where the last stopped. Two
 consequences shape what may live here:
 
@@ -93,7 +93,7 @@ class ReconstructionState(TypedDict, total=False):
     slice_index: int
     max_slices: int
     #: `time.monotonic()` when the current slice opened. Per-slice, because the
-    #: 120 s timeout it guards is per HTTP call, not per run.
+    #: 600 s timeout it guards is per HTTP call, not per run.
     slice_started_at: float | None
     budget_tool_calls: int
     budget_tool_calls_by_name: Annotated[dict[str, int], merge_by_gap]

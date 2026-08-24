@@ -267,20 +267,26 @@ class BudgetSettings(_Base):
     """Hard caps on what one reconstruction may consume.
 
     These exist because the agent runs inside someone else's request. The
-    orchestrator allows 120 s per HTTP call and only three CONTINUE retries
+    orchestrator allows 600 s per HTTP call and only three CONTINUE retries
     (`backend/orchestrator/langgraph/nodes/worker_node.py`), so an unbounded
     loop does not merely cost money - it gets the whole run force-failed and
     every finding discarded.
+
+    The wall clock, not these counts, is the binding constraint. `execute_tools`
+    dispatches a round with `asyncio.gather`, so N BLAST searches cost roughly
+    one search's latency rather than N times it - which is what makes attempting
+    several gaps per round affordable at all.
     """
 
     model_config = _config("RECONSTRUCTION_")
 
     # Total tool invocations across every slice of one run.
-    max_tool_calls: int = Field(default=12, ge=1)
+    max_tool_calls: int = Field(default=24, ge=1)
     # Per-tool caps for the expensive ones. BLAST and MAFFT are submit-and-poll
-    # jobs measured in tens of seconds; a handful of each fills the wall clock.
-    max_blast_calls: int = Field(default=4, ge=0)
-    max_mafft_calls: int = Field(default=6, ge=0)
+    # jobs measured in minutes, but a round of them runs concurrently, so these
+    # bound how many gaps a run may work on rather than how long it may take.
+    max_blast_calls: int = Field(default=8, ge=0)
+    max_mafft_calls: int = Field(default=8, ge=0)
     # Prompt + completion tokens across the whole run.
     max_llm_tokens: int = Field(default=60_000, ge=0)
 
@@ -291,19 +297,28 @@ class BudgetSettings(_Base):
 class ContinuationSettings(_Base):
     """How the agent yields back to the orchestrator mid-run.
 
-    The orchestrator gives each agent 120 s per call and retries a CONTINUE
-    three times with 1/2/4 s backoff - so four HTTP slices in total, and the
-    fifth is converted to FAILED. Both numbers are mirrored here because the
-    agent has to stay inside them without importing `backend`.
+    The orchestrator gives each agent 600 s per call (`AGENT_READ_TIMEOUT_
+    SECONDS`) and retries a CONTINUE three times with 1/2/4 s backoff - so four
+    HTTP slices in total, and the fifth is converted to FAILED. Both numbers are
+    mirrored here because the agent has to stay inside them without importing
+    `backend`.
+
+    Mirrored numbers drift, and this pair did: the read timeout was raised from
+    120 s to 600 s for another agent and nothing updated the yield, which stayed
+    sized for the old limit. Since one EMBL-EBI BLAST job takes ~193 s, the agent
+    then could not finish a single search inside its entire allowance and every
+    run returned an empty result. If either number changes again, change both.
     """
 
-    #: Yield before the orchestrator's 120 s read timeout. This doubles as the
+    #: Yield before the orchestrator's 600 s read timeout. This doubles as the
     #: deadline for each individual tool call - see `BudgetPolicy.
     #: remaining_seconds` - because the yield check only runs between graph
     #: nodes and so cannot interrupt a submit-and-poll tool on its own. The
-    #: remaining margin covers the critic's LLM call, which runs after the
-    #: tools, and serialising the result.
-    yield_after_seconds: float = Field(default=75.0, alias="AGENT_YIELD_AFTER_SECONDS", gt=0)
+    #: remaining ~120 s covers the critic's LLM call, which runs after the
+    #: tools, serialising the result, and the checkpoint write. Overrunning the
+    #: read timeout is strictly worse than yielding early: the orchestrator
+    #: records the agent as unreachable and discards the whole slice.
+    yield_after_seconds: float = Field(default=480.0, alias="AGENT_YIELD_AFTER_SECONDS", gt=0)
     #: Slices the orchestrator will grant: the first call plus three retries.
     #: On the last one the agent must return COMPLETED with whatever it has,
     #: because another CONTINUE would be turned into FAILED.
@@ -349,10 +364,10 @@ class DatabaseSettings(_Base):
         default=None,
         validation_alias=AliasChoices("RECONSTRUCTION_DATABASE_URL", "DATABASE_URL"),
     )
-    #: Bounded hard, and low. psycopg's default connect timeout is ~130 s -
-    #: longer than the 120 s the orchestrator allows for the whole request, so
-    #: an unreachable database would hang past the deadline instead of falling
-    #: back to in-memory checkpointing.
+    #: Bounded hard, and low. psycopg's default connect timeout is ~130 s, which
+    #: would burn a quarter of one slice's wall clock before the agent even
+    #: learns the database is unreachable - so it fails fast and falls back to
+    #: in-memory checkpointing instead.
     connect_timeout_seconds: int = Field(
         default=5, alias="RECONSTRUCTION_DB_CONNECT_TIMEOUT", ge=1
     )

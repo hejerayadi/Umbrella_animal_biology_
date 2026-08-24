@@ -56,17 +56,38 @@ def route_after_worker(state: WorkflowState) -> str:
         return state.current_agent
 
     # The agent said "something went wrong, I give up."
-    # -> Stop running agents, but still go through the responder so the user
-    #    gets a real explanation instead of a raw error.
+    # -> Stop the research line, but run any follow-up the planner scheduled
+    #    before handing over to the responder.
+    #
+    # A failure does NOT cancel the follow-up. The two halves of "what traits
+    # let the Arctic fox survive the cold, and draw it" are independent
+    # requests: the genomics half needs an annotated assembly, the drawing
+    # needs only a species name. Skipping the drawing because the genomics
+    # failed is what made the whole request come back as an apology.
     if status == "failed":
-        return "responder"
+        return _next_follow_up(state) or "responder"
 
     # The agent said "I'm done."
     if status == "completed":
         # If someone else was paused waiting on this agent, go back and
-        # resume them now that they have what they needed. Otherwise all the
-        # work is finished, so hand off to the responder to write the answer.
-        return state.waiting_agent if state.waiting_agent is not None else "responder"
+        # resume them now that they have what they needed.
+        if state.waiting_agent is not None:
+            return state.waiting_agent
+        # Nobody is waiting, so the research line is finished. Run the
+        # follow-up if there is one, otherwise write the answer.
+        return _next_follow_up(state) or "responder"
 
     # Any other status value is unexpected - fail loudly instead of guessing.
     raise ValueError(f"Unhandled agent status: {status!r}")
+
+
+def _next_follow_up(state: WorkflowState) -> str | None:
+    """The next planner-scheduled agent that has not run yet, if any.
+
+    `worker_node` removes each entry as it dispatches it, so this returns None
+    once the follow-up has run and the graph moves on to the responder. That
+    bookkeeping is what stops a follow-up whose own result routes back here
+    from being dispatched forever.
+    """
+
+    return state.follow_up_agents[0] if state.follow_up_agents else None

@@ -47,9 +47,16 @@ class ToolInvocation:
 #: reach.
 _RELAXED_EXPECT = 1e-3
 _RELAXED_MAX_HITS = 100
-#: A broader ENA division: the strict default is vertebrate coding sequence, so
-#: a gap in a non-coding or poorly-annotated region finds nothing there.
-_RELAXED_DATABASE = "em_rel_vrt"
+#: A broader ENA division. `em_std_vrt` is the *standard* vertebrate set; this
+#: is the whole vertebrate division, which also carries the WGS, CON and HTG
+#: entries where draft genomic scaffolds actually live - so a gap that finds
+#: nothing among finished records still has somewhere to look.
+#:
+#: NOT `em_rel_vrt`, which was here before and does not exist: EMBL-EBI
+#: validates this against a fixed list of 409 codes and rejects anything else
+#: with a bare HTTP 400, so *every* relaxed retry failed on submission. The
+#: live list is `GET /ncbiblast/parameterdetails/database`.
+_RELAXED_DATABASE = "em_vrt"
 
 #: Annotation-based judgement, shared by every selection.
 _QUALITY = ReferenceQualityPolicy()
