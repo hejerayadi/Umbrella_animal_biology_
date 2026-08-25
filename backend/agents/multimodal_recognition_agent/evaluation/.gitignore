@@ -1,0 +1,8 @@
+# Evaluation image assets are DOWNLOADED, never committed.
+#
+# Every case in manifest.json records a public source page and a public asset
+# URL instead of the bytes. `fetch_assets.py` resolves those URLs into this
+# directory on demand. Nothing here is tracked: the repository must never carry
+# an image payload, and the licences involved are honoured by pointing at the
+# original file page rather than redistributing a copy from here.
+assets/

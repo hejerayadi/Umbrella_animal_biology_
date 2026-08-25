@@ -1,0 +1,2099 @@
+{
+  "_benchmark_note": "BOUNDED SPRINT 4 EVALUATION BENCHMARK - NOT A TRAINING, TUNING OR GENERAL ACCURACY DATASET. This set exists to measure the already-implemented Multimodal Species Recognition Agent and to support weakness analysis. It is far too small to justify any claim about BioCLIP-2 accuracy or about species recognition in general. It must never be used to train or fine-tune a model, to tune prompts, or to move the confidence thresholds 0.75 / 0.08 / 0.45, which were fixed long before this dataset existed. No expected value here was produced by, copied from, or confirmed against a Recognition Agent output: species identity comes from each image's own public source page plus direct visual inspection, and taxonomy identifiers come from official GBIF and NCBI sources.",
+  "benchmark_id": "recognition-sprint4-benchmark-v1",
+  "sprint": 4,
+  "bounded": true,
+  "is_training_data": false,
+  "may_tune_thresholds": false,
+  "may_tune_prompts": false,
+  "derived_from_agent_output": false,
+  "created": "2026-08-25",
+  "permitted_use": [
+    "measuring the existing agent against documented cases",
+    "computing the Sprint 4 evaluation criteria",
+    "weakness classification and reporting"
+  ],
+  "prohibited_use": [
+    "training",
+    "fine-tuning",
+    "prompt tuning",
+    "threshold tuning",
+    "provider or workflow modification",
+    "general accuracy claims"
+  ],
+  "ground_truth_sources": {
+    "species_identity": "Wikimedia Commons file page and species category, plus direct visual inspection of every selected image",
+    "gbif": "https://api.gbif.org/v1/species/match - accepted only on matchType=EXACT, rank=SPECIES and status=ACCEPTED",
+    "ncbi": "https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi - accepted only on an exact binomial at rank species",
+    "verified_on": "2026-08-25",
+    "note": "Verification was carried out once by the dataset author as research and written down here. No test and no code path in this repository contacts GBIF, NCBI or any other external service."
+  },
+  "species": {
+    "Panthera leo": {
+      "scientific_name": "Panthera leo",
+      "gbif_id": 5219404,
+      "ncbi_taxid": 9689,
+      "gbif_accepted_name": "Panthera leo (Linnaeus, 1758)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Panthera tigris": {
+      "scientific_name": "Panthera tigris",
+      "gbif_id": 5219416,
+      "ncbi_taxid": 9694,
+      "gbif_accepted_name": "Panthera tigris (Linnaeus, 1758)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Panthera pardus": {
+      "scientific_name": "Panthera pardus",
+      "gbif_id": 5219436,
+      "ncbi_taxid": 9691,
+      "gbif_accepted_name": "Panthera pardus (Linnaeus, 1758)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Ursus maritimus": {
+      "scientific_name": "Ursus maritimus",
+      "gbif_id": 2433451,
+      "ncbi_taxid": 29073,
+      "gbif_accepted_name": "Ursus maritimus Phipps, 1774",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Loxodonta africana": {
+      "scientific_name": "Loxodonta africana",
+      "gbif_id": 2435350,
+      "ncbi_taxid": 9785,
+      "gbif_accepted_name": "Loxodonta africana (Blumenbach, 1797)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Giraffa camelopardalis": {
+      "scientific_name": "Giraffa camelopardalis",
+      "gbif_id": 2441205,
+      "ncbi_taxid": 9894,
+      "gbif_accepted_name": "Giraffa camelopardalis (Linnaeus, 1758)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Equus quagga": {
+      "scientific_name": "Equus quagga",
+      "gbif_id": 2440892,
+      "ncbi_taxid": 89248,
+      "gbif_accepted_name": "Equus quagga Boddaert, 1785",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Ailuropoda melanoleuca": {
+      "scientific_name": "Ailuropoda melanoleuca",
+      "gbif_id": 2433399,
+      "ncbi_taxid": 9646,
+      "gbif_accepted_name": "Ailuropoda melanoleuca (David, 1869)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Vulpes lagopus": {
+      "scientific_name": "Vulpes lagopus",
+      "gbif_id": 5219303,
+      "ncbi_taxid": 494514,
+      "gbif_accepted_name": "Vulpes lagopus (Linnaeus, 1758)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Phoenicopterus roseus": {
+      "scientific_name": "Phoenicopterus roseus",
+      "gbif_id": 4352332,
+      "ncbi_taxid": 435638,
+      "gbif_accepted_name": "Phoenicopterus roseus Pallas, 1811",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Aptenodytes forsteri": {
+      "scientific_name": "Aptenodytes forsteri",
+      "gbif_id": 2481661,
+      "ncbi_taxid": 9233,
+      "gbif_accepted_name": "Aptenodytes forsteri G.R.Gray, 1844",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    },
+    "Bubo scandiacus": {
+      "scientific_name": "Bubo scandiacus",
+      "gbif_id": 5959143,
+      "ncbi_taxid": 371907,
+      "gbif_accepted_name": "Bubo scandiacus (Linnaeus, 1758)",
+      "gbif_match_type": "EXACT",
+      "gbif_status": "ACCEPTED",
+      "verified_on": "2026-08-25"
+    }
+  },
+  "categories": {
+    "real_recognition": "A photograph of a live animal whose species is independently established.",
+    "ambiguous_or_non_animal": "No identifiable live animal, or an object or depiction rather than an organism. Never scored for species.",
+    "invalid_input_or_dependency_failure": "Contract violations and controlled dependency failures. Scored on status and error code only.",
+    "delegation_resume": "Scientific follow-up requests that must escalate a capability, and the resume half of that contract."
+  },
+  "cases": [
+    {
+      "case_id": "REC-PLEO-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PLEO-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_15_Lions_(Panthera_leo)_(53236386898).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Day_15_Lions_%28Panthera_leo%29_%2853236386898%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 4664,
+        "height": 3239,
+        "bytes": 2567355
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Panthera leo",
+      "accepted_top_k_labels": [
+        "Panthera leo"
+      ],
+      "expected_gbif_id": 5219404,
+      "expected_ncbi_taxid": 9689,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Panthera leo, and the image was additionally inspected by eye before selection. Observed: Two lions resting in shade; the nearer animal is partly occluded by a tree trunk and the second is lying flat. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "Two lions resting in shade; the nearer animal is partly occluded by a tree trunk and the second is lying flat.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PLEO-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PLEO-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_20_Lion_(Panthera_leo)_with_split_nose_..._(53247307602).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/17/Day_20_Lion_%28Panthera_leo%29_with_split_nose_..._%2853247307602%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 3161,
+        "height": 3635,
+        "bytes": 2156330
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Panthera leo",
+      "accepted_top_k_labels": [
+        "Panthera leo"
+      ],
+      "expected_gbif_id": 5219404,
+      "expected_ncbi_taxid": 9689,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Panthera leo, and the image was additionally inspected by eye before selection. Observed: A single adult male lion, head and mane filling much of the frame, mouth open; light foliage crosses the lens. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A single adult male lion, head and mane filling much of the frame, mouth open; light foliage crosses the lens.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PTIG-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PTIG-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:A_young_Tigress.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/4/43/A_young_Tigress.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Yajuvendraupadhyaya",
+        "media_type": "image/jpeg",
+        "width": 5184,
+        "height": 3456,
+        "bytes": 1360144
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Panthera tigris",
+      "accepted_top_k_labels": [
+        "Panthera tigris"
+      ],
+      "expected_gbif_id": 5219416,
+      "expected_ncbi_taxid": 9694,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Panthera tigris, and the image was additionally inspected by eye before selection. Observed: A single adult tiger walking towards the camera beside a tree, whole body visible in good light. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A single adult tiger walking towards the camera beside a tree, whole body visible in good light.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PTIG-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PTIG-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Minkur_female_cub_now_called_Sharmili.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/0/0b/Minkur_female_cub_now_called_Sharmili.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Yajuvendraupadhyaya",
+        "media_type": "image/jpeg",
+        "width": 5184,
+        "height": 3456,
+        "bytes": 2530887
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Panthera tigris",
+      "accepted_top_k_labels": [
+        "Panthera tigris"
+      ],
+      "expected_gbif_id": 5219416,
+      "expected_ncbi_taxid": 9694,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Panthera tigris, and the image was additionally inspected by eye before selection. Observed: A tiger cub at distance in tall dry grass, small in frame and low in contrast against the background. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A tiger cub at distance in tall dry grass, small in frame and low in contrast against the background.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PPAR-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PPAR-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:%22PAIR%22.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/b/ba/%22PAIR%22.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Anurag4edu",
+        "media_type": "image/jpeg",
+        "width": 4608,
+        "height": 3456,
+        "bytes": 3979688
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Panthera pardus",
+      "accepted_top_k_labels": [
+        "Panthera pardus"
+      ],
+      "expected_gbif_id": 5219436,
+      "expected_ncbi_taxid": 9691,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Panthera pardus, and the image was additionally inspected by eye before selection. Observed: Two leopards in a monochrome, low-contrast night or camera-trap style frame. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "Two leopards in a monochrome, low-contrast night or camera-trap style frame.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PPAR-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PPAR-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Black_Panther_-_India.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/Black_Panther_-_India.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Davidvraju",
+        "media_type": "image/jpeg",
+        "width": 2093,
+        "height": 1407,
+        "bytes": 2833386
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Panthera pardus",
+      "accepted_top_k_labels": [
+        "Panthera pardus"
+      ],
+      "expected_gbif_id": 5219436,
+      "expected_ncbi_taxid": 9691,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Panthera pardus, and the image was additionally inspected by eye before selection. Observed: A melanistic leopard (black panther) on a branch; the rosettes are barely visible against the dark coat. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A melanistic leopard (black panther) on a branch; the rosettes are barely visible against the dark coat.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-UMAR-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-UMAR-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Elusive_Polar_Bear_(641423497).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Elusive_Polar_Bear_%28641423497%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Dave Keeshan",
+        "media_type": "image/jpeg",
+        "width": 1494,
+        "height": 1600,
+        "bytes": 565503
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Ursus maritimus",
+      "accepted_top_k_labels": [
+        "Ursus maritimus"
+      ],
+      "expected_gbif_id": 2433451,
+      "expected_ncbi_taxid": 29073,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Ursus maritimus, and the image was additionally inspected by eye before selection. Observed: A single polar bear at close range on rock, whole body visible, gulls around it. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A single polar bear at close range on rock, whole body visible, gulls around it.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-UMAR-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-UMAR-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Polar_Bear_imported_from_iNaturalist_photo_248221928_on_1_January_2024.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/d/d4/Polar_Bear_imported_from_iNaturalist_photo_248221928_on_1_January_2024.jpg",
+        "licence": "CC BY 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by/4.0",
+        "attribution": "(c) Paul Prior, some rights reserved (CC BY)",
+        "media_type": "image/jpeg",
+        "width": 2048,
+        "height": 1365,
+        "bytes": 352064
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Ursus maritimus",
+      "accepted_top_k_labels": [
+        "Ursus maritimus"
+      ],
+      "expected_gbif_id": 2433451,
+      "expected_ncbi_taxid": 29073,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Ursus maritimus, and the image was additionally inspected by eye before selection. Observed: Polar bears at distance on a shoreline, small in frame and surrounded by a large flock of gulls. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "Polar bears at distance on a shoreline, small in frame and surrounded by a large flock of gulls.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-LAFR-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-LAFR-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Baby_Elephant_with_mother_(14711027415).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Baby_Elephant_with_mother_%2814711027415%29.jpg",
+        "licence": "CC BY 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by/2.0",
+        "attribution": "David Rosen from London, UK",
+        "media_type": "image/jpeg",
+        "width": 2688,
+        "height": 1893,
+        "bytes": 996236
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Loxodonta africana",
+      "accepted_top_k_labels": [
+        "Loxodonta africana"
+      ],
+      "expected_gbif_id": 2435350,
+      "expected_ncbi_taxid": 9785,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Loxodonta africana, and the image was additionally inspected by eye before selection. Observed: A calf walking between an adult's legs; the adult's trunk and legs frame the shot. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A calf walking between an adult's legs; the adult's trunk and legs frame the shot.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-LAFR-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-LAFR-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:20100805-CNV00023_(15364913248).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/16/20100805-CNV00023_%2815364913248%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Ashwin Kumar",
+        "media_type": "image/jpeg",
+        "width": 1840,
+        "height": 1232,
+        "bytes": 1541659
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Loxodonta africana",
+      "accepted_top_k_labels": [
+        "Loxodonta africana"
+      ],
+      "expected_gbif_id": 2435350,
+      "expected_ncbi_taxid": 9785,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Loxodonta africana, and the image was additionally inspected by eye before selection. Observed: Two elephants at distance across open grassland, small in frame under a pale sky. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "Two elephants at distance across open grassland, small in frame under a pale sky.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-GCAM-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-GCAM-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Giraffe_(8072248477).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/b/bc/Giraffe_%288072248477%29.jpg",
+        "licence": "CC BY 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by/2.0",
+        "attribution": "Rachel Hobday from England",
+        "media_type": "image/jpeg",
+        "width": 2592,
+        "height": 3872,
+        "bytes": 2498231
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Giraffa camelopardalis",
+      "accepted_top_k_labels": [
+        "Giraffa camelopardalis"
+      ],
+      "expected_gbif_id": 2441205,
+      "expected_ncbi_taxid": 9894,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Giraffa camelopardalis, and the image was additionally inspected by eye before selection. Observed: Head, neck and shoulders of a single giraffe against open sky. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "Head, neck and shoulders of a single giraffe against open sky.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-GCAM-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-GCAM-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Giraffa_camelopardalis_-_13.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/c/c4/Giraffa_camelopardalis_-_13.jpg",
+        "licence": "CC BY 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by/2.0",
+        "attribution": "lwolfartist",
+        "media_type": "image/jpeg",
+        "width": 2048,
+        "height": 3072,
+        "bytes": 2177337
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Giraffa camelopardalis",
+      "accepted_top_k_labels": [
+        "Giraffa camelopardalis"
+      ],
+      "expected_gbif_id": 2441205,
+      "expected_ncbi_taxid": 9894,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Giraffa camelopardalis, and the image was additionally inspected by eye before selection. Observed: A giraffe standing behind a tall wooden fence; the body is partly occluded by fence posts. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A giraffe standing behind a tall wooden fence; the body is partly occluded by fence posts.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-EQUA-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-EQUA-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Burchell%27s_Zebra_Image_02.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/2/24/Burchell%27s_Zebra_Image_02.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Timothy Akolamazima",
+        "media_type": "image/jpeg",
+        "width": 4593,
+        "height": 3066,
+        "bytes": 2005298
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Equus quagga",
+      "accepted_top_k_labels": [
+        "Equus quagga"
+      ],
+      "expected_gbif_id": 2440892,
+      "expected_ncbi_taxid": 89248,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Equus quagga, and the image was additionally inspected by eye before selection. Observed: A plains zebra facing the camera in grassland, with more zebras behind it. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A plains zebra facing the camera in grassland, with more zebras behind it.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-EQUA-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-EQUA-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:098_Plains_zebra_eyes_close-up_in_Etosha_National_Park_Photo_by_Giles_Laurent.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/0/0f/098_Plains_zebra_eyes_close-up_in_Etosha_National_Park_Photo_by_Giles_Laurent.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Giles Laurent",
+        "media_type": "image/jpeg",
+        "width": 3099,
+        "height": 2066,
+        "bytes": 2750251
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Equus quagga",
+      "accepted_top_k_labels": [
+        "Equus quagga"
+      ],
+      "expected_gbif_id": 2440892,
+      "expected_ncbi_taxid": 89248,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Equus quagga, and the image was additionally inspected by eye before selection. Observed: An extreme close crop of a zebra face and stripe pattern, with almost no body or habitat context. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "An extreme close crop of a zebra face and stripe pattern, with almost no body or habitat context.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-AMEL-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-AMEL-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:NZP-20100323-121MM.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/8/80/NZP-20100323-121MM.jpg",
+        "licence": "CC0",
+        "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attribution": "Mehgan Murphy, Smithsonian's National Zoo",
+        "media_type": "image/jpeg",
+        "width": 800,
+        "height": 1134,
+        "bytes": 299476
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Ailuropoda melanoleuca",
+      "accepted_top_k_labels": [
+        "Ailuropoda melanoleuca"
+      ],
+      "expected_gbif_id": 2433399,
+      "expected_ncbi_taxid": 9646,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Ailuropoda melanoleuca, and the image was additionally inspected by eye before selection. Observed: A single giant panda feeding on bamboo, head and torso clearly visible. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A single giant panda feeding on bamboo, head and torso clearly visible.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-AMEL-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-AMEL-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Qinling_Giant_Panda,_Shaanxi,_China.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/6/62/Qinling_Giant_Panda%2C_Shaanxi%2C_China.jpg",
+        "licence": "CC0",
+        "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attribution": "no rights reserved",
+        "media_type": "image/jpeg",
+        "width": 2048,
+        "height": 1365,
+        "bytes": 2141916
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Ailuropoda melanoleuca",
+      "accepted_top_k_labels": [
+        "Ailuropoda melanoleuca"
+      ],
+      "expected_gbif_id": 2433399,
+      "expected_ncbi_taxid": 9646,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Ailuropoda melanoleuca, and the image was additionally inspected by eye before selection. Observed: A giant panda sitting inside dense bamboo; the animal is substantially occluded by stems. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A giant panda sitting inside dense bamboo; the animal is substantially occluded by stems.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-VLAG-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-VLAG-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:20121110-20121110-IMG_6521.JPG",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/5/57/20121110-20121110-IMG_6521.JPG",
+        "licence": "CC BY-SA 3.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0",
+        "attribution": "Marc Steensma",
+        "media_type": "image/jpeg",
+        "width": 2452,
+        "height": 3174,
+        "bytes": 3700451
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Vulpes lagopus",
+      "accepted_top_k_labels": [
+        "Vulpes lagopus"
+      ],
+      "expected_gbif_id": 5219303,
+      "expected_ncbi_taxid": 494514,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Vulpes lagopus, and the image was additionally inspected by eye before selection. Observed: A head-on close-up of an Arctic fox in white winter coat. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A head-on close-up of an Arctic fox in white winter coat.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-VLAG-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-VLAG-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Arctic_Fox_juvenile_St_George.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/3/36/Arctic_Fox_juvenile_St_George.jpg",
+        "licence": "Public domain",
+        "licence_url": null,
+        "attribution": "Sowls, Art",
+        "media_type": "image/jpeg",
+        "width": 2970,
+        "height": 2028,
+        "bytes": 523352
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Vulpes lagopus",
+      "accepted_top_k_labels": [
+        "Vulpes lagopus"
+      ],
+      "expected_gbif_id": 5219303,
+      "expected_ncbi_taxid": 494514,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Vulpes lagopus, and the image was additionally inspected by eye before selection. Observed: An Arctic fox in grey-brown summer coat among red rocks, so the pelage does not match the familiar white morph. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "An Arctic fox in grey-brown summer coat among red rocks, so the pelage does not match the familiar white morph.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PROS-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PROS-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Flamingo_clean_time.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/5/59/Flamingo_clean_time.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Mohlayel",
+        "media_type": "image/jpeg",
+        "width": 2048,
+        "height": 1536,
+        "bytes": 582042
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Phoenicopterus roseus",
+      "accepted_top_k_labels": [
+        "Phoenicopterus roseus"
+      ],
+      "expected_gbif_id": 4352332,
+      "expected_ncbi_taxid": 435638,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Phoenicopterus roseus, and the image was additionally inspected by eye before selection. Observed: A single greater flamingo standing in shallow water, full body and pink plumage visible. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A single greater flamingo standing in shallow water, full body and pink plumage visible.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-PROS-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-PROS-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Flamingo_in_Golden_Hour.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/3/3c/Flamingo_in_Golden_Hour.jpg",
+        "licence": "CC BY 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by/4.0",
+        "attribution": "BKadhiravan",
+        "media_type": "image/jpeg",
+        "width": 3000,
+        "height": 2000,
+        "bytes": 3285977
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Phoenicopterus roseus",
+      "accepted_top_k_labels": [
+        "Phoenicopterus roseus"
+      ],
+      "expected_gbif_id": 4352332,
+      "expected_ncbi_taxid": 435638,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Phoenicopterus roseus, and the image was additionally inspected by eye before selection. Observed: A flamingo as a dark silhouette against a strongly backlit orange sunset, so colour information is lost. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A flamingo as a dark silhouette against a strongly backlit orange sunset, so colour information is lost.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-AFOR-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-AFOR-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:2007_Snow-Hill-Island_Luyten-De-Hauwere-Emperor-Penguin-05.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/2007_Snow-Hill-Island_Luyten-De-Hauwere-Emperor-Penguin-05.jpg",
+        "licence": "Public domain",
+        "licence_url": null,
+        "attribution": "Denis Luyten",
+        "media_type": "image/jpeg",
+        "width": 2554,
+        "height": 1365,
+        "bytes": 1367819
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Aptenodytes forsteri",
+      "accepted_top_k_labels": [
+        "Aptenodytes forsteri"
+      ],
+      "expected_gbif_id": 2481661,
+      "expected_ncbi_taxid": 9233,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Aptenodytes forsteri, and the image was additionally inspected by eye before selection. Observed: Emperor penguin adults and chicks at close range on ice. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "Emperor penguin adults and chicks at close range on ice.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-AFOR-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-AFOR-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:2007_Snow-Hill-Island_Luyten-De-Hauwere-Emperor-Penguin-03.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/2007_Snow-Hill-Island_Luyten-De-Hauwere-Emperor-Penguin-03.jpg",
+        "licence": "Public domain",
+        "licence_url": null,
+        "attribution": "Denis Luyten",
+        "media_type": "image/jpeg",
+        "width": 2957,
+        "height": 1411,
+        "bytes": 1596990
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Aptenodytes forsteri",
+      "accepted_top_k_labels": [
+        "Aptenodytes forsteri"
+      ],
+      "expected_gbif_id": 2481661,
+      "expected_ncbi_taxid": 9233,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Aptenodytes forsteri, and the image was additionally inspected by eye before selection. Observed: An emperor penguin colony seen at distance; individual birds are small in frame. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "An emperor penguin colony seen at distance; individual birds are small in frame.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-BSCA-01",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-BSCA-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Bubo_scandiacus_346790220.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/18/Bubo_scandiacus_346790220.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Luke",
+        "media_type": "image/jpeg",
+        "width": 2048,
+        "height": 1536,
+        "bytes": 1703100
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Bubo scandiacus",
+      "accepted_top_k_labels": [
+        "Bubo scandiacus"
+      ],
+      "expected_gbif_id": 5959143,
+      "expected_ncbi_taxid": 371907,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Bubo scandiacus, and the image was additionally inspected by eye before selection. Observed: A single snowy owl perched in bare branches, facing the camera. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A single snowy owl perched in bare branches, facing the camera.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "REC-BSCA-02",
+      "category": "real_recognition",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/REC-BSCA-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Bubo_scandiacus_Boundary_Bay_1.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Bubo_scandiacus_Boundary_Bay_1.jpg",
+        "licence": "CC BY 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by/2.0",
+        "attribution": "Bill Anderson from Surrey, Canada",
+        "media_type": "image/jpeg",
+        "width": 1024,
+        "height": 748,
+        "bytes": 1101090
+      },
+      "expected_status": "completed",
+      "expected_decision": "uncertain",
+      "accepted_decisions": [
+        "identified",
+        "uncertain"
+      ],
+      "expected_species": "Bubo scandiacus",
+      "accepted_top_k_labels": [
+        "Bubo scandiacus"
+      ],
+      "expected_gbif_id": 5959143,
+      "expected_ncbi_taxid": 371907,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ground_truth_basis": "The Wikimedia Commons species category and file page identify the subject as Bubo scandiacus, and the image was additionally inspected by eye before selection. Observed: A snowy owl perched side-on against pale driftwood and dry grass, where the barred plumage blends into the background. GBIF and NCBI identifiers were verified independently against the official sources on 2026-08-25.",
+      "notes": "A snowy owl perched side-on against pale driftwood and dry grass, where the barred plumage blends into the background.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier is a SHA-256 oracle holding three fixture digests only, so it returns no candidates for this image and the case cannot be scored offline.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "AMB-01",
+      "category": "ambiguous_or_non_animal",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/AMB-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:20230114_112915_creek_view.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/b/bf/20230114_112915_creek_view.jpg",
+        "licence": "CC BY-SA 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+        "attribution": "Jandalv",
+        "media_type": "image/jpeg",
+        "width": 2000,
+        "height": 1500,
+        "bytes": 814635
+      },
+      "expected_status": "completed",
+      "expected_decision": null,
+      "accepted_decisions": [
+        "uncertain",
+        "not_identified"
+      ],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ambiguity_kind": "non_animal",
+      "ground_truth_basis": "Selected deliberately as a negative case after visual inspection. Observed: A zoo walkway with visitors, trees and fencing. No lion, and no animal at all, is discernible in the frame. No species-level ground truth is asserted, and none may be scored.",
+      "notes": "Sits in the Panthera leo category but depicts no animal - a realistic hard negative for any category-derived pipeline.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier holds three fixture digests only and would answer not_identified for any unknown image, which would pass this case for the wrong reason.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "AMB-02",
+      "category": "ambiguous_or_non_animal",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/AMB-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:2025_Ursus_maritimus_-_Eisbaer_-_by_2eight_-_9SC3526.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/9/9f/2025_Ursus_maritimus_-_Eisbaer_-_by_2eight_-_9SC3526.jpg",
+        "licence": "CC BY-SA 3.0 de",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/3.0/de/deed.en",
+        "attribution": "Stefan Brending (2eight)",
+        "media_type": "image/jpeg",
+        "width": 2600,
+        "height": 1733,
+        "bytes": 994373
+      },
+      "expected_status": "completed",
+      "expected_decision": null,
+      "accepted_decisions": [
+        "uncertain",
+        "not_identified"
+      ],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ambiguity_kind": "poor_quality",
+      "ground_truth_basis": "Selected deliberately as a negative case after visual inspection. Observed: A wide expanse of sea ice and water. Any bear present is far beyond the resolution at which a species could be called. No species-level ground truth is asserted, and none may be scored.",
+      "notes": "Tests that an image with no usable visual evidence is answered honestly rather than guessed at.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier holds three fixture digests only and would answer not_identified for any unknown image, which would pass this case for the wrong reason.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "AMB-03",
+      "category": "ambiguous_or_non_animal",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/AMB-03.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Bucuresti,_Romania._O_girafa_alba_pe_strazile_Bucurestiului._Un_miracol.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/0/05/Bucuresti%2C_Romania._O_girafa_alba_pe_strazile_Bucurestiului._Un_miracol.jpg",
+        "licence": "CC0",
+        "licence_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+        "attribution": "Britchi Mirela",
+        "media_type": "image/jpeg",
+        "width": 969,
+        "height": 891,
+        "bytes": 179216
+      },
+      "expected_status": "completed",
+      "expected_decision": null,
+      "accepted_decisions": [
+        "uncertain",
+        "not_identified"
+      ],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ambiguity_kind": "non_animal_depiction",
+      "ground_truth_basis": "Selected deliberately as a negative case after visual inspection. Observed: A white giraffe sculpture standing on a city street outside a shopfront. It is a model, not an animal. No species-level ground truth is asserted, and none may be scored.",
+      "notes": "A depiction with the right shape and species outline, but not a living organism.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier holds three fixture digests only and would answer not_identified for any unknown image, which would pass this case for the wrong reason.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "AMB-04",
+      "category": "ambiguous_or_non_animal",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/AMB-04.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Data_Harimau.jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/d/d4/Data_Harimau.jpg",
+        "licence": "CC BY 4.0",
+        "licence_url": "https://creativecommons.org/licenses/by/4.0",
+        "attribution": "MaulidinaCM",
+        "media_type": "image/jpeg",
+        "width": 1280,
+        "height": 960,
+        "bytes": 151637
+      },
+      "expected_status": "completed",
+      "expected_decision": null,
+      "accepted_decisions": [
+        "uncertain",
+        "not_identified"
+      ],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ambiguity_kind": "non_animal",
+      "ground_truth_basis": "Selected deliberately as a negative case after visual inspection. Observed: A painted zoo information mural showing a world map and tiger subspecies names. No animal is present. No species-level ground truth is asserted, and none may be scored.",
+      "notes": "Carries the words and iconography of the species without containing the species.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier holds three fixture digests only and would answer not_identified for any unknown image, which would pass this case for the wrong reason.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "AMB-05",
+      "category": "ambiguous_or_non_animal",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/AMB-05.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Kampala_Kasubi_Tombs_(2063512459).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/Kampala_Kasubi_Tombs_%282063512459%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "not not phil from SF, CA, US",
+        "media_type": "image/jpeg",
+        "width": 1944,
+        "height": 2592,
+        "bytes": 897058
+      },
+      "expected_status": "completed",
+      "expected_decision": null,
+      "accepted_decisions": [
+        "uncertain",
+        "not_identified"
+      ],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "challenging",
+      "ambiguity_kind": "ambiguous_specimen",
+      "ground_truth_basis": "Selected deliberately as a negative case after visual inspection. Observed: A taxidermy leopard mounted inside a glass display case indoors. No species-level ground truth is asserted, and none may be scored.",
+      "notes": "The species is genuinely Panthera pardus, but it is a preserved specimen behind glass, not a live animal.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The offline mock classifier holds three fixture digests only and would answer not_identified for any unknown image, which would pass this case for the wrong reason.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "task_completion",
+          "provenance_truthfulness",
+          "relevance",
+          "response_consistency",
+          "latency"
+        ],
+        "metrics_not_applicable": [
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability"
+        ]
+      }
+    },
+    {
+      "case_id": "INV-01",
+      "category": "invalid_input_or_dependency_failure",
+      "instruction": "   ",
+      "asset": {
+        "local_path": "assets/INV-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_20_Lion_(Panthera_leo)_with_split_nose_..._(53247307602).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/17/Day_20_Lion_%28Panthera_leo%29_with_split_nose_..._%2853247307602%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 3161,
+        "height": 3635,
+        "bytes": 2156330
+      },
+      "expected_status": "failed",
+      "expected_decision": null,
+      "accepted_decisions": [],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": "EMPTY_INSTRUCTION",
+      "difficulty": null,
+      "failure_kind": "empty_instruction",
+      "asset_mode": "image_required",
+      "ground_truth_basis": "Behavioural expectation derived from the agent's own validation contract in validation.py and domain/errors.py. No species is expected and none is scored.",
+      "notes": "A valid image paired with a whitespace-only instruction. Both inputs are mandatory.",
+      "applicability": {
+        "offline": true,
+        "live": true,
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "controlled_error_code",
+          "task_completion",
+          "provenance_truthfulness"
+        ],
+        "metrics_not_applicable": [
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability",
+          "relevance"
+        ]
+      }
+    },
+    {
+      "case_id": "INV-02",
+      "category": "invalid_input_or_dependency_failure",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": null,
+      "expected_status": "failed",
+      "expected_decision": null,
+      "accepted_decisions": [],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": "MISSING_IMAGE",
+      "difficulty": null,
+      "failure_kind": "missing_image",
+      "asset_mode": "none",
+      "ground_truth_basis": "Behavioural expectation derived from the agent's own validation contract in validation.py and domain/errors.py. No species is expected and none is scored.",
+      "notes": "A valid instruction with no image entry in the context at all.",
+      "applicability": {
+        "offline": true,
+        "live": true,
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "controlled_error_code",
+          "task_completion",
+          "provenance_truthfulness"
+        ],
+        "metrics_not_applicable": [
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability",
+          "relevance"
+        ]
+      }
+    },
+    {
+      "case_id": "INV-03",
+      "category": "invalid_input_or_dependency_failure",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": null,
+      "expected_status": "failed",
+      "expected_decision": null,
+      "accepted_decisions": [],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": "UNSUPPORTED_IMAGE_SOURCE",
+      "difficulty": null,
+      "failure_kind": "remote_image_url",
+      "asset_mode": "synthetic_context",
+      "ground_truth_basis": "Behavioural expectation derived from the agent's own validation contract in validation.py and domain/errors.py. No species is expected and none is scored.",
+      "notes": "The image entry carries an https:// URL instead of an inline base64 data URL. The agent never fetches a remote image.",
+      "applicability": {
+        "offline": true,
+        "live": true,
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "controlled_error_code",
+          "task_completion",
+          "provenance_truthfulness"
+        ],
+        "metrics_not_applicable": [
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability",
+          "relevance"
+        ]
+      }
+    },
+    {
+      "case_id": "DEP-01",
+      "category": "invalid_input_or_dependency_failure",
+      "instruction": "What animal species is shown in this photograph?",
+      "asset": {
+        "local_path": "assets/DEP-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_20_Lion_(Panthera_leo)_with_split_nose_..._(53247307602).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/17/Day_20_Lion_%28Panthera_leo%29_with_split_nose_..._%2853247307602%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 3161,
+        "height": 3635,
+        "bytes": 2156330
+      },
+      "expected_status": "failed",
+      "expected_decision": null,
+      "accepted_decisions": [],
+      "expected_species": null,
+      "accepted_top_k_labels": null,
+      "expected_gbif_id": null,
+      "expected_ncbi_taxid": null,
+      "expected_delegation_capability": null,
+      "expected_error_code": "CLASSIFICATION_UNAVAILABLE",
+      "difficulty": null,
+      "failure_kind": "classifier_unavailable",
+      "asset_mode": "image_required",
+      "injected_failure": "classification_transport_error",
+      "ground_truth_basis": "Behavioural expectation derived from adapters/bioclip.py, which maps every remote failure onto the single controlled code CLASSIFICATION_UNAVAILABLE and never falls back to fixture data. Exercised by injecting a failing transport, never by taking a real provider offline.",
+      "notes": "Dependency-failure case. The classification transport is injected and made to fail; no live provider is contacted and no real outage is caused.",
+      "applicability": {
+        "offline": true,
+        "live": false,
+        "live_reason": "Deliberately excluded from live runs: it would mean breaking a real provider call, and the behaviour is already fully determined by an injected transport.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "controlled_error_code",
+          "task_completion",
+          "provenance_truthfulness",
+          "zero_retry"
+        ],
+        "metrics_not_applicable": [
+          "decision",
+          "top1_species",
+          "top5_species",
+          "gbif_identifier",
+          "ncbi_taxid",
+          "delegation_capability",
+          "relevance"
+        ]
+      }
+    },
+    {
+      "case_id": "DEL-01",
+      "category": "delegation_resume",
+      "instruction": "What is the genome of the animal in this photograph?",
+      "asset": {
+        "local_path": "assets/DEL-01.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_20_Lion_(Panthera_leo)_with_split_nose_..._(53247307602).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/17/Day_20_Lion_%28Panthera_leo%29_with_split_nose_..._%2853247307602%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 3161,
+        "height": 3635,
+        "bytes": 2156330
+      },
+      "expected_status": "needs_agent",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Panthera leo",
+      "accepted_top_k_labels": [
+        "Panthera leo"
+      ],
+      "expected_gbif_id": 5219404,
+      "expected_ncbi_taxid": 9689,
+      "expected_delegation_capability": "Genome",
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "resume_context_key": "genome",
+      "ground_truth_basis": "Behavioural expectation derived from workflows/nodes.py::make_delegation_node, which delegates only when the intent is scientific_follow_up, the decision is identified, a primary species exists and a capability was recognised. The species is the independently verified subject of the image.",
+      "notes": "Delegation case. 'genome' is a Genome trigger word in text_analysis._FOLLOW_UP_CAPABILITIES, so the intent becomes scientific_follow_up and the capability hint is Genome. Delegation is conditional on the classifier reaching identified; if it does not, that is a recorded finding about the classifier, not a dataset defect.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "Requires a real identification before delegation can fire, which the three-digest mock oracle cannot produce for this image.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "delegation_capability",
+          "agent_tool_selection",
+          "task_completion",
+          "provenance_truthfulness",
+          "response_consistency"
+        ],
+        "metrics_not_applicable": [
+          "gbif_identifier",
+          "ncbi_taxid"
+        ]
+      }
+    },
+    {
+      "case_id": "DEL-02",
+      "category": "delegation_resume",
+      "instruction": "What is the evolutionary lineage of the animal in this photograph?",
+      "asset": {
+        "local_path": "assets/DEL-02.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_20_Lion_(Panthera_leo)_with_split_nose_..._(53247307602).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/17/Day_20_Lion_%28Panthera_leo%29_with_split_nose_..._%2853247307602%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 3161,
+        "height": 3635,
+        "bytes": 2156330
+      },
+      "expected_status": "needs_agent",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Panthera leo",
+      "accepted_top_k_labels": [
+        "Panthera leo"
+      ],
+      "expected_gbif_id": 5219404,
+      "expected_ncbi_taxid": 9689,
+      "expected_delegation_capability": "Evolution",
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "resume_context_key": "evolution_analysis",
+      "ground_truth_basis": "Behavioural expectation derived from workflows/nodes.py::make_delegation_node, which delegates only when the intent is scientific_follow_up, the decision is identified, a primary species exists and a capability was recognised. The species is the independently verified subject of the image.",
+      "notes": "Delegation case. 'evolution' and 'lineage' are Evolution triggers, so the capability hint is Evolution. Delegation is conditional on the classifier reaching identified; if it does not, that is a recorded finding about the classifier, not a dataset defect.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "Requires a real identification before delegation can fire, which the three-digest mock oracle cannot produce for this image.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "delegation_capability",
+          "agent_tool_selection",
+          "task_completion",
+          "provenance_truthfulness",
+          "response_consistency"
+        ],
+        "metrics_not_applicable": [
+          "gbif_identifier",
+          "ncbi_taxid"
+        ]
+      }
+    },
+    {
+      "case_id": "DEL-03",
+      "category": "delegation_resume",
+      "instruction": "What is the genome of the animal in this photograph?",
+      "asset": {
+        "local_path": "assets/DEL-03.jpg",
+        "source_page": "https://commons.wikimedia.org/wiki/File:Day_20_Lion_(Panthera_leo)_with_split_nose_..._(53247307602).jpg",
+        "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/17/Day_20_Lion_%28Panthera_leo%29_with_split_nose_..._%2853247307602%29.jpg",
+        "licence": "CC BY-SA 2.0",
+        "licence_url": "https://creativecommons.org/licenses/by-sa/2.0",
+        "attribution": "Bernard DUPONT from FRANCE",
+        "media_type": "image/jpeg",
+        "width": 3161,
+        "height": 3635,
+        "bytes": 2156330
+      },
+      "expected_status": "completed",
+      "expected_decision": "identified",
+      "accepted_decisions": [
+        "identified"
+      ],
+      "expected_species": "Panthera leo",
+      "accepted_top_k_labels": [
+        "Panthera leo"
+      ],
+      "expected_gbif_id": 5219404,
+      "expected_ncbi_taxid": 9689,
+      "expected_delegation_capability": null,
+      "expected_error_code": null,
+      "difficulty": "clear",
+      "resume_context_key": "genome",
+      "resume_context_present": true,
+      "ground_truth_basis": "Resume half of the delegation contract. workflows/state.py::HELPER_OUTPUT_KEYS maps Genome to the context key 'genome', and make_delegation_node completes instead of escalating a second time when that key is already present.",
+      "notes": "The same request as DEL-01, but the helper's output key is already in the shared context, so the agent must complete with the seven output keys instead of escalating again.",
+      "applicability": {
+        "offline": false,
+        "live": true,
+        "offline_reason": "The same identification requirement as DEL-01.",
+        "metrics_applicable": [
+          "output_schema",
+          "status",
+          "decision",
+          "task_completion",
+          "agent_tool_selection",
+          "provenance_truthfulness"
+        ],
+        "metrics_not_applicable": [
+          "delegation_capability",
+          "gbif_identifier",
+          "ncbi_taxid"
+        ]
+      }
+    }
+  ]
+}
