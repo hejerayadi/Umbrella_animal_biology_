@@ -2,17 +2,22 @@
 Pipeline de recherche (retrieval) pour Writing Support -- recherche
 vectorielle + filtrage par metadonnees sur les 3 collections Qdrant.
 
+`search_kb_papers` porte le prefixe `kb_` a dessein : `discovery/sources.py`
+expose aussi un `search_papers`, et les deux ne veulent pas dire la meme
+chose. Celui-la retourne de la litterature *citable* ; celui-ci retourne des
+exemples de style qui ne doivent JAMAIS etre cites (cf. les descriptions
+d'outils dans `scientific_writing.py`). Deux noms identiques de part et
+d'autre de cette frontiere sont exactement le genre de confusion qui finit
+par mettre un faux papier dans une bibliographie.
+
 Usage (depuis backend/, avec le venv active) :
     python -m agents.Literature_Agent.subagents.writing.kb.retrieval
 (lance une demo de recherche sur chaque collection)
-
-Ou importe search_papers / search_related_work / search_citations
-depuis un autre module.
 """
 
 from qdrant_client.models import Document, Filter, FieldCondition, MatchValue
 
-from .qdrant_setup import client, EMBEDDING_MODEL
+from .qdrant_setup import get_client, EMBEDDING_MODEL
 
 
 def _build_filter(conditions: dict | None) -> Filter | None:
@@ -24,16 +29,18 @@ def _build_filter(conditions: dict | None) -> Filter | None:
     )
 
 
-def search_papers(query: str, section_type: str | None = None, domain: str | None = None, limit: int = 5):
+def search_kb_papers(query: str, section_type: str | None = None, domain: str | None = None, limit: int = 5):
     """Recherche dans ghaya_papers_fulltext (arXiv + PubMed).
-    section_type: 'abstract' ou 'body'. domain: ex. 'biodiversity'."""
+    section_type: 'abstract' ou 'body'. domain: ex. 'biodiversity'.
+
+    Exemples de style uniquement -- jamais une source citable."""
     filters = {}
     if section_type:
         filters["section_type"] = section_type
     if domain:
         filters["domain"] = domain
 
-    return client.query_points(
+    return get_client().query_points(
         collection_name="ghaya_papers_fulltext",
         query=Document(text=query, model=EMBEDDING_MODEL),
         query_filter=_build_filter(filters),
@@ -44,7 +51,7 @@ def search_papers(query: str, section_type: str | None = None, domain: str | Non
 def search_related_work(query: str, limit: int = 5):
     """Recherche dans ghaya_related_work (Multi-XScience) -- pas de filtre
     thematique disponible (domain='general' partout)."""
-    return client.query_points(
+    return get_client().query_points(
         collection_name="ghaya_related_work",
         query=Document(text=query, model=EMBEDDING_MODEL),
         limit=limit,
@@ -56,7 +63,7 @@ def search_citations(query: str, intent: str | None = None, limit: int = 5):
     intent: 'Background', 'Method', ou 'Result Comparison'."""
     filters = {"intent": intent} if intent else None
 
-    return client.query_points(
+    return get_client().query_points(
         collection_name="ghaya_citation_examples",
         query=Document(text=query, model=EMBEDDING_MODEL),
         query_filter=_build_filter(filters),
@@ -77,7 +84,7 @@ def print_results(points, label: str):
 
 if __name__ == "__main__":
     # Demo : une requete par collection pour valider que le retrieval fonctionne
-    results = search_papers("wildlife conservation and habitat loss", section_type="abstract")
+    results = search_kb_papers("wildlife conservation and habitat loss", section_type="abstract")
     print_results(results, "ghaya_papers_fulltext (abstract, filtre section_type)")
 
     results = search_related_work("temporal logic model checking")

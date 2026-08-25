@@ -54,12 +54,19 @@ class KnowledgeDiscoveryOrchestrator:
         `is_placeholder` and `notice` are carried through untouched when the
         source sets them: whoever reads this output has to be able to tell
         retrieved literature from a stand-in.
+
+        `records` is always present, even as an empty list. The Trait Discovery
+        Agent reads `output["discovery"]["records"]` over HTTP for the evidence
+        behind a trait->gene link; when this node emitted only `papers`, that
+        lookup found no key and silently returned no evidence on every call.
+        See `sources.py` for the record shape.
         """
         raw = state.get("raw_results") or {}
         papers = raw.get("papers", [])
 
         output = {
             "papers": papers,
+            "records": raw.get("records", []),
             "total_found": raw.get("total_found", len(papers)),
             "source": raw.get("source", "literature_search"),
         }

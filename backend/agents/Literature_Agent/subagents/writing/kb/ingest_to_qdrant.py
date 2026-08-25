@@ -1,7 +1,7 @@
 import time
 import uuid
 from qdrant_client.models import PointStruct, Document
-from .qdrant_setup import client, EMBEDDING_MODEL
+from .qdrant_setup import get_client, EMBEDDING_MODEL
 
 NAMESPACE = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -27,7 +27,7 @@ def upsert_batch(collection_name: str, texts: list[str], payloads: list[dict], i
 
         for attempt in range(3):
             try:
-                client.upsert(collection_name=collection_name, points=points)
+                get_client().upsert(collection_name=collection_name, points=points)
                 print(f"{i + len(batch_texts)}/{len(texts)} points inseres dans {collection_name}", flush=True)
                 break
             except Exception as e:

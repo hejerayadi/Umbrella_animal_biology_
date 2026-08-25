@@ -46,8 +46,12 @@ def classify_route(text: str) -> str:
     return "discovery"
 
 
-def classify_route_llm(instruction: str) -> str | None:
-    """Preferred route classification via Azure OpenAI, with deterministic fallback."""
+def classify_route_llm(instruction: str) -> str:
+    """Preferred route classification via Azure OpenAI, with deterministic fallback.
+
+    Always returns one of `VALID_ROUTES` - every failure path goes through
+    `classify_route`, which does too.
+    """
     try:
         route = call_llm(
             messages=[
@@ -66,6 +70,13 @@ def classify_route_llm(instruction: str) -> str | None:
             role=ROUTER,
         )
         route = (route or "").strip().lower()
-        return route if route in VALID_ROUTES else None
     except Exception:
         return classify_route(instruction)
+
+    # An answer that is not one of the four routes falls back to the keyword
+    # matcher too, not just a raised exception. The truncation described above
+    # is not an exception: it returns finish_reason="length" with empty
+    # content, which lands here. Returning None for that sent every such
+    # request to the caller's "discovery" default and left `classify_route`
+    # unreachable in exactly the case it was written for.
+    return route if route in VALID_ROUTES else classify_route(instruction)

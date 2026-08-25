@@ -12,6 +12,7 @@ import type {
   RecognitionCandidate,
   RecognitionProvenance,
   RecognitionResult,
+  WritingDraftSpec,
 } from "./umbrella-types";
 import { apiRequest, apiUrl } from "./api-client";
 
@@ -527,5 +528,58 @@ export function genomeChartFrom(
     assemblyLevel: asString(metadata.assembly_level),
     comparisons: comparisonsFrom(visualization.comparisons),
     note: asString(visualization.note),
+  };
+}
+
+/**
+ * The context key the Literature Agent publishes its writing under, per its
+ * card.json: the agent's `output` is `{discovery, writing}` and, like every
+ * agent, that is merged straight into the shared context.
+ */
+const WRITING_KEY = "writing";
+
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => (typeof item === "string" ? item : String(item))).filter(Boolean);
+}
+
+/**
+ * Reads the Literature Agent's generated text out of a chat response's context.
+ *
+ * The writing sub-orchestrator returns one of three shapes, so all three are
+ * handled rather than assuming the common one:
+ *
+ *   writing_support     -> { draft, section, references_used, ... }
+ *   publication_support -> { recommended_journals, based_on_draft }
+ *   both                -> { writing: {...}, publication: {...} }
+ *
+ * Returns undefined unless there is something to show. The key is present on
+ * paths that produced nothing at all - a failed run reports `draft: null` with
+ * a notice - and a panel headed "Abstract" with no abstract in it is worse
+ * than no panel, since the answer text already explains the failure.
+ */
+export function writingDraftFrom(
+  context: Record<string, unknown>,
+): WritingDraftSpec | undefined {
+  const root = context[WRITING_KEY];
+  if (!isRecord(root)) return undefined;
+
+  const writing = isRecord(root.writing) ? root.writing : root;
+  const publication = isRecord(root.publication) ? root.publication : root;
+
+  const draft = asString(writing.draft);
+  const recommendedJournals = asString(publication.recommended_journals);
+  if (!draft && !recommendedJournals) return undefined;
+
+  return {
+    // Only the writing branch names a section; a venues-only answer has no
+    // section of its own, so it is labelled for what it actually is.
+    section: asString(writing.section) ?? (draft ? "Draft" : "Suggested journals"),
+    draft,
+    recommendedJournals,
+    referencesUsed: asStringList(writing.references_used),
+    referencesArePlaceholder: writing.references_are_placeholder === true,
+    styleCorrected: writing.style_corrected === true,
+    notice: asString(writing.notice) ?? asString(root.notice),
   };
 }

@@ -7,6 +7,7 @@ import { UmbrellaMark } from "@/components/umbrella/logo";
 import { ProteinViewer } from "@/components/umbrella/protein-viewer";
 import { RecognitionPanel } from "@/components/umbrella/recognition-panel";
 import { UserAvatar } from "@/components/umbrella/user-avatar";
+import { WritingPanel } from "@/components/umbrella/writing-panel";
 import type { Message } from "@/lib/umbrella-types";
 import { cn } from "@/lib/utils";
 
@@ -123,6 +124,11 @@ export function ChatMessage({
                 held until the text settles, so the answer does not reflow
                 around a chart appearing mid-sentence. */}
             {message.genomeChart && done && <GenomeChart spec={message.genomeChart} />}
+            {/* Held until the text settles for the same reason as the panels
+                above - but it matters more here: the answer's last line
+                introduces this draft ("the abstract is below"), so revealing
+                the draft first would put the text above its own introduction. */}
+            {message.writingDraft && done && <WritingPanel spec={message.writingDraft} />}
             {message.biodiversityMap && done && (
               <BiodiversityMap spec={message.biodiversityMap} />
             )}

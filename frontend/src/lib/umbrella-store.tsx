@@ -18,6 +18,7 @@ import {
   genomeChartFrom,
   proteinViewerFrom,
   recognitionFrom,
+  writingDraftFrom,
   type UploadedImage,
 } from "./orchestrator-client";
 import type { AgentActivity, Conversation, Message } from "./umbrella-types";
@@ -187,6 +188,10 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 ...(() => {
                   const chart = genomeChartFrom(response.context);
                   return chart ? { genomeChart: chart } : {};
+                })(),
+                ...(() => {
+                  const writing = writingDraftFrom(response.context);
+                  return writing ? { writingDraft: writing } : {};
                 })(),
               },
             ],

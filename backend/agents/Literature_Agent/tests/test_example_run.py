@@ -1,7 +1,18 @@
-"""Example test to demonstrate Literature Agent functionality end-to-end."""
+"""Example test to demonstrate Literature Agent functionality end-to-end.
+
+These call the real Azure deployments and assert the run completed, so they
+need live credentials and fail offline for reasons unrelated to the code.
+`pytest.ini` deselects them by default; run them with:
+
+    pytest -m integration
+"""
+
+import pytest
 
 from ..api import execute
 from ..schema import AgentRequest
+
+pytestmark = pytest.mark.integration
 
 
 def test_discovery_only():
