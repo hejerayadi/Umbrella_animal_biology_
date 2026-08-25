@@ -58,11 +58,21 @@ class ReconstructionService:
         ncbi_client: NCBIClient | None = None,
         checkpointer: object | None = None,
         runs: RunRepository | None = None,
+        databases: object | None = None,
     ) -> None:
         self._settings = settings
         self._events = events or EventEmitter()
         self._runner = AgentRunner(
-            settings, registry, self._events, checkpointer=checkpointer
+            settings,
+            registry,
+            self._events,
+            checkpointer=checkpointer,
+            # Resolves which BLAST database to search from the target's
+            # taxonomy. Injected, never built here: it makes live NCBI and EBI
+            # calls, and constructing one by default would put the network in
+            # the path of every test that builds a service directly. The
+            # composition root wires the real one - see `api/dependencies`.
+            databases=databases,
         )
         self._builder = ResultBuilder()
         self._runs = runs

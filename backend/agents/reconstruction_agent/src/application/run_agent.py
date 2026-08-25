@@ -51,13 +51,17 @@ class AgentRunner:
         events: EventEmitter | None = None,
         *,
         checkpointer: Any | None = None,
+        databases: Any | None = None,
     ) -> None:
         self._settings = settings
         self._registry = registry
         self._events = events or EventEmitter()
         self._checkpointer = checkpointer
         self._graph: Any | None = None
-        self._nodes = build_nodes(settings, registry, self._events)
+        # `databases` resolves which BLAST database to search. Optional: with
+        # none, the planner's own choice stands alone and a run that cannot
+        # name one reports that rather than guessing a taxonomic division.
+        self._nodes = build_nodes(settings, registry, self._events, databases=databases)
 
     def _compiled(self) -> Any:
         if self._graph is None:

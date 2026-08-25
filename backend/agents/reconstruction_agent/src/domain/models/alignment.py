@@ -64,6 +64,10 @@ class Alignment:
     # gap itself, rather than to the flanks.
     gap_column_start: int | None = None
     gap_column_end: int | None = None
+    #: How many bases earlier than the flank junction the gap's columns begin.
+    #: Non-zero when the aligner slid the indel, which it may legitimately do
+    #: whenever the flank and the missing segment share end bases.
+    junction_slide: int = 0
     tool: str = "mafft"
 
     @property
@@ -79,7 +83,57 @@ class Alignment:
         """
         return self.gap_column_start is not None and self.gap_column_end is not None
 
+    def anchor_fill(self, fill: str) -> str:
+        """`fill` expressed between the flanks, undoing any indel slide.
+
+        A fill read from columns the aligner placed early is still correct - but
+        correct *there*, not between the flanks the caller holds. Rotating it
+        back is what makes it splice cleanly.
+
+        Measured on the polar bear mitogenome: the columns yielded
+        `ATTTGAAAG...CGT` where the removed bases were `TTTGAAAG...CGTA`. Both
+        describe the same sequence once placed, and only the rotated form can be
+        compared against the truth or handed to a caller as "the missing bases".
+
+        The bases moved across come from the *target* row, which every reference
+        shares, so one rotation is correct for the consensus as a whole.
+        """
+        slide = self.junction_slide
+        if not slide or not fill or not self.pairs:
+            return fill
+
+        target_row = self.pairs[0].target_aligned
+        start, end = self.gap_column_start, self.gap_column_end
+        if start is None or end is None:
+            return fill
+
+        if slide > 0:
+            # The run began `slide` bases early: drop that many from the front
+            # and take the target bases that followed the run instead.
+            trailing = _residues(target_row[end:], slide)
+            if len(trailing) < slide or len(fill) <= slide:
+                return fill
+            return fill[slide:] + trailing
+
+        # The run began late: the bases just before it belong at the front.
+        leading = _residues(target_row[:start][::-1], -slide)[::-1]
+        if len(leading) < -slide or len(fill) <= -slide:
+            return fill
+        return leading + fill[:slide]
+
     def mean_identity(self) -> float:
         if not self.pairs:
             return 0.0
         return sum(pair.identity for pair in self.pairs) / len(self.pairs)
+
+
+def _residues(row: str, count: int) -> str:
+    """The first `count` non-gap characters of an aligned row."""
+    out: list[str] = []
+    for character in row:
+        if character == GAP_CHARACTER:
+            continue
+        out.append(character)
+        if len(out) == count:
+            break
+    return "".join(out)

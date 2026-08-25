@@ -35,11 +35,14 @@ from configuration.logging import get_logger
 from contracts.events import EventType
 from contracts.observation import Observation, ObservationStatus
 from contracts.output import ReconstructionStatus
+from domain.exceptions import ReconstructionError
 from domain.models import Alignment, Reference
 from domain.policies.budget_policy import BudgetPolicy, BudgetUsage
 from domain.policies.validation_policy import ValidationPolicy
 from domain.services import ContextExtractor, GapDetector, ReconstructionValidator
+from domain.services.gap_priority import select as select_gaps
 from observability.events import EventEmitter
+from tools.blast.advisor import DatabaseAdvisor, best_database, record_trial
 from tools.contracts import ToolOutput
 from tools.registry import ToolRegistry
 
@@ -110,6 +113,13 @@ class ReconstructionNodes:
     stop_policy: StopPolicy
     budgets: BudgetPolicy
     events: EventEmitter
+    #: Resolves which BLAST databases to probe. Optional so the offline smoke
+    #: test and the unit suite can build the nodes with no network at all; when
+    #: absent the planner's own choice stands unaided.
+    databases: DatabaseAdvisor | None = None
+    #: How many gaps one run will attempt, from settings. Defaulted so the
+    #: existing test fixtures that build nodes by hand keep working.
+    max_gaps_per_run: int = 12
 
     # --- 0. Resume or start -------------------------------------------------
 
@@ -160,14 +170,20 @@ class ReconstructionNodes:
         gaps = self.detector.detect(target)
         contexts = self.extractor.extract_all(target, gaps)
 
-        update: dict[str, Any] = dict(transitions.with_gaps(contexts))
         skipped: dict[str, str] = {}
-
         for context in contexts:
             attempt, reason = self.policy.should_attempt(context)
             if not attempt and reason:
                 skipped[context.identifier] = reason
 
+        # A draft scaffold carries hundreds of gaps and the run can pay for a
+        # handful. Choosing which ones up front is what keeps the loop working
+        # on gaps instead of on refusals - see `domain.services.gap_priority`.
+        attempted, skipped = select_gaps(
+            contexts, limit=self.max_gaps_per_run, skipped=skipped
+        )
+
+        update: dict[str, Any] = dict(transitions.with_gaps(attempted))
         if skipped:
             update["skipped"] = skipped
 
@@ -175,7 +191,11 @@ class ReconstructionNodes:
             EventType.GAPS_DETECTED,
             state["run_id"],
             f"Found {len(gaps)} gap(s); {len(skipped)} will not be attempted.",
-            {"gap_count": len(gaps), "skipped": len(skipped)},
+            {
+                "gap_count": len(gaps),
+                "skipped": len(skipped),
+                "attempting": len(attempted),
+            },
         )
         return cast(ReconstructionState, update)
 
@@ -183,6 +203,8 @@ class ReconstructionNodes:
 
     async def plan(self, state: ReconstructionState) -> ReconstructionState:
         """Choose this iteration's tool calls."""
+        advice = await self._database_advice(state)
+
         steps = await self.planner.plan(state, self.registry.catalogue())
 
         self.events.emit(
@@ -193,7 +215,49 @@ class ReconstructionNodes:
         )
         update = dict(transitions.with_plan([step.as_dict() for step in steps]))
         update["budget_llm_tokens"] = state.get("budget_llm_tokens", 0) + self.planner.take_tokens()
+        if advice is not None:
+            update["database_advice"] = advice
         return cast(ReconstructionState, update)
+
+    async def _database_advice(self, state: ReconstructionState) -> dict[str, Any] | None:
+        """Which databases to probe for this target, resolved once per run.
+
+        Deliberately not per gap. The target's division does not change between
+        one N-run and the next, and a real scaffold carries hundreds of gaps
+        against a budget of eight BLAST calls - re-deriving it each time would
+        spend the run on lookups. Returns None when nothing needs writing, so a
+        resumed slice keeps the advice its first slice paid for.
+        """
+        if state.get("database_advice") or self.databases is None:
+            return None
+
+        target = state.get("target")
+
+        try:
+            advice = await self.databases.advise(
+                organism=state.get("organism"),
+                description=getattr(target, "description", None),
+                # The orchestrator describes the target in prose - "its largest
+                # genomic scaffold (15920966 bp)" - which is the only molecule
+                # signal available when a sequence is pasted rather than fetched.
+                instruction=state.get("instruction"),
+                length=len(target) if target is not None else None,
+            )
+        except ReconstructionError as error:
+            # Discovery is an enrichment. Losing it costs the prior, not the run.
+            _log.info("database_advice_failed", error=str(error))
+            return None
+
+        self.events.emit(
+            EventType.PLAN_CREATED,
+            state["run_id"],
+            (
+                f"Probing {len(advice.candidates)} database(s): "
+                f"{', '.join(advice.candidates) or 'none proposed'}."
+            ),
+            {"databases": advice.candidates},
+        )
+        return advice.as_dict()
 
     # --- 3. Turn the plan into runnable calls ------------------------------
 
@@ -229,6 +293,8 @@ class ReconstructionNodes:
                 )
                 continue
 
+            # Counted on the bare (tool, gap) key: the cap is about how many
+            # rounds a gap gets, not how many databases one round compared.
             attempts = state.get("attempts") or {}
             if attempts.get(attempt_key(step.tool, step.gap_id), 0) >= _MAX_ATTEMPTS_PER_TOOL:
                 refusals.append(
@@ -242,18 +308,20 @@ class ReconstructionNodes:
                 )
                 continue
 
-            invocation = self.selector.build(step, state)
-            if invocation is None:
-                continue
-
-            invocations.append(
-                {
-                    "tool": invocation.tool,
-                    "gap_id": invocation.gap_id,
-                    "payload": invocation.payload,
-                    "relaxed": invocation.relaxed,
-                }
-            )
+            # One step can resolve to several calls: the first homology round
+            # probes two or three databases at once, and `execute_tools`
+            # gathers them, so the wall clock is the slowest search rather than
+            # their sum.
+            for invocation in self.selector.build_many(step, state):
+                invocations.append(
+                    {
+                        "tool": invocation.tool,
+                        "gap_id": invocation.gap_id,
+                        "payload": invocation.payload,
+                        "relaxed": invocation.relaxed,
+                        "variant": invocation.variant,
+                    }
+                )
 
         update: dict[str, Any] = {"pending_invocations": invocations}
         if refusals:
@@ -283,6 +351,10 @@ class ReconstructionNodes:
                         # Carried through so the observation records that this
                         # was a widened retry, not a first attempt.
                         relaxed=bool(item.get("relaxed")),
+                        # Which database this search is comparing, so its parked
+                        # job and its trial result stay distinguishable from the
+                        # sibling searches issued in the same round.
+                        variant=item.get("variant"),
                     ),
                     state,
                 )
@@ -301,6 +373,7 @@ class ReconstructionNodes:
             "observations": [],
             "attempts": {},
             "pending_jobs": {},
+            "database_trials": {},
         }
         for result in results:
             if isinstance(result, BaseException):
@@ -312,10 +385,24 @@ class ReconstructionNodes:
                     # BLAST measuring homology, NCBI supplying residues. A
                     # plain overwrite kept whichever finished last.
                     merged[key] = accumulate_references(merged[key], value)
-                elif key in ("alignments", "attempts", "pending_jobs"):
+                elif key in ("alignments", "attempts", "pending_jobs", "database_trials"):
                     merged[key].update(value)
+                elif key == "preferred_database":
+                    # A scalar, and the parallel probe means several searches in
+                    # one round may each nominate one. Recomputed below from the
+                    # merged tally instead of letting whichever coroutine
+                    # finished last win.
+                    continue
                 elif key in ("tool_calls", "errors", "observations"):
                     merged[key].extend(value)
+
+        # Decided once, on the round's combined evidence. Each search only saw
+        # its own result, so a per-call winner would be whichever of three
+        # concurrent probes happened to return last rather than whichever found
+        # the most gap carriers.
+        winner = best_database(merged["database_trials"])
+        if winner:
+            merged["preferred_database"] = winner
 
         merged["pending_invocations"] = []
         return cast(
@@ -330,6 +417,11 @@ class ReconstructionNodes:
         run_id = state["run_id"]
         started = time.monotonic()
         key = attempt_key(invocation.tool, invocation.gap_id)
+        # Parked jobs are keyed per variant, attempts are not. Three databases
+        # probed in one round is one attempt at the gap, but three separate EBI
+        # jobs - and if the slice deadline cuts them short they must park under
+        # three different keys or two of the three are silently thrown away.
+        job_key = attempt_key(invocation.tool, invocation.gap_id, invocation.variant)
         attempt = (state.get("attempts") or {}).get(key, 0) + 1
         # The round this observation belongs to. `decide` increments the
         # counter at the end of the round, so during execution it still names
@@ -350,7 +442,7 @@ class ReconstructionNodes:
             # because a semantic failure is retried with relaxed parameters and
             # must run a NEW search: resuming the old job would hand the
             # relaxed attempt the strict attempt's results.
-            "pending_jobs": {key: None},
+            "pending_jobs": {job_key: None},
             "tool_calls": [
                 {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": True}
             ],
@@ -407,7 +499,7 @@ class ReconstructionNodes:
                 else None
             )
             return {
-                "pending_jobs": {key: keep} if keep else {},
+                "pending_jobs": {job_key: keep} if keep else {},
                 "tool_calls": [
                     {"tool": invocation.tool, "gap_id": invocation.gap_id, "succeeded": False}
                 ],
@@ -436,7 +528,7 @@ class ReconstructionNodes:
         # comes back is the answer to the question actually asked, and no
         # re-plan can silently strand a search that is already running. See
         # `_resume_payload` for why discarding this round's plan is right.
-        parked = (state.get("pending_jobs") or {}).get(key)
+        parked = (state.get("pending_jobs") or {}).get(job_key)
         if parked:
             restored = _resume_payload(invocation.payload, parked)
             if restored is not None:
@@ -466,6 +558,28 @@ class ReconstructionNodes:
                     "contract_violation": "tool_output_type",
                     "returned_type": type(output).__name__,
                 },
+            )
+
+        # What this database actually produced. Recorded for every search, not
+        # only the probe round, so the tally deepens as later gaps reuse the
+        # winner - and so the choice stays auditable rather than being a bare
+        # name with no working shown.
+        searched = getattr(output, "database", None)
+        if searched:
+            trials = record_trial(
+                state.get("database_trials") or {},
+                searched,
+                hits=int(getattr(output, "total_hits", 0) or 0),
+                carrying_gap=int(getattr(output, "hits_carrying_gap", 0) or 0),
+                seconds=round(time.monotonic() - started, 1),
+            )
+            update["database_trials"] = trials
+            _log.info(
+                "blast_database_measured",
+                database=searched,
+                gap_id=invocation.gap_id,
+                hits=int(getattr(output, "total_hits", 0) or 0),
+                carrying_gap=int(getattr(output, "hits_carrying_gap", 0) or 0),
             )
 
         references: list[Reference] = list(getattr(output, "references", []) or [])

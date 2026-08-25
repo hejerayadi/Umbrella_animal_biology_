@@ -82,6 +82,22 @@ class ReconstructionState(TypedDict, total=False):
     #: failure is retried once with relaxed parameters and then abandoned.
     attempts: Annotated[dict[str, int], merge_by_gap]
 
+    #: What the discovery step proposed for this target: candidate codes, the
+    #: taxonomy prior behind them, and the shortlist shown to the planner.
+    #: Resolved once per run - it depends on the target, which never changes.
+    database_advice: Annotated[dict[str, Any], replace]
+
+    #: What each database actually produced, keyed by code:
+    #: `{"em_std_mam": {"hits": 50, "carrying_gap": 50, "seconds": 213.0}}`.
+    #: The evidence behind `preferred_database`, kept so the choice is
+    #: inspectable rather than a bare winner with no working shown.
+    database_trials: Annotated[dict[str, Any], merge_by_gap]
+    #: The database that produced the most gap carriers. Once one is proven,
+    #: every later gap searches it directly instead of re-probing - which is
+    #: what makes a scaffold with hundreds of gaps affordable at all, against a
+    #: budget of eight BLAST calls.
+    preferred_database: str | None
+
     iteration: int
     max_iterations: int
     should_continue: bool
@@ -166,6 +182,9 @@ def initial_state(
         budget_llm_tokens=0,
         yielded=False,
         pending_jobs={},
+        database_advice={},
+        database_trials={},
+        preferred_database=None,
         warnings=[],
         errors=[],
         needs_agent=None,
@@ -173,9 +192,18 @@ def initial_state(
     )
 
 
-def attempt_key(tool: str, gap_id: str | None) -> str:
-    """The `attempts` key for one tool/gap pair."""
-    return f"{tool}:{gap_id or '-'}"
+def attempt_key(tool: str, gap_id: str | None, variant: str | None = None) -> str:
+    """The `attempts` key for one tool/gap pair, optionally per variant.
+
+    `variant` exists for the parallel database probe. Three BLAST searches on
+    one gap in a single round are three *different questions* - "do mammal
+    records carry this gap?" against "do vertebrate records?" - not three
+    attempts at the same one. Without the variant they collide on one key, trip
+    `_MAX_ATTEMPTS_PER_TOOL` immediately, and the probe silently degrades to a
+    single search: exactly the behaviour the probe exists to replace.
+    """
+    base = f"{tool}:{gap_id or '-'}"
+    return f"{base}:{variant}" if variant else base
 
 
 def has_usable_alignment(alignment: object) -> bool:

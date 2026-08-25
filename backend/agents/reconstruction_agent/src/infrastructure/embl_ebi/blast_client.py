@@ -84,12 +84,20 @@ class BlastClient:
         self,
         sequence: str,
         *,
-        database: str = "em_cds_std_vrt",
+        database: str,
         program: str = "blastn",
         max_hits: int = 50,
         expect: float = 1e-5,
+        low_complexity_filter: bool = True,
     ) -> str:
-        """Queue a search, returning its job id."""
+        """Queue a search, returning its job id.
+
+        `database` is required and has no default on purpose. It used to default
+        to `em_cds_std_vrt` - a coding-only vertebrate set - which was both wrong
+        for genomic gaps and invisible, because the caller always passed a value
+        and nobody read the default again. A required argument makes the choice
+        explicit at every call site.
+        """
         if not self._settings.contact_email:
             raise ExternalServiceError(
                 _SERVICE,
@@ -109,13 +117,35 @@ class BlastClient:
                 "alignments": hits,
                 "scores": hits,
                 "exp": _snap_expect(expect),
+                # DUST masking of low-complexity query regions. Sent
+                # explicitly because nothing here was set before - no filter,
+                # word size, matrix or gap penalty - so every search silently
+                # took whatever EBI defaulted to.
+                #
+                # Not claimed as a timeout fix. A repetitive flank was the
+                # suspect when nuclear searches ran long, but the measurement
+                # did not support it: on this scaffold a 500-base flank scores
+                # 0.85 linguistic complexity where one that finished normally
+                # scores 0.87, so the metric does not separate them. What was
+                # actually measured is that nuclear scaffold queries against
+                # `em_mam` take ~550 s and vary widely, against 213 s for a
+                # mitochondrial query - which the parked-job resume path
+                # handles across slices. Masking is standard practice for a
+                # genomic query and costs nothing; it is not load-bearing.
+                "filter": "T" if low_complexity_filter else "F",
             },
         )
         job_id = response.text.strip()
         if not job_id:
             raise ExternalServiceError(_SERVICE, "run returned an empty job id")
 
-        _log.info("blast_submitted", job_id=job_id, query_length=len(sequence))
+        _log.info(
+            "blast_submitted",
+            job_id=job_id,
+            query_length=len(sequence),
+            database=database,
+            low_complexity_filter=low_complexity_filter,
+        )
         return job_id
 
     async def result(self, job_id: str, *, result_type: str = "json") -> str:
@@ -133,6 +163,36 @@ class BlastClient:
         """Submit and wait in one call - the common case."""
         job_id = await self.submit(sequence, **kwargs)  # type: ignore[arg-type]
         return await self.result(job_id)
+
+    async def database_codes(self) -> dict[str, str]:
+        """Every nucleotide database EBI currently accepts, code -> label.
+
+        The authority behind `tools.blast.catalogue`. Filtered to the nucleotide
+        context because this agent only ever searches DNA, and offering the
+        planner protein databases would invite a submission that fails.
+        """
+        # EBI serves this endpoint as XML unless JSON is asked for explicitly;
+        # without the header the parse fails and the catalogue silently falls
+        # back to the snapshot.
+        payload = await self._client.get_json(
+            f"/{_SERVICE}/parameterdetails/database",
+            headers={"Accept": "application/json"},
+        )
+        values = (payload or {}).get("values", {}).get("values", []) or []
+
+        codes: dict[str, str] = {}
+        for entry in values:
+            code = entry.get("value")
+            if not code:
+                continue
+            properties = (entry.get("properties") or {}).get("properties") or []
+            contexts = {
+                item.get("value") for item in properties if item.get("key") == "contexts"
+            }
+            if "nucleotide" in contexts:
+                codes[str(code)] = str(entry.get("label") or code)
+
+        return codes
 
     async def aclose(self) -> None:
         await self._client.aclose()

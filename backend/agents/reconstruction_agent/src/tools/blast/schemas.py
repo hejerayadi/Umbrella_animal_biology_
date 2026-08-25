@@ -22,18 +22,34 @@ class BlastSearchInput(ToolInput):
     left_flank_length: int | None = Field(
         default=None, ge=0, description="End of the left flank within `sequence`."
     )
-    # EMBL-EBI partitions ENA by division and molecule type - there is no
-    # single "em_rel" catch-all, and passing one is rejected as an invalid
-    # parameter. `GET /ncbiblast/parameterdetails/database` lists them.
+    # No default, on purpose. This used to be `em_std_vrt` - "ENA Sequence
+    # Standard Vertebrate" - and that single constant was the agent's central
+    # failure. EMBL divisions are MUTUALLY EXCLUSIVE: VRT means *other*
+    # vertebrates and explicitly excludes mammals, human, mouse and rodent. For
+    # a mammal target the correct homologues were not in the searched database
+    # at all, so no e-value, retry or ranking change could surface them.
     #
-    # `em_std_vrt` ("ENA Sequence Standard Vertebrate") rather than
-    # `em_cds_std_vrt` ("ENA Coding Standard Vertebrate"), which was the
-    # default and searched coding sequence only. A mitochondrial gene gap is
-    # inside a CDS and matched fine; a gap in a nuclear scaffold - which is
-    # what the Genome agent hands over, and what most real assemblies need -
-    # is usually intronic or intergenic and could never match a coding-only
-    # database, so those runs came back with no evidence whatever the query.
-    database: str = Field(default="em_std_vrt", description="EMBL-EBI database code.")
+    # Measured on the polar bear mitogenome, same query and parameters:
+    # `em_std_vrt` returned 50 hits of which 7 crossed the gap, all fish at
+    # ~67% identity; `em_std_mam` returned 50 hits of which 50 crossed it,
+    # Ursus maritimus at 95.7%, recovering all 45 masked bases exactly.
+    #
+    # The database is now discovered from EBI's live catalogue, chosen by the
+    # planner, and settled by measuring which candidate produces gap carriers.
+    # `None` means "not chosen yet"; the tool resolves it and writes the answer
+    # back here so a resumed slice reuses the same one.
+    database: str | None = Field(default=None, description="EMBL-EBI database code.")
+    # Filed against the caller's target so a run can attribute a result to a
+    # database, and so the planner's next round can compare them.
+    division: str | None = Field(
+        default=None, description="Taxonomic division this database belongs to."
+    )
+    # DUST masking of low-complexity query regions, sent explicitly rather than
+    # left to EBI's default. See `BlastClient.submit` for why this is standard
+    # practice but not a timeout fix.
+    low_complexity_filter: bool = Field(
+        default=True, description="Mask low-complexity query regions (DUST)."
+    )
     program: str = "blastn"
     max_hits: int = Field(default=50, ge=1, le=1000)
     # 1e-5 is strict enough to exclude chance similarity over a few hundred
@@ -75,3 +91,9 @@ class BlastSearchOutput(ToolOutput):
     evidence: list[EvidenceItem] = Field(default_factory=list)
     job_id: str | None = None
     total_hits: int = 0
+    #: Which database produced this, and how well it did. The pair the planner
+    #: compares when deciding where to search next: a database is chosen on
+    #: whether it yields references that actually cross the gap, not on hit
+    #: count, which can be high and entirely useless.
+    database: str | None = None
+    hits_carrying_gap: int = 0

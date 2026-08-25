@@ -6,6 +6,11 @@ whole toolset for fakes without touching the graph.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tools.blast.advisor import DatabaseAdvisor
+
 from typing import Any
 
 from configuration.logging import get_logger
@@ -82,13 +87,19 @@ def build_default_registry(settings: Settings) -> ToolRegistry:
     # One NCBI client, shared: it owns the connection pool and the rate
     # limiter, and BLAST needs it to retrieve the sequence behind each hit.
     ncbi = NCBIClient(settings.ncbi, timeout=timeout)
+    # One TaxonomyService, shared. It caches lineages for the life of the
+    # process, and two instances would each pay NCBI for the same lookup - the
+    # database advisor and the evolutionary-context tool ask about exactly the
+    # same organisms.
+    taxonomy = TaxonomyService(ncbi)
+    blast = BlastClient(settings.embl_ebi, timeout=timeout)
 
     registry = ToolRegistry(
         [
             NCBISearchTool(ncbi),
-            BlastSearchTool(BlastClient(settings.embl_ebi, timeout=timeout), ncbi),
+            BlastSearchTool(blast, ncbi),
             MafftAlignmentTool(MafftClient(settings.embl_ebi, timeout=timeout)),
-            EvolutionaryContextTool(TaxonomyService(ncbi)),
+            EvolutionaryContextTool(taxonomy),
         ]
     )
 
@@ -100,3 +111,23 @@ def build_default_registry(settings: Settings) -> ToolRegistry:
 
     _log.info("tools_registered", count=len(registry.names), tools=registry.names)
     return registry
+
+
+def build_database_advisor(settings: Settings) -> DatabaseAdvisor:
+    """The discovery step, wired to the live EBI catalogue and NCBI taxonomy.
+
+    Built alongside the registry rather than inside it: it is not a tool the
+    planner invokes but a resolver the graph consults before planning, and the
+    graph should not have to reach into the registry to find it.
+    """
+    from infrastructure.embl_ebi.blast_client import BlastClient
+    from infrastructure.ncbi.client import NCBIClient
+    from infrastructure.ncbi.taxonomy import TaxonomyService
+    from tools.blast.advisor import DatabaseAdvisor
+    from tools.blast.catalogue import EbiDatabaseCatalogue
+
+    timeout = settings.http.timeout_seconds
+    return DatabaseAdvisor(
+        catalogue=EbiDatabaseCatalogue(BlastClient(settings.embl_ebi, timeout=timeout)),
+        taxonomy=TaxonomyService(NCBIClient(settings.ncbi, timeout=timeout)),
+    )

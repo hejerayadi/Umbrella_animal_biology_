@@ -59,18 +59,15 @@ The agent runs inside someone else's HTTP request, and two numbers in
 | **600 s** per call (`AGENT_READ_TIMEOUT_SECONDS` in `worker_node.py`) | One EMBL-EBI BLAST job takes ~193 s, so a round of searches fits in a single call — but a many-gap scaffold still does not. |
 | **3 CONTINUE retries** (`CONTINUE_RETRY_DELAYS` in `worker_node.py`) | The agent gets **four HTTP slices**; a fifth is force-failed and every finding discarded. |
 
-So the agent **slices** its work. After 480 s (`AGENT_YIELD_AFTER_SECONDS`) it
+So the agent **slices** its work. It derives its tool deadline from the global
+`AGENT_READ_TIMEOUT_SECONDS` minus `AGENT_FINALIZATION_RESERVE_SECONDS`, then
 checkpoints and returns `CONTINUE` with `retryable=true`; the orchestrator
 retries, and the next slice resumes from the checkpoint. On the **last** slice
 it returns partial results as `completed` rather than asking for another.
 
-> **Keep these two numbers in step.** The read timeout was once 120 s and the
-> yield was sized for it. When the timeout was raised to 600 s for another
-> agent, nothing updated the yield: it stayed at 75 s, which is less than half
-> one BLAST job, so no run could complete a single search inside its whole
-> four-slice allowance and **every reconstruction came back empty**. Nothing
-> failed and no test caught it, because every test mocks the network edge and
-> so returns from BLAST instantly. See [WHY_NO_OUTPUT.md](WHY_NO_OUTPUT.md).
+> The deadline is derived rather than duplicated: configure the global timeout
+> and a finalisation reserve. This prevents an old per-agent yield value from
+> starving a BLAST job after the orchestrator timeout changes.
 
 The checkpoint is keyed on **`X-Trace-Id`** — the orchestrator's run-wide id
 (`orchestrator/state.py:35`), which is the only identifier stable across
@@ -94,7 +91,7 @@ force-failed.
 | Tool calls | 24 | `RECONSTRUCTION_MAX_TOOL_CALLS` |
 | BLAST / MAFFT calls | 8 / 8 | `RECONSTRUCTION_MAX_BLAST_CALLS`, `..._MAFFT_CALLS` |
 | LLM tokens | 60 000 | `RECONSTRUCTION_MAX_LLM_TOKENS` |
-| Wall clock per slice | 480 s | `AGENT_YIELD_AFTER_SECONDS` |
+| Wall clock per slice | timeout − reserve | `AGENT_READ_TIMEOUT_SECONDS` − `AGENT_FINALIZATION_RESERVE_SECONDS` |
 
 The call counts bound **how many gaps** a run works on, not how long it takes:
 `execute_tools` dispatches a round with `asyncio.gather`, so eight concurrent
