@@ -195,6 +195,19 @@ def _format_findings(context: dict[str, Any]) -> str:
     findings = {key: value for key, value in context.items() if key not in _RENDER_ONLY_KEYS}
     rendered = [note for key, note in _RENDER_ONLY_KEYS.items() if context.get(key)]
 
+    # The visualization dict can carry svg_data — a base64-encoded SVG that
+    # may be thousands of characters. Strip it before handing anything to the
+    # LLM: the model only needs to know a chart is visible, not read raw base64.
+    if "visualization" in findings and isinstance(findings["visualization"], dict):
+        viz = dict(findings["visualization"])
+        had_svg = viz.pop("svg_data", None) is not None
+        findings = {**findings, "visualization": viz}
+        if had_svg:
+            rendered.append(
+                "A chromosome map or genome-size comparison chart is displayed directly "
+                "below your answer. Refer to it as already visible."
+            )
+
     if not findings and not rendered:
         return "(the agents did not produce any findings)"
 

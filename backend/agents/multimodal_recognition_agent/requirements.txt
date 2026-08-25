@@ -7,6 +7,13 @@ requests==2.32.3
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 
+# --- Remote BioCLIP-2 inference (official public Hugging Face Space) ---
+# The ONLY dependency the remote classifier needs: a thin pure-python client
+# (~60 KB). Inference runs on the model authors' own Space, so none of the local
+# ML stack is present here - no deep-learning runtime, no model weights and no
+# embedding cache. The scope gate below this file enforces that.
+gradio_client==2.6.0
+
 # --- Recognition internal workflow (LangGraph StateGraph) ---
 langgraph==1.2.10
 

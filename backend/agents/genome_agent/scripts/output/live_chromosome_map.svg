@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1600">
+<rect x="0" y="0" width="800" height="1600" fill="#f9f9f9"/>
+<text x="20" y="25" font-size="16" font-weight="bold" fill="#333">Chromosome Map</text>
+<rect x="20" y="45" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="58" font-size="12" fill="white">IGF1</text>
+<text x="180" y="58" font-size="11" fill="#666">B4</text>
+<rect x="20" y="75" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="88" font-size="12" fill="white">OAZ1</text>
+<text x="180" y="88" font-size="11" fill="#666">A2</text>
+<rect x="20" y="105" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="118" font-size="12" fill="white">APOA2</text>
+<text x="180" y="118" font-size="11" fill="#666">F3</text>
+<rect x="20" y="135" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="148" font-size="12" fill="white">CGA</text>
+<text x="180" y="148" font-size="11" fill="#666">B2</text>
+<rect x="20" y="165" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="178" font-size="12" fill="white">APOC1</text>
+<text x="180" y="178" font-size="11" fill="#666">E2</text>
+<rect x="20" y="195" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="208" font-size="12" fill="white">KISS1</text>
+<text x="180" y="208" font-size="11" fill="#666">F3</text>
+<rect x="20" y="225" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="238" font-size="12" fill="white">BCHE</text>
+<text x="180" y="238" font-size="11" fill="#666">C2</text>
+<rect x="20" y="255" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="268" font-size="12" fill="white">FSHR</text>
+<text x="180" y="268" font-size="11" fill="#666">A3</text>
+<rect x="20" y="285" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="298" font-size="12" fill="white">CYP2D6</text>
+<text x="180" y="298" font-size="11" fill="#666">B4</text>
+<rect x="20" y="315" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="328" font-size="12" fill="white">OAZ3</text>
+<text x="180" y="328" font-size="11" fill="#666">C1</text>
+<rect x="20" y="345" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="358" font-size="12" fill="white">AZIN1</text>
+<text x="180" y="358" font-size="11" fill="#666">F2</text>
+<rect x="20" y="375" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="388" font-size="12" fill="white">AZIN2</text>
+<text x="180" y="388" font-size="11" fill="#666">C1</text>
+<rect x="20" y="405" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="418" font-size="12" fill="white">LIPT1</text>
+<text x="180" y="418" font-size="11" fill="#666">A3</text>
+<rect x="20" y="435" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="448" font-size="12" fill="white">PAPSS1</text>
+<text x="180" y="448" font-size="11" fill="#666">B1</text>
+<rect x="20" y="465" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="478" font-size="12" fill="white">KDELR3</text>
+<text x="180" y="478" font-size="11" fill="#666">B4</text>
+<rect x="20" y="495" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="508" font-size="12" fill="white">GANAB</text>
+<text x="180" y="508" font-size="11" fill="#666">D1</text>
+<rect x="20" y="525" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="538" font-size="12" fill="white">WASL</text>
+<text x="180" y="538" font-size="11" fill="#666">A2</text>
+<rect x="20" y="555" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="568" font-size="12" fill="white">PIK3CB</text>
+<text x="180" y="568" font-size="11" fill="#666">C2</text>
+<rect x="20" y="585" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="598" font-size="12" fill="white">POLR3A</text>
+<text x="180" y="598" font-size="11" fill="#666">D2</text>
+<rect x="20" y="615" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="628" font-size="12" fill="white">GUF1</text>
+<text x="180" y="628" font-size="11" fill="#666">B1</text>
+<rect x="20" y="645" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="658" font-size="12" fill="white">SLC9D1</text>
+<text x="180" y="658" font-size="11" fill="#666">A1</text>
+<rect x="20" y="675" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="688" font-size="12" fill="white">QARS1</text>
+<text x="180" y="688" font-size="11" fill="#666">A2</text>
+<rect x="20" y="705" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="718" font-size="12" fill="white">GALM</text>
+<text x="180" y="718" font-size="11" fill="#666">A3</text>
+<rect x="20" y="735" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="748" font-size="12" fill="white">SRPRA</text>
+<text x="180" y="748" font-size="11" fill="#666">D1</text>
+<rect x="20" y="765" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="778" font-size="12" fill="white">PDSS1</text>
+<text x="180" y="778" font-size="11" fill="#666">B4</text>
+<rect x="20" y="795" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="808" font-size="12" fill="white">NNT</text>
+<text x="180" y="808" font-size="11" fill="#666">A1</text>
+<rect x="20" y="825" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="838" font-size="12" fill="white">PAPOLA</text>
+<text x="180" y="838" font-size="11" fill="#666">B3</text>
+<rect x="20" y="855" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="868" font-size="12" fill="white">PARD3B</text>
+<text x="180" y="868" font-size="11" fill="#666">C1</text>
+<rect x="20" y="885" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="898" font-size="12" fill="white">TALDO1</text>
+<text x="180" y="898" font-size="11" fill="#666">D1</text>
+<rect x="20" y="915" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="928" font-size="12" fill="white">FOXRED1</text>
+<text x="180" y="928" font-size="11" fill="#666">D1</text>
+<rect x="20" y="945" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="958" font-size="12" fill="white">CCNA2</text>
+<text x="180" y="958" font-size="11" fill="#666">B1</text>
+<rect x="20" y="975" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="988" font-size="12" fill="white">CRLS1</text>
+<text x="180" y="988" font-size="11" fill="#666">A3</text>
+<rect x="20" y="1005" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1018" font-size="12" fill="white">ATIC</text>
+<text x="180" y="1018" font-size="11" fill="#666">C1</text>
+<rect x="20" y="1035" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1048" font-size="12" fill="white">FDX2</text>
+<text x="180" y="1048" font-size="11" fill="#666">A2</text>
+<rect x="20" y="1065" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1078" font-size="12" fill="white">RIOK2</text>
+<text x="180" y="1078" font-size="11" fill="#666">A1</text>
+<rect x="20" y="1095" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1108" font-size="12" fill="white">TRAP1</text>
+<text x="180" y="1108" font-size="11" fill="#666">E3</text>
+<rect x="20" y="1125" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1138" font-size="12" fill="white">NARS2</text>
+<text x="180" y="1138" font-size="11" fill="#666">D1</text>
+<rect x="20" y="1155" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1168" font-size="12" fill="white">MYORG</text>
+<text x="180" y="1168" font-size="11" fill="#666">D4</text>
+<rect x="20" y="1185" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1198" font-size="12" fill="white">UBIAD1</text>
+<text x="180" y="1198" font-size="11" fill="#666">C1</text>
+<rect x="20" y="1215" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1228" font-size="12" fill="white">SAMHD1</text>
+<text x="180" y="1228" font-size="11" fill="#666">A3</text>
+<rect x="20" y="1245" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1258" font-size="12" fill="white">TBPL1</text>
+<text x="180" y="1258" font-size="11" fill="#666">B2</text>
+<rect x="20" y="1275" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1288" font-size="12" fill="white">CCNH</text>
+<text x="180" y="1288" font-size="11" fill="#666">A1</text>
+<rect x="20" y="1305" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1318" font-size="12" fill="white">GNPDA1</text>
+<text x="180" y="1318" font-size="11" fill="#666">A1</text>
+<rect x="20" y="1335" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1348" font-size="12" fill="white">HMCES</text>
+<text x="180" y="1348" font-size="11" fill="#666">A2</text>
+<rect x="20" y="1365" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1378" font-size="12" fill="white">FLII</text>
+<text x="180" y="1378" font-size="11" fill="#666">E1</text>
+<rect x="20" y="1395" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1408" font-size="12" fill="white">CLPX</text>
+<text x="180" y="1408" font-size="11" fill="#666">B3</text>
+<rect x="20" y="1425" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1438" font-size="12" fill="white">ADCY4</text>
+<text x="180" y="1438" font-size="11" fill="#666">B3</text>
+<rect x="20" y="1455" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1468" font-size="12" fill="white">PHB1</text>
+<text x="180" y="1468" font-size="11" fill="#666">E1</text>
+<rect x="20" y="1485" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1498" font-size="12" fill="white">TXLNA</text>
+<text x="180" y="1498" font-size="11" fill="#666">C1</text>
+<rect x="20" y="1515" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="1528" font-size="12" fill="white">TRIM3</text>
+<text x="180" y="1528" font-size="11" fill="#666">D1</text>
+</svg>

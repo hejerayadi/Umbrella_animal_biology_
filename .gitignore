@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python
 __pycache__/
 *.py[cod]
@@ -39,3 +40,45 @@ Thumbs.db
 
 # Local Kilo folder
 kilo/
+=======
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments and package caches
+.venv/
+venv/
+env/
+ENV/
+.uv-cache/
+
+# Node / frontend outputs
+node_modules/
+dist/
+dist-ssr/
+.output/
+.tanstack/
+.nitro/
+.vinxi/
+
+# Build and runtime artifacts
+build/
+*.log
+*.tmp
+*.sqlite
+*.sqlite3
+*.db
+
+# Biodiversity Agent: generated folium maps (regenerated per request)
+backend/agents/biodiversity_agent/outputs/
+
+.env
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1

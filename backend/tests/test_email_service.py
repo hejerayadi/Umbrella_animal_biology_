@@ -148,3 +148,36 @@ def test_registration_verification_email_has_plain_text_and_premium_html(monkeyp
     assert "Verify email address" in html_content
     assert "Application &middot; Step 1 of 2" in html_content
     assert "#b53b2a" in html_content
+
+
+def test_new_biologist_application_email_is_detailed_and_escapes_html(monkeypatch) -> None:
+    _reset({"starttls", "auth"})
+    monkeypatch.setattr("backend.app.services.email.smtplib.SMTP", RecordingSmtp)
+
+    EmailService(_settings(frontend_url="https://umbrella.example")).new_biologist_application(
+        "admin@example.org",
+        applicant_email="candidate@example.org",
+        full_name="Nadia <Researcher>",
+        institution="Marine Biology Institute",
+        professional_title="Senior Biologist",
+        country="TN",
+        orcid="0000-0002-1825-0097",
+        motivation="Protect coastal ecosystems.\nReview long-term change.",
+        specialties=["Biodiversity Analysis", "Conservation"],
+    )
+
+    message = RecordingSmtp.message
+    assert message is not None
+    assert message["Subject"] == "New Umbrella biologist application"
+    plain = message.get_body(preferencelist=("plain",))
+    html = message.get_body(preferencelist=("html",))
+    assert plain is not None and html is not None
+    assert "candidate@example.org" in plain.get_content()
+    assert "Marine Biology Institute" in plain.get_content()
+    assert "https://umbrella.example/admin" in plain.get_content()
+    html_content = html.get_content()
+    assert "Email verified" in html_content
+    assert "Review application" in html_content
+    assert "Nadia &lt;Researcher&gt;" in html_content
+    assert "Nadia <Researcher>" not in html_content
+    assert "Protect coastal ecosystems.<br>Review long-term change." in html_content

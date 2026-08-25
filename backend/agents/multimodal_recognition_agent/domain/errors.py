@@ -34,15 +34,13 @@ class ErrorCode(str, Enum):
     IMAGE_TOO_SMALL = "IMAGE_TOO_SMALL"
     CORRUPT_IMAGE = "CORRUPT_IMAGE"
 
-    # --- embedding ---
-    EMBEDDING_DIMENSION_MISMATCH = "EMBEDDING_DIMENSION_MISMATCH"
+    # --- species classification ---
+    CLASSIFICATION_FIXTURE_INVALID = "CLASSIFICATION_FIXTURE_INVALID"
+    CLASSIFICATION_CONTRACT_VIOLATION = "CLASSIFICATION_CONTRACT_VIOLATION"
+    CLASSIFICATION_UNAVAILABLE = "CLASSIFICATION_UNAVAILABLE"
 
-    # --- retrieval ---
-    QDRANT_CONTRACT_NOT_FROZEN = "QDRANT_CONTRACT_NOT_FROZEN"
-    QDRANT_CLIENT_UNAVAILABLE = "QDRANT_CLIENT_UNAVAILABLE"
-    RETRIEVAL_UNAVAILABLE = "RETRIEVAL_UNAVAILABLE"
-    RETRIEVAL_TIMEOUT = "RETRIEVAL_TIMEOUT"
-    COLLECTION_CONTRACT_MISMATCH = "COLLECTION_CONTRACT_MISMATCH"
+    # --- taxonomy validation (mock GBIF / mock NCBI) ---
+    TAXONOMY_UNAVAILABLE = "TAXONOMY_UNAVAILABLE"
 
 
 # Fixed, data-free explanations. Written for the orchestrator's responder and
@@ -50,8 +48,8 @@ class ErrorCode(str, Enum):
 # echoing what was sent.
 _MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.EMPTY_INSTRUCTION:
-        "The instruction must be text when one is supplied. It is optional - the "
-        "image is the primary evidence - but it cannot be a number or a structure.",
+        "A non-empty text instruction is required. Recognition needs one image and one "
+        "text instruction in the same request.",
     ErrorCode.MISSING_IMAGE:
         "No image was provided. Recognition requires one image and one text instruction "
         "in the same request.",
@@ -79,21 +77,17 @@ _MESSAGES: dict[ErrorCode, str] = {
         "The image is smaller than the minimum accepted dimensions.",
     ErrorCode.CORRUPT_IMAGE:
         "The image could not be decoded. It may be truncated or corrupt.",
-    ErrorCode.EMBEDDING_DIMENSION_MISMATCH:
-        "The generated query vector length does not match the configured collection "
-        "dimension.",
-    ErrorCode.QDRANT_CONTRACT_NOT_FROZEN:
-        "Real Qdrant retrieval is not configured. The Sprint 2 collection contract has "
-        "not been supplied yet.",
-    ErrorCode.QDRANT_CLIENT_UNAVAILABLE:
-        "The Qdrant client library is not installed in this agent's environment.",
-    ErrorCode.RETRIEVAL_UNAVAILABLE:
-        "The reference collection could not be reached.",
-    ErrorCode.RETRIEVAL_TIMEOUT:
-        "The reference collection did not respond in time.",
-    ErrorCode.COLLECTION_CONTRACT_MISMATCH:
-        "The reference collection does not match the configured contract; no query was "
-        "sent.",
+    ErrorCode.CLASSIFICATION_FIXTURE_INVALID:
+        "The Sprint 2 mock classification fixture is malformed. No species was named, "
+        "because a broken test oracle must never be repaired into an answer.",
+    ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION:
+        "The classification provider returned predictions that break the agreed "
+        "contract - unranked, duplicated, or scored outside the accepted range.",
+    ErrorCode.CLASSIFICATION_UNAVAILABLE:
+        "The species classification provider could not be reached.",
+    ErrorCode.TAXONOMY_UNAVAILABLE:
+        "A taxonomy source could not be reached. Candidates are reported as unverified; "
+        "no identifier is ever inferred to fill the gap.",
 }
 
 

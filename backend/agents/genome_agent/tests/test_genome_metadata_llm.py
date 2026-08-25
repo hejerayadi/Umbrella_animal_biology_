@@ -70,9 +70,15 @@ async def test_single_assembly_no_substitution():
         _make_llm_response([output_call]),
     ]
 
+<<<<<<< HEAD
     with patch("backend.agents.genome_agent.subagents.genome_metadata.get_llm_client", return_value=client):
         with patch("backend.agents.genome_agent.subagents.genome_metadata.fetch_assembly_stats", MagicMock(ainvoke=AsyncMock(return_value=stats))):
             with patch("backend.agents.genome_agent.subagents.genome_metadata.list_alternate_assemblies", MagicMock(ainvoke=AsyncMock(return_value=alternates))):
+=======
+    with patch("genome_agent.subagents.genome_metadata.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.genome_metadata.fetch_assembly_stats", MagicMock(ainvoke=AsyncMock(return_value=stats))):
+            with patch("genome_agent.subagents.genome_metadata.list_alternate_assemblies", MagicMock(ainvoke=AsyncMock(return_value=alternates))):
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
                 result = await resolve_metadata_llm("tiger", assembly_id)
 
     assert result is not None
@@ -138,9 +144,15 @@ async def test_multi_assembly_better_option_triggers_substitution():
         _make_llm_response([output_call]),
     ]
 
+<<<<<<< HEAD
     with patch("backend.agents.genome_agent.subagents.genome_metadata.get_llm_client", return_value=client):
         with patch("backend.agents.genome_agent.subagents.genome_metadata.fetch_assembly_stats", MagicMock(ainvoke=AsyncMock(side_effect=[given_stats, better_stats]))):
             with patch("backend.agents.genome_agent.subagents.genome_metadata.list_alternate_assemblies", MagicMock(ainvoke=AsyncMock(return_value=alternates))):
+=======
+    with patch("genome_agent.subagents.genome_metadata.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.genome_metadata.fetch_assembly_stats", MagicMock(ainvoke=AsyncMock(side_effect=[given_stats, better_stats]))):
+            with patch("genome_agent.subagents.genome_metadata.list_alternate_assemblies", MagicMock(ainvoke=AsyncMock(return_value=alternates))):
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
                 result = await resolve_metadata_llm("tiger", given_id)
 
     assert result is not None
@@ -163,7 +175,11 @@ async def test_llm_unavailable_uses_fallback():
         "submission_date": "2023/01/01",
     }
 
+<<<<<<< HEAD
     with patch("backend.agents.genome_agent.subagents.genome_metadata.get_genome_metadata", AsyncMock(return_value=stats)):
+=======
+    with patch("genome_agent.subagents.genome_metadata.get_genome_metadata", AsyncMock(return_value=stats)):
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
         result = await fetch_metadata_fallback(assembly_id)
 
     assert result is not None
@@ -194,6 +210,10 @@ async def test_garbage_genome_size_surfaces_as_null():
     client.invoke = MagicMock()
 
     fetch_stats_call = _make_tool_call("fetch_assembly_stats", {"assembly_id": assembly_id}, call_id="call_1")
+<<<<<<< HEAD
+=======
+    list_alt_call = _make_tool_call("list_alternate_assemblies", {"tax_id": "9685"}, call_id="call_2")
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
     output_call = _make_tool_call(
         "GenomeMetadataOutput",
         {
@@ -204,17 +224,31 @@ async def test_garbage_genome_size_surfaces_as_null():
             "assembly_id_used": assembly_id,
             "reasoning": "invalid size",
         },
+<<<<<<< HEAD
         call_id="call_2",
+=======
+        call_id="call_3",
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
     )
 
     client.invoke.side_effect = [
         _make_llm_response([fetch_stats_call]),
+<<<<<<< HEAD
         _make_llm_response([output_call]),
     ]
 
     with patch("backend.agents.genome_agent.subagents.genome_metadata.get_llm_client", return_value=client):
         with patch("backend.agents.genome_agent.subagents.genome_metadata.fetch_assembly_stats", MagicMock(ainvoke=AsyncMock(return_value=stats))):
             with patch("backend.agents.genome_agent.subagents.genome_metadata.list_alternate_assemblies", MagicMock(ainvoke=AsyncMock(return_value=alternates))):
+=======
+        _make_llm_response([list_alt_call]),
+        _make_llm_response([output_call]),
+    ]
+
+    with patch("genome_agent.subagents.genome_metadata.get_llm_client", return_value=client):
+        with patch("genome_agent.subagents.genome_metadata.fetch_assembly_stats", MagicMock(ainvoke=AsyncMock(return_value=stats))):
+            with patch("genome_agent.subagents.genome_metadata.list_alternate_assemblies", MagicMock(ainvoke=AsyncMock(return_value=alternates))):
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
                 result = await resolve_metadata_llm("tiger", assembly_id)
 
     assert result is not None
@@ -243,7 +277,11 @@ async def test_chromosome_count_zero_scaffold_becomes_null():
         }
     }
 
+<<<<<<< HEAD
     with patch("backend.agents.genome_agent.subagents.genome_metadata.ncbi_get", side_effect=[fake_esearch, fake_esummary_scaffold]):
+=======
+    with patch("genome_agent.subagents.genome_metadata.ncbi_get", side_effect=[fake_esearch, fake_esummary_scaffold]):
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
         result = await fetch_assembly_stats.ainvoke({"assembly_id": "GCA_029237445.1"})
 
     assert result["chromosome_count"] is None
@@ -264,7 +302,11 @@ async def test_chromosome_count_zero_scaffold_becomes_null():
         }
     }
 
+<<<<<<< HEAD
     with patch("backend.agents.genome_agent.subagents.genome_metadata.ncbi_get", side_effect=[fake_esearch, fake_esummary_chromosome]):
+=======
+    with patch("genome_agent.subagents.genome_metadata.ncbi_get", side_effect=[fake_esearch, fake_esummary_chromosome]):
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
         result2 = await fetch_assembly_stats.ainvoke({"assembly_id": "GCF_000001635.27"})
 
     assert result2["chromosome_count"] == 0

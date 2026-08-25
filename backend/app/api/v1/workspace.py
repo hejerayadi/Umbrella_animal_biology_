@@ -50,6 +50,23 @@ def _publish_generated_image(
     return {**context, "image": url}, url
 
 
+def _extract_visualization_data_url(context: dict[str, Any]) -> str | None:
+    """Return a data URL for the SVG chart if one was rendered, else None.
+
+    The Genome agent base64-encodes its SVG charts under
+    ``context["visualization"]["svg_data"]``.  This helper pulls that out and
+    turns it into a ``data:image/svg+xml;base64,…`` URI the frontend can drop
+    straight into an ``<img>`` tag or render inline.
+    """
+    viz = context.get("visualization")
+    if not isinstance(viz, dict):
+        return None
+    svg_data: str | None = viz.get("svg_data")
+    if not svg_data:
+        return None
+    return f"data:image/svg+xml;base64,{svg_data}"
+
+
 @router.post("/uploads")
 async def upload(
     request: Request,
@@ -115,10 +132,12 @@ def chat(
     context, image_url = _publish_generated_image(
         state.context, str(identity.user.id)
     )
+    visualization_url = _extract_visualization_data_url(context)
     return success(request, {
         "answer": state.final_answer
         or "The orchestrator did not produce an answer for this request.",
         "execution_history": state.execution_history,
         "context": context,
         "image_url": image_url,
+        "visualization_url": visualization_url,
     })

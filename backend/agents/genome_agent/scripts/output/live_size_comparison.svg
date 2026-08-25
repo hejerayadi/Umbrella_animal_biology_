@@ -1,0 +1,19 @@
+<svg viewBox="0 0 810 276" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+<rect x="0" y="0" width="810" height="276" fill="#ffffff"/>
+<text x="160" y="20" font-size="15" font-weight="bold" fill="#333333">Genome size comparison</text>
+<text x="150" y="58.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Homo sapiens (human)</text>
+<rect x="160" y="40" width="560.0" height="28" fill="#4b7ba5" rx="3"/>
+<text x="728.0" y="58.2" font-size="13" font-family="sans-serif" fill="#333333">3.30 Gb</text>
+<text x="150" y="102.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Mus musculus (house mouse)</text>
+<rect x="160" y="84" width="463.2" height="28" fill="#4b7ba5" rx="3"/>
+<text x="631.2" y="102.2" font-size="13" font-family="sans-serif" fill="#333333">2.73 Gb</text>
+<text x="150" y="146.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Panthera tigris altaica (Amur tiger) (queried)</text>
+<rect x="160" y="128" width="406.0" height="28" fill="#e8622c" rx="3"/>
+<text x="574.0" y="146.2" font-size="13" font-family="sans-serif" fill="#333333">2.39 Gb</text>
+<text x="150" y="190.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Danio rerio (zebrafish)</text>
+<rect x="160" y="172" width="246.0" height="28" fill="#4b7ba5" rx="3"/>
+<text x="414.0" y="190.2" font-size="13" font-family="sans-serif" fill="#333333">1.45 Gb</text>
+<text x="150" y="234.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Gallus gallus (chicken)</text>
+<rect x="160" y="216" width="178.4" height="28" fill="#4b7ba5" rx="3"/>
+<text x="346.4" y="234.2" font-size="13" font-family="sans-serif" fill="#333333">1.05 Gb</text>
+</svg>

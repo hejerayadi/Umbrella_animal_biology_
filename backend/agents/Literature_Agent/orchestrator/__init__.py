@@ -1,53 +1,27 @@
+"""The Literature Agent's top-level orchestrator.
+
+Re-exports only - every definition lives in `graph.py`, `router.py` or
+`state.py`, so there is one implementation of each and the tests exercise it.
+"""
 from __future__ import annotations
 
-from typing import Any
-
-from ..schema import AgentResult, AgentStatus
-from .graph import LiteratureOrchestrator
-
-
-def decide_next_after_routing(state: dict):
-    route = state.get("route", "discovery")
-    if route == "discovery":
-        return ["discovery"]
-    if route == "writing":
-        return ["writing"]
-    if route == "both_sequential":
-        return ["discovery"]
-    if route == "both_parallel":
-        return ["discovery", "writing"]
-    return ["discovery"]
-
-
-def decide_after_discovery(state: dict):
-    return "writing" if state.get("route") == "both_sequential" else "aggregate"
-
-
-def aggregate_results(state: dict) -> dict:
-    discovery = state.get("discovery_result")
-    writing = state.get("writing_result")
-    return {
-        "final_result": AgentResult(
-            status=AgentStatus.COMPLETED,
-            output={
-                "discovery": discovery.output if discovery else None,
-                "writing": writing.output if writing else None,
-            },
-        )
-    }
+from ..schema import AgentRequest, AgentResult
+from .graph import LiteratureOrchestrator, aggregate_results
+from .router import decide_after_discovery, decide_next_after_routing
+from .state import OrchestratorState, initial_state
 
 
 def run_orchestrator(instruction: str, context: dict | None = None) -> AgentResult:
+    """Run one instruction through a throwaway orchestrator."""
     return LiteratureOrchestrator().run(instruction, context)
 
 
-app = LiteratureOrchestrator()
-
 __all__ = [
     "LiteratureOrchestrator",
+    "OrchestratorState",
     "aggregate_results",
     "decide_after_discovery",
     "decide_next_after_routing",
+    "initial_state",
     "run_orchestrator",
-    "app",
 ]

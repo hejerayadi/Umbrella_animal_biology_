@@ -46,6 +46,11 @@ import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+<<<<<<< HEAD
+=======
+from genome_agent.schemas import AgentStatus
+
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
 
 # ===========================================================================
 # 1. STATE DATACLASS
@@ -112,7 +117,11 @@ class TestMetadataNodeReconstructionDetection:
             "genome_agent.workflows.nodes.genome_data_nodes.get_genome_metadata",
             new=AsyncMock(return_value=metadata_return),
         ):
+<<<<<<< HEAD
             return asyncio.get_event_loop().run_until_complete(
+=======
+            return asyncio.run(
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
                 get_genome_metadata_node(base_state)
             )
 
@@ -219,7 +228,11 @@ class TestReconstructionResolverNode:
                 return_value=fallback_rv,
             ),
         ):
+<<<<<<< HEAD
             return asyncio.get_event_loop().run_until_complete(
+=======
+            return asyncio.run(
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
                 reconstruction_resolver_node(state)
             )
 
@@ -295,7 +308,11 @@ class TestGraphReconstructionRouting:
         with (
             patch(
                 "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+<<<<<<< HEAD
                 new=AsyncMock(return_value=(_SCAFFOLD_SPECIES, _SCAFFOLD_ASSEMBLY)),
+=======
+                new=AsyncMock(return_value={**_SCAFFOLD_SPECIES, "assembly_id": _SCAFFOLD_ASSEMBLY}),
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
             ),
             patch(
                 "genome_agent.workflows.nodes.genome_data_nodes.get_genome_metadata",
@@ -323,22 +340,41 @@ class TestGraphReconstructionRouting:
 
     def _run(self, species_name: str, visualization_scope: str = "none") -> Any:
         from genome_agent.orchestrator import GenomeAgentLangGraphOrchestrator
+<<<<<<< HEAD
 
         orch = GenomeAgentLangGraphOrchestrator()
         return asyncio.get_event_loop().run_until_complete(
+=======
+        from genome_agent.orchestrator_adapter import to_result
+
+        orch = GenomeAgentLangGraphOrchestrator()
+        state = asyncio.run(
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
             orch.run(
                 user_question=f"Reconstruct the {species_name} genome.",
                 species_name=species_name,
                 visualization_scope=visualization_scope,
             )
         )
+<<<<<<< HEAD
+=======
+        # GenomeAgentLangGraphOrchestrator.run() returns the raw internal
+        # GenomeAgentState (see test_orchestrator_adapter.py) — to_result()
+        # is what maps reconstruction_need/visualization onto the platform's
+        # AgentResult(status, target_agent, prompt_to_target_agent, output).
+        return to_result(state)
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
 
     # ── 4a. Scaffold → NEEDS_AGENT ─────────────────────────────────────────
 
     def test_scaffold_assembly_returns_needs_agent(self):
         self._metadata_mock.return_value = _SCAFFOLD_METADATA
         result = self._run("axolotl")
+<<<<<<< HEAD
         assert result.status.value == "NEEDS_AGENT", (
+=======
+        assert result.status == AgentStatus.NEEDS_AGENT, (
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
             f"Expected NEEDS_AGENT for scaffold assembly, got {result.status}"
         )
 
@@ -358,8 +394,13 @@ class TestGraphReconstructionRouting:
         """Even when escalating, the partial output should carry whatever data was fetched."""
         self._metadata_mock.return_value = _SCAFFOLD_METADATA
         result = self._run("axolotl")
+<<<<<<< HEAD
         assert result.output.get("metadata") is not None, (
             "output['metadata'] should be populated even when escalating to Reconstruction Agent"
+=======
+        assert result.output.get("genome_metadata") is not None, (
+            "output['genome_metadata'] should be populated even when escalating to Reconstruction Agent"
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
         )
 
     # ── contig (second incomplete level) ──────────────────────────────────
@@ -368,10 +409,17 @@ class TestGraphReconstructionRouting:
         self._metadata_mock.return_value = _CONTIG_METADATA
         with patch(
             "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+<<<<<<< HEAD
             new=AsyncMock(return_value=(_SCAFFOLD_SPECIES, _SCAFFOLD_ASSEMBLY)),
         ):
             result = self._run("coelacanth")
         assert result.status.value == "NEEDS_AGENT"
+=======
+            new=AsyncMock(return_value={**_SCAFFOLD_SPECIES, "assembly_id": _SCAFFOLD_ASSEMBLY}),
+        ):
+            result = self._run("coelacanth")
+        assert result.status == AgentStatus.NEEDS_AGENT
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
         assert result.target_agent == "Reconstruction Agent"
 
     # ── 4b. Complete assembly → NO reconstruction (regression guard) ────────
@@ -380,10 +428,17 @@ class TestGraphReconstructionRouting:
         self._metadata_mock.return_value = _COMPLETE_METADATA
         with patch(
             "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
+<<<<<<< HEAD
             new=AsyncMock(return_value=(_COMPLETE_SPECIES, _COMPLETE_ASSEMBLY)),
         ):
             result = self._run("human")
         assert result.status.value != "NEEDS_AGENT" or result.target_agent != "Reconstruction Agent", (
+=======
+            new=AsyncMock(return_value={**_COMPLETE_SPECIES, "assembly_id": _COMPLETE_ASSEMBLY}),
+        ):
+            result = self._run("human")
+        assert result.status != AgentStatus.NEEDS_AGENT or result.target_agent != "Reconstruction Agent", (
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
             "A Chromosome-level assembly must NOT trigger reconstruction escalation."
         )
 
@@ -396,7 +451,11 @@ class TestGraphReconstructionRouting:
         """
         self._metadata_mock.return_value = _SCAFFOLD_METADATA
         result = self._run("axolotl", visualization_scope="chromosome_map")
+<<<<<<< HEAD
         assert result.status.value == "NEEDS_AGENT"
+=======
+        assert result.status == AgentStatus.NEEDS_AGENT
+>>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
         assert result.target_agent == "Reconstruction Agent"
 
 

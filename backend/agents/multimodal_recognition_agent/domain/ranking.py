@@ -1,74 +1,123 @@
-"""Turn a flat list of retrieved references into ranked distinct species.
+"""Validate, order and cap the classifier's taxon predictions.
 
-Retrieval returns reference *points*. A single species usually owns several of
-them, so the raw hit list over-represents whichever species happens to have the
-most stored references. Grouping first, then ranking, fixes that.
+The classification boundary returns labels that are *already ranked* - that is
+part of its contract, and this module's job is to hold it to that rather than to
+re-derive a ranking of its own. There is no grouping here, no aggregation over
+reference points and no distance arithmetic, because none of those concepts
+exist in a label classifier's output.
 
-A species' score is the mean of its best N references rather than its single
-best, which smooths out one unusually high hit among that species' own
-references. Note what this does NOT do: a species with a single stored
-reference is scored at that reference's value, so it is not penalised for being
-sparsely represented. Weighting by evidence count would be a calibration
-decision, and Sprint 2 deliberately makes none.
+What this module does enforce, on whatever provider is plugged in:
+
+1. every prediction carries the mandatory fields;
+2. every score is a real number in [0, 1];
+3. the list is in non-increasing score order;
+4. no species appears twice;
+5. no more than `top_k` candidates leave this module.
+
+A provider that breaks any of those is not producing a smaller problem to be
+patched up - it is not answering to contract, so the request fails with a
+controlled code instead of being served a repaired answer.
 """
 from __future__ import annotations
 
-from .models import RetrievedReference, SpeciesCandidate
+from typing import Any
 
-# Required on every hit. A reference missing any of these cannot be ranked
-# honestly - we would not know what species it belongs to, or which dataset
-# produced it - so it is dropped rather than guessed at.
-REQUIRED_PAYLOAD_FIELDS = ("species_id", "scientific_name", "dataset_version", "embedding_mode")
+from .errors import ErrorCode, RecognitionError
+from .models import BioCLIPTaxonPrediction, SpeciesCandidate
+
+# Required on every prediction. A label missing any of these cannot be reported
+# honestly - we would not know which taxon it names, or how the classifier
+# ranked it - so the whole fixture is rejected rather than guessed at.
+REQUIRED_PREDICTION_FIELDS = ("species_id", "scientific_name", "classification_score")
+
+# Scores are bounded because the whole downstream confidence gate is expressed
+# in the same units. A score outside this range would silently walk past every
+# threshold comparison.
+MIN_SCORE = 0.0
+MAX_SCORE = 1.0
+
+# Floating-point slack when checking that a list is ordered. Two scores written
+# as 0.7 and 0.7 in a fixture must not be called "out of order".
+_ORDER_TOLERANCE = 1e-9
 
 
-def validate_payload(payload: dict) -> bool:
-    """True when a raw Qdrant payload carries every mandatory field."""
-    return all(
-        payload.get(field) not in (None, "") for field in REQUIRED_PAYLOAD_FIELDS
-    )
+def validate_prediction_payload(payload: Any) -> bool:
+    """True when a raw prediction record carries every mandatory field, with a
+    usable score. Used when loading a fixture, before anything is constructed."""
+    if not isinstance(payload, dict):
+        return False
+    for field in REQUIRED_PREDICTION_FIELDS:
+        if payload.get(field) in (None, ""):
+            return False
+    if not isinstance(payload.get("species_id"), str):
+        return False
+    if not isinstance(payload.get("scientific_name"), str):
+        return False
+
+    score = payload.get("classification_score")
+    # `bool` is a subclass of `int`; True would otherwise pass as the score 1.
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return False
+    if not MIN_SCORE <= float(score) <= MAX_SCORE:
+        return False
+
+    rank = payload.get("rank", "species")
+    return rank == "species"
 
 
-def aggregate_by_species(
-    references: list[RetrievedReference],
+def assert_ranked_and_distinct(
+    predictions: list[BioCLIPTaxonPrediction],
     *,
-    max_references_per_species: int,
-    top_k_species: int,
-) -> list[SpeciesCandidate]:
-    """Group references by species, score each, and return the best `top_k`.
+    error: ErrorCode = ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION,
+) -> None:
+    """Hold the provider to its "already ranked, distinct labels" promise.
 
-    Taxonomy fields are left unset here - the taxonomy provider fills them in a
-    later node, and inventing them at this point is exactly what the
+    Raises rather than sorting. Silently re-ordering a provider's output would
+    hide the fact that it is misbehaving, and in Sprint 2 the provider is a test
+    oracle - an oracle that lies is worth failing on.
+    """
+    seen: set[str] = set()
+    previous: float | None = None
+
+    for prediction in predictions:
+        if not MIN_SCORE <= prediction.classification_score <= MAX_SCORE:
+            raise RecognitionError(error)
+        if prediction.species_id in seen:
+            raise RecognitionError(error)
+        seen.add(prediction.species_id)
+
+        if previous is not None and prediction.classification_score > previous + _ORDER_TOLERANCE:
+            raise RecognitionError(error)
+        previous = prediction.classification_score
+
+
+def build_candidates(
+    predictions: list[BioCLIPTaxonPrediction],
+    *,
+    top_k: int,
+) -> list[SpeciesCandidate]:
+    """Turn validated predictions into candidates, capped at `top_k`.
+
+    Taxonomy fields are left unset here. The mocked GBIF and NCBI sources fill
+    them in a later node, and inventing them at this point is exactly what the
     specification forbids.
     """
+    if top_k <= 0:
+        raise RecognitionError(ErrorCode.CLASSIFICATION_CONTRACT_VIOLATION)
 
-    grouped: dict[str, list[RetrievedReference]] = {}
-    for reference in references:
-        grouped.setdefault(reference.species_id, []).append(reference)
+    assert_ranked_and_distinct(predictions)
 
-    candidates: list[SpeciesCandidate] = []
-    for species_id, hits in grouped.items():
-        ordered = sorted(hits, key=lambda hit: hit.similarity_score, reverse=True)
-        best = ordered[:max_references_per_species]
-        mean_score = sum(hit.similarity_score for hit in best) / len(best)
-
-        # Prefer the highest-scoring hit's names; they all describe the same
-        # species, but the top hit is the one we would cite.
-        candidates.append(
-            SpeciesCandidate(
-                species_id=species_id,
-                scientific_name=ordered[0].scientific_name,
-                common_name=ordered[0].common_name,
-                similarity_score=mean_score,
-                # The full count, not the truncated one: "how many references
-                # matched" is more useful than "how many we averaged".
-                reference_count=len(hits),
-                taxonomy_status="unverified",
-            )
+    return [
+        SpeciesCandidate(
+            species_id=prediction.species_id,
+            scientific_name=prediction.scientific_name,
+            common_name=prediction.common_name,
+            rank=prediction.rank,
+            classification_score=prediction.classification_score,
+            taxonomy_status="unverified",
         )
-
-    # Ties broken by species_id so the ordering is reproducible across runs.
-    candidates.sort(key=lambda c: (-c.similarity_score, c.species_id))
-    return candidates[:top_k_species]
+        for prediction in predictions[:top_k]
+    ]
 
 
 def top_margin(candidates: list[SpeciesCandidate]) -> float | None:
@@ -81,4 +130,4 @@ def top_margin(candidates: list[SpeciesCandidate]) -> float | None:
         return None
     if len(candidates) == 1:
         return 1.0
-    return candidates[0].similarity_score - candidates[1].similarity_score
+    return candidates[0].classification_score - candidates[1].classification_score

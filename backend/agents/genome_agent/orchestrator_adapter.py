@@ -12,10 +12,27 @@ orchestrator needs and decide which of its findings become shared-context keys.
 
 Nothing under `subagents/`, `workflows/` or `orchestrator.py` is modified -
 only imported. That keeps the agent's own tests and scripts working unchanged.
+
+SVG rendering note
+------------------
+`render_chromosome_map` and `render_size_comparison` return raw `bytes`.
+`bytes` is not JSON-serialisable, so the chart cannot leave the agent as-is.
+`_visualization_summary` base64-encodes `chart_data` and stores it under
+`svg_data` (a plain string).  Downstream consumers decode it with:
+
+    import base64
+    svg_bytes = base64.b64decode(visualization["svg_data"])
+
+The global orchestrator's `_RENDER_ONLY_KEYS` in `responder.py` only hides
+`protein_viewer` and `image`; `visualization` is rendered as findings text,
+so the responder sees `svg_data` as a base64 string and notes it is present.
+The frontend reads `context.visualization.svg_data` and renders it directly
+via an `<img src="data:image/svg+xml;base64,…">` tag or equivalent.
 """
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import Any
 
@@ -73,19 +90,32 @@ def _summarise(state: GenomeAgentState) -> str:
 
 
 def _visualization_summary(visualization: dict[str, Any]) -> dict[str, Any]:
-    """Describe a chart without carrying its bytes.
+    """Serialise a rendered chart so it can travel over HTTP as JSON.
 
-    `size_comparison` renders a real SVG and returns it as `bytes`, which is
-    not JSON-serialisable and would break the response on the way out. The
-    chart is described rather than transported until something in the UI can
-    actually render one; the numbers behind it travel in `comparisons`, which
-    is what the explanation writer uses anyway.
+    `render_chromosome_map` and `render_size_comparison` return raw SVG
+    `bytes`.  `bytes` is not JSON-serialisable, so the bytes are base64-
+    encoded and stored under `svg_data`.  The frontend decodes them with:
+
+        <img src="data:image/svg+xml;base64,{svg_data}" />
+
+    or, equivalently:
+        const svg = atob(visualization.svg_data);
+
+    `available` is kept for back-compat with any consumer that only checks
+    whether a chart exists before rendering it.
     """
+    chart_data: bytes | None = visualization.get("chart_data")
+    svg_data: str | None = None
+    if isinstance(chart_data, bytes) and chart_data:
+        svg_data = base64.b64encode(chart_data).decode("ascii")
+
     summary: dict[str, Any] = {
         "status": visualization.get("status"),
         "format": visualization.get("format"),
-        "available": visualization.get("chart_data") is not None,
+        "available": svg_data is not None,
     }
+    if svg_data is not None:
+        summary["svg_data"] = svg_data
     for key in ("note", "comparisons"):
         if visualization.get(key) is not None:
             summary[key] = visualization[key]
@@ -135,7 +165,13 @@ def to_result(state: GenomeAgentState) -> AgentResult:
     if visualization:
         output["visualization"] = _visualization_summary(visualization)
 
-    # ── NEW: hand off to Reconstruction Agent for gap-filled assemblies ──
+    # Reconstruction handoff takes priority over the visualization handoff
+    # below: get_genome_metadata_node (workflows/nodes/genome_data_nodes.py)
+    # sets reconstruction_need whenever assembly_level is Scaffold/Contig,
+    # and _route_after_join_parallel routes to reconstruction_resolver
+    # instead of generate_visualization in that case — so visualization
+    # never even runs. Checking reconstruction_need first here keeps this
+    # function's precedence consistent with the graph's own routing.
     need = state.reconstruction_need or {}
     if need.get("status") == "NEEDS_AGENT":
         _logger.info(
@@ -148,9 +184,11 @@ def to_result(state: GenomeAgentState) -> AgentResult:
             prompt_to_target_agent=need.get("prompt_to_target_agent"),
             output=output,
         )
-    # ─────────────────────────────────────────────────────────────────────
 
-    # Existing visualization NEEDS_AGENT check stays here.
+    # Separate handoff: a *requested* protein_structure visualization that
+    # this agent can't render itself. Mutually exclusive with the
+    # reconstruction_need branch above — the graph only reaches
+    # generate_visualization when reconstruction_need was NOT triggered.
     if visualization and visualization.get("status") == "NEEDS_AGENT":
         _logger.info("[Genome] needs another agent for the requested visualization")
         return AgentResult(

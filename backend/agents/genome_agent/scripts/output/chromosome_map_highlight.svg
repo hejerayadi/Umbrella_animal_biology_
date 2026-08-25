@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340">
+<rect x="0" y="0" width="800" height="340" fill="#f9f9f9"/>
+<text x="20" y="25" font-size="16" font-weight="bold" fill="#333">Chromosome Map</text>
+<rect x="20" y="45" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="58" font-size="12" fill="white">TP53</text>
+<text x="180" y="58" font-size="11" fill="#666">chr17</text>
+<rect x="20" y="75" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="88" font-size="12" fill="white">BRCA1</text>
+<text x="180" y="88" font-size="11" fill="#666">chr17</text>
+<rect x="20" y="105" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="118" font-size="12" fill="white">EGFR</text>
+<text x="180" y="118" font-size="11" fill="#666">chr7</text>
+<rect x="20" y="135" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="148" font-size="12" fill="white">MYC</text>
+<text x="180" y="148" font-size="11" fill="#666">chr8</text>
+<rect x="20" y="165" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="178" font-size="12" fill="white">KRAS</text>
+<text x="180" y="178" font-size="11" fill="#666">chr12</text>
+<rect x="20" y="195" width="150" height="20" fill="#e8622c" rx="3"/>
+<text x="30" y="208" font-size="12" fill="white">FGF5</text>
+<text x="180" y="208" font-size="11" fill="#666">chr4</text>
+<rect x="20" y="225" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="238" font-size="12" fill="white">UCP1</text>
+<text x="180" y="238" font-size="11" fill="#666">chr4</text>
+<rect x="20" y="255" width="150" height="20" fill="#4b7ba5" rx="3"/>
+<text x="30" y="268" font-size="12" fill="white">ADRB3</text>
+<text x="180" y="268" font-size="11" fill="#666">chr8</text>
+</svg>

@@ -1,0 +1,25 @@
+<svg viewBox="0 0 810 364" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+<rect x="0" y="0" width="810" height="364" fill="#ffffff"/>
+<text x="160" y="20" font-size="15" font-weight="bold" fill="#333333">Genome size comparison</text>
+<text x="150" y="58.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Human</text>
+<rect x="160" y="40" width="560.0" height="28" fill="#4b7ba5" rx="3"/>
+<text x="728.0" y="58.2" font-size="13" font-family="sans-serif" fill="#333333">3.10 Gb</text>
+<text x="150" y="102.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Mouse</text>
+<rect x="160" y="84" width="492.8" height="28" fill="#4b7ba5" rx="3"/>
+<text x="660.8" y="102.2" font-size="13" font-family="sans-serif" fill="#333333">2.73 Gb</text>
+<text x="150" y="146.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Pig</text>
+<rect x="160" y="128" width="452.0" height="28" fill="#4b7ba5" rx="3"/>
+<text x="620.0" y="146.2" font-size="13" font-family="sans-serif" fill="#333333">2.50 Gb</text>
+<text x="150" y="190.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Amur tiger (queried)</text>
+<rect x="160" y="172" width="439.0" height="28" fill="#e8622c" rx="3"/>
+<text x="607.0" y="190.2" font-size="13" font-family="sans-serif" fill="#333333">2.43 Gb</text>
+<text x="150" y="234.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Zebrafish</text>
+<rect x="160" y="216" width="247.8" height="28" fill="#4b7ba5" rx="3"/>
+<text x="415.8" y="234.2" font-size="13" font-family="sans-serif" fill="#333333">1.37 Gb</text>
+<text x="150" y="278.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Chicken</text>
+<rect x="160" y="260" width="192.4" height="28" fill="#4b7ba5" rx="3"/>
+<text x="360.4" y="278.2" font-size="13" font-family="sans-serif" fill="#333333">1.06 Gb</text>
+<text x="150" y="322.2" text-anchor="end" font-size="14" font-family="sans-serif" fill="#333333">Fruit fly</text>
+<rect x="160" y="304" width="25.8" height="28" fill="#4b7ba5" rx="3"/>
+<text x="193.8" y="322.2" font-size="13" font-family="sans-serif" fill="#333333">0.14 Gb</text>
+</svg>

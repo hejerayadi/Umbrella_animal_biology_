@@ -35,8 +35,26 @@ def test_plain_identification(analyzer, instruction):
         "What does this look like?",
     ],
 )
-def test_similarity_intent(analyzer, instruction):
-    assert analyzer.analyze(instruction).intent == "similarity"
+def test_a_similarity_request_is_declined_not_given_its_own_intent(analyzer, instruction):
+    """This agent has no similarity feature, so there is no similarity intent to
+    fall into. The request is answered by classification and the declined
+    capability is named."""
+    evidence = analyzer.analyze(instruction)
+
+    assert evidence.intent == "recognition"
+    assert evidence.unsupported_capability == "visual_similarity_search"
+
+
+def test_a_plain_identification_declines_nothing(analyzer):
+    assert analyzer.analyze("Identify this animal.").unsupported_capability is None
+
+
+def test_similarity_is_not_a_member_of_the_intent_enum():
+    import typing
+
+    from ..domain.models import Intent
+
+    assert set(typing.get_args(Intent)) == {"recognition", "scientific_follow_up"}
 
 
 @pytest.mark.parametrize(

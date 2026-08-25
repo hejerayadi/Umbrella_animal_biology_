@@ -79,7 +79,7 @@ def test_species_present_but_with_no_identifiers_is_unverified(provider):
 def test_simulated_outage_raises_a_controlled_error():
     with pytest.raises(RecognitionError) as caught:
         MockTaxonomyProvider(simulate_unavailable=True).enrich(candidate("panthera_leo", 0.9))
-    assert caught.value.code is ErrorCode.RETRIEVAL_UNAVAILABLE
+    assert caught.value.code is ErrorCode.TAXONOMY_UNAVAILABLE
 
 
 def test_outage_degrades_visibly_without_crashing():
@@ -135,10 +135,10 @@ def test_identifiers_are_never_borrowed_from_a_sibling_species(provider):
     assert fox.ncbi_taxid is None
 
 
-def test_enrichment_never_changes_the_similarity_score(provider):
+def test_enrichment_never_changes_the_classification_score(provider):
     before = candidate("panthera_leo", 0.8123)
     after = provider.enrich(before)
-    assert after.similarity_score == before.similarity_score == 0.8123
+    assert after.classification_score == before.classification_score == 0.8123
 
 
 def test_enrichment_never_changes_the_species_identity(provider):

@@ -4,13 +4,42 @@
     
     <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
     
-        <script>
-            L_NO_TOUCH = false;
-            L_DISABLE_3D = false;
-        </script>
+    <style>
+      @keyframes umbrella-pulse {
+        0%   { transform: scale(0.55); opacity: 0.75; }
+        70%  { transform: scale(1.9);  opacity: 0;    }
+        100% { transform: scale(1.9);  opacity: 0;    }
+      }
+      .umbrella-marker { position: relative; }
+      .umbrella-marker-pulse {
+        position: absolute; inset: 0; border-radius: 50%;
+        animation: umbrella-pulse 2s infinite ease-out;
+      }
+      .umbrella-marker-badge {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        color: white; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        font-weight: 700; font-size: 13px;
+        border: 2.5px solid white;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+      }
+      .leaflet-tooltip.umbrella-tooltip {
+        background: rgba(255,255,255,0.96);
+        border: 1px solid #b8c8b8;
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        color: #1a3a1a;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+        white-space: nowrap;
+      }
+      .leaflet-tooltip.umbrella-tooltip::before { display: none; }
+    </style>
     
-    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
-    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -25,7 +54,7 @@
             <meta name="viewport" content="width=device-width,
                 initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             <style>
-                #map_f28428e0c99a7e48a6a9da9d9b23b98d {
+                #map_57715ee43cef7c5283f77c67a80e9020 {
                     position: relative;
                     width: 100.0%;
                     height: 100.0%;
@@ -34,132 +63,408 @@
                 }
                 .leaflet-container { font-size: 1rem; }
             </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
         
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@3.0.0/Control.FullScreen.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@3.0.0/Control.FullScreen.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.css"/>
+    <script src="https://cdn.jsdelivr.net/gh/python-visualization/folium@main/folium/templates/leaflet_heat.min.js"></script>
 </head>
 <body>
     
     
+    <script>
+      setTimeout(function() {
+        try {
+          map_57715ee43cef7c5283f77c67a80e9020.flyToBounds(
+            [[11.02,76.75],[28.02,100.99]],
+            {duration: 1.6, padding: [40, 40]}
+          );
+        } catch (e) { /* ignore — map may not be ready yet */ }
+      }, 350);
+    </script>
+    
+    
     <div style="position: fixed; bottom: 20px; left: 20px; z-index: 9999;
-                background: white; padding: 8px 12px; border: 1px solid #ccc;
-                border-radius: 4px; font-family: sans-serif; font-size: 12px;">
-      <b>Panthera tigris</b><br>
-      4 observations (mock)<br>
-      <span style="color: #666;">Sprint 2 — Biodiversity Agent</span>
+                background: white; padding: 10px 14px; border: 1px solid #d0d0d0;
+                border-radius: 8px; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+                font-size: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+                max-width: 320px;">
+      <div style="font-weight: 600; color: #2C5F2D; margin-bottom: 4px;">Panthera tigris</div>
+      <div style="color: #333; margin-bottom: 6px;">4 observations · confidence 0.80<div style='margin-top:6px;padding-top:6px;border-top:1px solid #eee;'><div style='font-size:10px;color:#999;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;'>Top countries</div><div style='display:flex;justify-content:space-between;padding:1px 0;font-size:11px;'><span style='color:#555;'>India</span><span style='color:#2C5F2D;font-weight:700;'>3</span></div><div style='display:flex;justify-content:space-between;padding:1px 0;font-size:11px;'><span style='color:#555;'>Thailand</span><span style='color:#2C5F2D;font-weight:700;'>1</span></div></div></div>
+      <div style="color: #999; font-size: 10px; font-style: italic;">Sprint 2 — Biodiversity Agent</div>
     </div>
     
     
-            <div class="folium-map" id="map_f28428e0c99a7e48a6a9da9d9b23b98d" ></div>
+            <div class="folium-map" id="map_57715ee43cef7c5283f77c67a80e9020" ></div>
         
 </body>
 <script>
     
     
-            var map_f28428e0c99a7e48a6a9da9d9b23b98d = L.map(
-                "map_f28428e0c99a7e48a6a9da9d9b23b98d",
+            var map_57715ee43cef7c5283f77c67a80e9020 = L.map(
+                "map_57715ee43cef7c5283f77c67a80e9020",
                 {
-                    center: [18.4275, 84.275],
+                    center: [19.52, 88.87],
                     crs: L.CRS.EPSG3857,
-                    zoom: 2,
-                    zoomControl: true,
-                    preferCanvas: false,
+                    ...{
+  "zoom": 3,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
                 }
             );
+            L.control.scale().addTo(map_57715ee43cef7c5283f77c67a80e9020);
 
             
 
         
     
-            var tile_layer_136b4aa361ea11bb5f00355a6719c7f9 = L.tileLayer(
-                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
+            var tile_layer_bd25a6a5345407d20d462827d38476e0 = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 20,
+  "noWrap": false,
+  "attribution": "\u00a9 OpenStreetMap contributors \u00b7 \u00a9 CARTO",
+  "subdomains": "abcd",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
             );
         
     
-            tile_layer_136b4aa361ea11bb5f00355a6719c7f9.addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+            tile_layer_bd25a6a5345407d20d462827d38476e0.addTo(map_57715ee43cef7c5283f77c67a80e9020);
         
     
-            var circle_marker_acbfb7f3254adc4f4301e56a21084154 = L.circleMarker(
+            var tile_layer_5f0bf2e065832e2df819e3f64a94665f = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 20,
+  "noWrap": false,
+  "attribution": "\u00a9 OpenStreetMap contributors \u00b7 \u00a9 CARTO",
+  "subdomains": "abcd",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            L.control.fullscreen(
+                {
+  "position": "topleft",
+  "title": "Fullscreen",
+  "titleCancel": "Exit",
+  "forceSeparateButton": false,
+}
+            ).addTo(map_57715ee43cef7c5283f77c67a80e9020);
+        
+    
+            var tile_layer_2e8d72f499a3c442e58ecc3fd451e02e = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\"https://carto.com/attributions\"\u003eCARTO\u003c/a\u003e", "detect_retina": false, "max_native_zoom": 20, "max_zoom": 20, "min_zoom": 0, "no_wrap": false, "opacity": 1, "subdomains": "abcd", "tms": false}
+            );
+            var mini_map_23d66a2fd4355712b4f48331b16866f9 = new L.Control.MiniMap(
+                tile_layer_2e8d72f499a3c442e58ecc3fd451e02e,
+                {
+  "position": "bottomright",
+  "width": 140,
+  "height": 100,
+  "collapsedWidth": 25,
+  "collapsedHeight": 25,
+  "zoomLevelOffset": -5,
+  "centerFixed": false,
+  "zoomAnimation": false,
+  "toggleDisplay": true,
+  "autoToggleDisplay": false,
+  "minimized": false,
+}
+            );
+            map_57715ee43cef7c5283f77c67a80e9020.addControl(mini_map_23d66a2fd4355712b4f48331b16866f9);
+        
+    
+            var feature_group_d3bf611bb9b7506f1dfb534b8b813c57 = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var marker_73d953c893b05adf19b21cdf7ce7634c = L.marker(
                 [28.02, 79.71],
-                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
-            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+                {
+}
+            ).addTo(feature_group_d3bf611bb9b7506f1dfb534b8b813c57);
         
     
-        var popup_67efd0e12f30e1d6aeeb35f5f9247751 = L.popup({"maxWidth": 250});
+            var div_icon_39fdd10e03dbb89c363ae9bc9fbd1983 = L.divIcon({
+  "html": "\n    \u003cdiv class=\"umbrella-marker\" style=\"width:34px;height:34px;\"\u003e\n      \u003cdiv class=\"umbrella-marker-pulse\" style=\"background:#2E7D32;\"\u003e\u003c/div\u003e\n      \u003cdiv class=\"umbrella-marker-badge\" style=\"width:22px;height:22px;background:#2E7D32;\"\u003e\n        1\n      \u003c/div\u003e\n    \u003c/div\u003e\n    ",
+  "iconSize": [34, 34],
+  "iconAnchor": [17, 17],
+  "className": "empty",
+});
+        
+    
+        var popup_90a488d3708f8d11674baa64e623014d = L.popup({
+  "maxWidth": 320,
+});
 
         
             
-                var html_371f7a36cdf2b0caf2d17ad28032b44c = $(`<div id="html_371f7a36cdf2b0caf2d17ad28032b44c" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(28.020, 79.710)</div>`)[0];
-                popup_67efd0e12f30e1d6aeeb35f5f9247751.setContent(html_371f7a36cdf2b0caf2d17ad28032b44c);
+                var html_7fb24046948521def07c42e049c9c145 = $(`<div id="html_7fb24046948521def07c42e049c9c145" style="width: 100.0%; height: 100.0%;">     <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; min-width: 220px;">       <div style="font-weight:700; color:#2C5F2D; font-size:14px;                   border-bottom: 1px solid #eee; padding-bottom: 6px; margin-bottom: 6px;">         Panthera tigris       </div>       <table style="border-collapse:collapse;">         <tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Location</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">28.020°, 79.710°</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Common name</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Tiger</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Country</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">India</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Region</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Corbett NP</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">IUCN status</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Endangered</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Year</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">2024</td></tr>       </table>     </div>     </div>`)[0];
+                popup_90a488d3708f8d11674baa64e623014d.setContent(html_7fb24046948521def07c42e049c9c145);
             
         
 
-        circle_marker_acbfb7f3254adc4f4301e56a21084154.bindPopup(popup_67efd0e12f30e1d6aeeb35f5f9247751)
+        marker_73d953c893b05adf19b21cdf7ce7634c.bindPopup(popup_90a488d3708f8d11674baa64e623014d)
         ;
 
         
     
     
-            var circle_marker_5a8d5c96b010a64a70efbe10409f27b8 = L.circleMarker(
+            marker_73d953c893b05adf19b21cdf7ce7634c.bindTooltip(
+                `<div>
+                     1. India
+                 </div>`,
+                {
+  "permanent": true,
+  "direction": "right",
+  "offset": [14, 0],
+  "className": "umbrella-tooltip",
+  "sticky": true,
+}
+            );
+        
+    
+                marker_73d953c893b05adf19b21cdf7ce7634c.setIcon(div_icon_39fdd10e03dbb89c363ae9bc9fbd1983);
+            
+    
+            var marker_2a0925c869b98c3589d91f6dadbb7938 = L.marker(
                 [21.32, 79.65],
-                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
-            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+                {
+}
+            ).addTo(feature_group_d3bf611bb9b7506f1dfb534b8b813c57);
         
     
-        var popup_c93e096c7e77f0ef60ae22eccf0004fe = L.popup({"maxWidth": 250});
+            var div_icon_5c42f1314cfb9eb50c0febe02dab0549 = L.divIcon({
+  "html": "\n    \u003cdiv class=\"umbrella-marker\" style=\"width:34px;height:34px;\"\u003e\n      \u003cdiv class=\"umbrella-marker-pulse\" style=\"background:#2E7D32;\"\u003e\u003c/div\u003e\n      \u003cdiv class=\"umbrella-marker-badge\" style=\"width:22px;height:22px;background:#2E7D32;\"\u003e\n        2\n      \u003c/div\u003e\n    \u003c/div\u003e\n    ",
+  "iconSize": [34, 34],
+  "iconAnchor": [17, 17],
+  "className": "empty",
+});
+        
+    
+        var popup_1d0b4e4241885a6c9956aa8cb42e1495 = L.popup({
+  "maxWidth": 320,
+});
 
         
             
-                var html_6e47296869a0348bce3872b7b61bebd2 = $(`<div id="html_6e47296869a0348bce3872b7b61bebd2" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(21.320, 79.650)</div>`)[0];
-                popup_c93e096c7e77f0ef60ae22eccf0004fe.setContent(html_6e47296869a0348bce3872b7b61bebd2);
+                var html_f9a3ebf69ac0cad8e26ca801defd88fb = $(`<div id="html_f9a3ebf69ac0cad8e26ca801defd88fb" style="width: 100.0%; height: 100.0%;">     <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; min-width: 220px;">       <div style="font-weight:700; color:#2C5F2D; font-size:14px;                   border-bottom: 1px solid #eee; padding-bottom: 6px; margin-bottom: 6px;">         Panthera tigris       </div>       <table style="border-collapse:collapse;">         <tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Location</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">21.320°, 79.650°</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Common name</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Tiger</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Country</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">India</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Region</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Pench NP</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">IUCN status</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Endangered</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Year</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">2023</td></tr>       </table>     </div>     </div>`)[0];
+                popup_1d0b4e4241885a6c9956aa8cb42e1495.setContent(html_f9a3ebf69ac0cad8e26ca801defd88fb);
             
         
 
-        circle_marker_5a8d5c96b010a64a70efbe10409f27b8.bindPopup(popup_c93e096c7e77f0ef60ae22eccf0004fe)
+        marker_2a0925c869b98c3589d91f6dadbb7938.bindPopup(popup_1d0b4e4241885a6c9956aa8cb42e1495)
         ;
 
         
     
     
-            var circle_marker_9dd8b70ad7e8de71a97cceebb9cbd986 = L.circleMarker(
+            marker_2a0925c869b98c3589d91f6dadbb7938.bindTooltip(
+                `<div>
+                     2. India
+                 </div>`,
+                {
+  "permanent": true,
+  "direction": "right",
+  "offset": [14, 0],
+  "className": "umbrella-tooltip",
+  "sticky": true,
+}
+            );
+        
+    
+                marker_2a0925c869b98c3589d91f6dadbb7938.setIcon(div_icon_5c42f1314cfb9eb50c0febe02dab0549);
+            
+    
+            var marker_d40fd233eb8e9bfefa6f05d4a149b0af = L.marker(
                 [13.35, 100.99],
-                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
-            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+                {
+}
+            ).addTo(feature_group_d3bf611bb9b7506f1dfb534b8b813c57);
         
     
-        var popup_b249aff391b87adae074bd8005efc2dd = L.popup({"maxWidth": 250});
+            var div_icon_6bdf1621e5f21d51f2beb145d74559dd = L.divIcon({
+  "html": "\n    \u003cdiv class=\"umbrella-marker\" style=\"width:34px;height:34px;\"\u003e\n      \u003cdiv class=\"umbrella-marker-pulse\" style=\"background:#2E7D32;\"\u003e\u003c/div\u003e\n      \u003cdiv class=\"umbrella-marker-badge\" style=\"width:22px;height:22px;background:#2E7D32;\"\u003e\n        3\n      \u003c/div\u003e\n    \u003c/div\u003e\n    ",
+  "iconSize": [34, 34],
+  "iconAnchor": [17, 17],
+  "className": "empty",
+});
+        
+    
+        var popup_c48bbe8ca353cb4e6d4c4dfa902866e7 = L.popup({
+  "maxWidth": 320,
+});
 
         
             
-                var html_a57b32533573d7f0f6265d17cab20ce7 = $(`<div id="html_a57b32533573d7f0f6265d17cab20ce7" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(13.350, 100.990)</div>`)[0];
-                popup_b249aff391b87adae074bd8005efc2dd.setContent(html_a57b32533573d7f0f6265d17cab20ce7);
+                var html_fee714aaabcb755a53f4fa0013056fec = $(`<div id="html_fee714aaabcb755a53f4fa0013056fec" style="width: 100.0%; height: 100.0%;">     <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; min-width: 220px;">       <div style="font-weight:700; color:#2C5F2D; font-size:14px;                   border-bottom: 1px solid #eee; padding-bottom: 6px; margin-bottom: 6px;">         Panthera tigris       </div>       <table style="border-collapse:collapse;">         <tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Location</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">13.350°, 100.990°</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Common name</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Tiger</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Country</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Thailand</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Region</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Khao Ang Rue Nai</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">IUCN status</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Endangered</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Year</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">2023</td></tr>       </table>     </div>     </div>`)[0];
+                popup_c48bbe8ca353cb4e6d4c4dfa902866e7.setContent(html_fee714aaabcb755a53f4fa0013056fec);
             
         
 
-        circle_marker_9dd8b70ad7e8de71a97cceebb9cbd986.bindPopup(popup_b249aff391b87adae074bd8005efc2dd)
+        marker_d40fd233eb8e9bfefa6f05d4a149b0af.bindPopup(popup_c48bbe8ca353cb4e6d4c4dfa902866e7)
         ;
 
         
     
     
-            var circle_marker_c7296433f83361a53bf6e7560cf2759b = L.circleMarker(
+            marker_d40fd233eb8e9bfefa6f05d4a149b0af.bindTooltip(
+                `<div>
+                     3. Thailand
+                 </div>`,
+                {
+  "permanent": true,
+  "direction": "right",
+  "offset": [14, 0],
+  "className": "umbrella-tooltip",
+  "sticky": true,
+}
+            );
+        
+    
+                marker_d40fd233eb8e9bfefa6f05d4a149b0af.setIcon(div_icon_6bdf1621e5f21d51f2beb145d74559dd);
+            
+    
+            var marker_e8149afccfc151e2f480a7b73cf3ce23 = L.marker(
                 [11.02, 76.75],
-                {"bubblingMouseEvents": true, "color": "#c8102e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#c8102e", "fillOpacity": 0.75, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 6, "stroke": true, "weight": 1}
-            ).addTo(map_f28428e0c99a7e48a6a9da9d9b23b98d);
+                {
+}
+            ).addTo(feature_group_d3bf611bb9b7506f1dfb534b8b813c57);
         
     
-        var popup_ec7a5b7ddd62f60b1209bd588496fc94 = L.popup({"maxWidth": 250});
+            var div_icon_fdb4bd6862c8417a2453fb98b9226410 = L.divIcon({
+  "html": "\n    \u003cdiv class=\"umbrella-marker\" style=\"width:34px;height:34px;\"\u003e\n      \u003cdiv class=\"umbrella-marker-pulse\" style=\"background:#2E7D32;\"\u003e\u003c/div\u003e\n      \u003cdiv class=\"umbrella-marker-badge\" style=\"width:22px;height:22px;background:#2E7D32;\"\u003e\n        4\n      \u003c/div\u003e\n    \u003c/div\u003e\n    ",
+  "iconSize": [34, 34],
+  "iconAnchor": [17, 17],
+  "className": "empty",
+});
+        
+    
+        var popup_cff890798931e8302342a8906c815986 = L.popup({
+  "maxWidth": 320,
+});
 
         
             
-                var html_e5a6db42cf55851452e80ddfcdfe672b = $(`<div id="html_e5a6db42cf55851452e80ddfcdfe672b" style="width: 100.0%; height: 100.0%;"><b>Panthera tigris</b><br>(11.020, 76.750)</div>`)[0];
-                popup_ec7a5b7ddd62f60b1209bd588496fc94.setContent(html_e5a6db42cf55851452e80ddfcdfe672b);
+                var html_721eab667f06265976fc1591d9da8cb7 = $(`<div id="html_721eab667f06265976fc1591d9da8cb7" style="width: 100.0%; height: 100.0%;">     <div style="font-family: -apple-system, Segoe UI, Roboto, sans-serif; min-width: 220px;">       <div style="font-weight:700; color:#2C5F2D; font-size:14px;                   border-bottom: 1px solid #eee; padding-bottom: 6px; margin-bottom: 6px;">         Panthera tigris       </div>       <table style="border-collapse:collapse;">         <tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Location</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">11.020°, 76.750°</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Common name</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Tiger</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Country</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">India</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Region</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Nilgiri Biosphere</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">IUCN status</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">Endangered</td></tr><tr><td style="color:#666;padding:2px 8px 2px 0;font-size:11px;">Year</td><td style="color:#111;padding:2px 0;font-weight:500;font-size:11px;">2024</td></tr>       </table>     </div>     </div>`)[0];
+                popup_cff890798931e8302342a8906c815986.setContent(html_721eab667f06265976fc1591d9da8cb7);
             
         
 
-        circle_marker_c7296433f83361a53bf6e7560cf2759b.bindPopup(popup_ec7a5b7ddd62f60b1209bd588496fc94)
+        marker_e8149afccfc151e2f480a7b73cf3ce23.bindPopup(popup_cff890798931e8302342a8906c815986)
         ;
 
         
     
+    
+            marker_e8149afccfc151e2f480a7b73cf3ce23.bindTooltip(
+                `<div>
+                     4. India
+                 </div>`,
+                {
+  "permanent": true,
+  "direction": "right",
+  "offset": [14, 0],
+  "className": "umbrella-tooltip",
+  "sticky": true,
+}
+            );
+        
+    
+                marker_e8149afccfc151e2f480a7b73cf3ce23.setIcon(div_icon_fdb4bd6862c8417a2453fb98b9226410);
+            
+    
+            feature_group_d3bf611bb9b7506f1dfb534b8b813c57.addTo(map_57715ee43cef7c5283f77c67a80e9020);
+        
+    
+            var feature_group_5bf2b91fb61006660d6816aba8d4e1bd = L.featureGroup(
+                {
+}
+            );
+        
+    
+            var heat_map_28b4812ee894b4b9a5bb45d24d985cdf = L.heatLayer(
+                [[28.02, 79.71, 1.0], [21.32, 79.65, 1.0], [13.35, 100.99, 1.0], [11.02, 76.75, 1.0]],
+                {
+  "minOpacity": 0.35,
+  "maxZoom": 18,
+  "radius": 25,
+  "blur": 18,
+}
+            );
+        
+    
+            heat_map_28b4812ee894b4b9a5bb45d24d985cdf.addTo(feature_group_5bf2b91fb61006660d6816aba8d4e1bd);
+        
+    
+            var layer_control_61fe34d81c37302c171cd6b5a810bf87_layers = {
+                base_layers : {
+                    "Light basemap" : tile_layer_bd25a6a5345407d20d462827d38476e0,
+                    "Dark basemap" : tile_layer_5f0bf2e065832e2df819e3f64a94665f,
+                },
+                overlays :  {
+                    "Observations" : feature_group_d3bf611bb9b7506f1dfb534b8b813c57,
+                    "Heatmap" : feature_group_5bf2b91fb61006660d6816aba8d4e1bd,
+                },
+            };
+            let layer_control_61fe34d81c37302c171cd6b5a810bf87 = L.control.layers(
+                layer_control_61fe34d81c37302c171cd6b5a810bf87_layers.base_layers,
+                layer_control_61fe34d81c37302c171cd6b5a810bf87_layers.overlays,
+                {
+  "position": "topright",
+  "collapsed": false,
+  "autoZIndex": true,
+}
+            ).addTo(map_57715ee43cef7c5283f77c67a80e9020);
+
+        
+    
+            map_57715ee43cef7c5283f77c67a80e9020.fitBounds(
+                [[11.02, 76.75], [28.02, 100.99]],
+                {"padding": [30, 30]}
+            );
+        
 </script>
 </html>

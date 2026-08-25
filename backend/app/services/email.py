@@ -6,7 +6,7 @@ import ssl
 from email.message import EmailMessage
 
 from ..core.config import Settings
-from ..email.templates import verification_email
+from ..email.templates import new_biologist_application_email, verification_email
 
 logger = logging.getLogger("umbrella.email")
 
@@ -71,6 +71,33 @@ class EmailService:
             recipient, url, self.settings.email_verification_ttl_minutes
         )
         self.send(recipient, "Verify your Umbrella email", text, html)
+
+    def new_biologist_application(
+        self,
+        recipient: str,
+        *,
+        applicant_email: str,
+        full_name: str,
+        institution: str,
+        professional_title: str,
+        country: str,
+        orcid: str | None,
+        motivation: str,
+        specialties: list[str],
+    ) -> None:
+        review_url = f"{self.settings.frontend_url.rstrip('/')}/admin"
+        text, html = new_biologist_application_email(
+            applicant_email=applicant_email,
+            full_name=full_name,
+            institution=institution,
+            professional_title=professional_title,
+            country=country,
+            orcid=orcid,
+            motivation=motivation,
+            specialties=specialties,
+            review_url=review_url,
+        )
+        self.send(recipient, "New Umbrella biologist application", text, html)
 
     def password_reset(self, recipient: str, token: str) -> None:
         url = f"{self.settings.frontend_url.rstrip('/')}/reset-password?token={token}"

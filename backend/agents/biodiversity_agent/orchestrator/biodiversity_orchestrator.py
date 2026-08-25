@@ -43,8 +43,10 @@ from ..schema import (
 )
 from ..workers.habitat.mock import HabitatMock
 from ..workers.hotspots.mock import HotspotsMock
+from ..workers.hotspots.worker import HotspotsWorker  # real M3 pipeline
 from ..workers.migration.mock import MigrationMock
-from ..workers.species_distribution.mock import SpeciesDistributionMock
+from ..workers.migration.worker import MigrationWorker  # real Random Forest (Miriam)
+from ..workers.species_distribution.worker import SpeciesDistributionWorker
 from .aggregator import aggregate
 from .router import Router
 from .services.qdrant_client import SpeciesTaxonomyService
@@ -81,11 +83,25 @@ class BiodiversityOrchestrator:
         workers: dict[BiodiversityFeature, Any] | None = None,
         taxonomy: SpeciesTaxonomyService | None = None,
     ) -> None:
+        # Sprint 3 - two real workers plugged in:
+        #   * Species Distribution -> real GBIF Occurrence Search
+        #     (SpeciesDistributionWorker)
+        #   * Biodiversity Hotspots -> real M3 pipeline: GBIF -> clean ->
+        #     equal-area grid -> Shannon/Simpson/Chao1 -> effort correction
+        #     -> DBSCAN (haversine, silhouette-tuned) -> ranked hotspots
+        #     -> folium heatmap (HotspotsWorker, from Ouissale's branch)
+        # Habitat and Migration stay on their mocks until their Sprint 3
+        # implementations land. The orchestrator and its tests do not care
+        # which flavor is plugged in as long as the
+        # ``run(AgentRequest) -> AgentResult`` contract holds - HotspotsWorker
+        # keeps ``progress`` as a keyword-only optional kwarg so the domain
+        # dispatch (progress-free) and Ouissale's dashboard (progress-aware)
+        # can both call it without changes.
         self._workers = workers or {
-            BiodiversityFeature.SPECIES_DISTRIBUTION_MAP: SpeciesDistributionMock(),
-            BiodiversityFeature.HABITAT_VISUALIZATION: HabitatMock(),
-            BiodiversityFeature.BIODIVERSITY_HOTSPOTS: HotspotsMock(),
-            BiodiversityFeature.MIGRATION_ANALYSIS: MigrationMock(),
+            BiodiversityFeature.SPECIES_DISTRIBUTION_MAP: SpeciesDistributionWorker(),
+            BiodiversityFeature.HABITAT_VISUALIZATION:    HabitatMock(),
+            BiodiversityFeature.BIODIVERSITY_HOTSPOTS:    HotspotsWorker(),
+            BiodiversityFeature.MIGRATION_ANALYSIS:       MigrationWorker(),
         }
         self._router = Router(self._workers)
         self._taxonomy = taxonomy or SpeciesTaxonomyService.from_env()

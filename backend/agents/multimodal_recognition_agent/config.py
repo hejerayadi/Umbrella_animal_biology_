@@ -6,25 +6,22 @@ the launcher, a container) owns how the environment gets populated, and keeping
 that responsibility out of here means no credential can ever be read, cached or
 printed by this codebase.
 
-Two rules shape the defaults below:
+Note what is absent, and is absent on purpose: there is no vector dimension, no
+collection name, no distance metric, no dataset version and no `QDRANT_*`
+anything. This agent classifies an image into taxonomic labels. It runs no
+vector search, so it has nothing to configure one with, and an operator who sets
+a `QDRANT_*` variable in this agent's environment will find that nothing reads
+it.
 
-1. Limits that protect the service (image size, pixel area) have real defaults,
-   taken from the Sprint 2 specification.
-2. Values that belong to the shared Qdrant contract have NO defaults. They are
-   Chahd's to define. An unset value stays unset and the real retriever refuses
-   to start, rather than guessing a collection name or a vector dimension and
-   querying something incompatible.
-
-The one exception is `mock_embedding_dimension`, which needs *a* number for the
-local mock path to run at all. It is labelled `local_default_pending_manifest`
-in the provenance of every response so no reader mistakes it for an agreed value.
+Limits that protect the service (image size, pixel area) have real defaults,
+taken from the Sprint 2 specification. Thresholds have defaults too, and they
+are workflow test boundaries rather than scientific calibration.
 """
 from __future__ import annotations
 
-import json
+import math
 import os
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 # The one approved image key. This is a constant, not a setting: accepting an
 # alternate key from configuration would quietly reopen a frozen contract.
@@ -32,11 +29,100 @@ RECOGNITION_IMAGE_CONTEXT_KEY = "recognition_image"
 
 ALLOWED_MEDIA_TYPES = ("image/jpeg", "image/png", "image/webp")
 
-# Local development labels. They are deliberately NOT the strings from the
-# specification's example manifest - using those would imply the shared contract
-# is frozen when it is not.
-LOCAL_MOCK_PROVIDER_VERSION = "local-dev-mock-bioclip2-v0"
-LOCAL_DATASET_VERSION = "local-dev-fixtures-v0"
+# What the classification boundary is doing in Sprint 2, stated in one word that
+# appears verbatim in every response's provenance. It is not "classification" -
+# it is a MOCK of classification, and the two must never read the same.
+RECOGNITION_MODE_MOCK_CLASSIFICATION = "mock_classification"
+
+# The model the real provider will run, later, through the same interface.
+MODEL_TARGET = "BioCLIP-2"
+
+# Version label of the shipped Sprint 2 mock. It matches the `provider_version`
+# in `fixtures/mock_bioclip_predictions.json`; the provider refuses a fixture
+# that disagrees, so the label in a response is always the label of the file
+# that produced it.
+MOCK_CLASSIFIER_VERSION = "sprint2-mock-bioclip2-classifier-v1"
+
+# --- provider mode vocabularies -------------------------------------------
+# Every mode this agent will ever accept is named here, and separately from the
+# ones that are actually implemented. The split is the point: `real` is a
+# RECOGNISED name that currently has no implementation behind it, so selecting
+# it fails with a message saying exactly that, while an invented name fails with
+# a message listing the legal ones. Neither outcome ever hands back a mock -
+# a production deployment that silently degraded to fixture data would publish
+# invented biology as though it were measured.
+BIOCLIP_PROVIDER_MODES = ("mock", "remote")
+BIOCLIP_IMPLEMENTED_MODES = ("mock", "remote")
+
+# --- remote BioCLIP-2 execution -------------------------------------------
+# Inference runs on the official public Hugging Face Space rather than locally.
+# The local design was cancelled: it required a 2.66 GB TreeOfLife text-embedding
+# artifact cached on disk, and that exception was refused. Nothing here downloads
+# a model weight, an embedding file or a cache.
+REMOTE_SPACE_ID = "imageomics/bioclip-2-demo"
+REMOTE_SPACE_BASE_URL = "https://imageomics-bioclip-2-demo.hf.space"
+
+# The endpoint discovered from the Space's own generated API description. It takes
+# an image plus a taxonomic rank and returns the open-domain prediction, a sample
+# image and an HTML link; only the prediction is scientific output here.
+REMOTE_SPACE_API_NAME = "/lambda"
+
+# Always Species. The agent names species; no dynamic rank selection exists.
+REMOTE_SPACE_RANK = "Species"
+
+# The Space itself caps its output at five predictions (`k = 5` in its app.py).
+# Recorded so a configured Top-K above it is reported honestly rather than padded.
+REMOTE_SPACE_MAX_PREDICTIONS = 5
+
+# The model the Space runs. Not a local artifact - a label for provenance.
+REMOTE_MODEL_VERSION = "imageomics/bioclip-2"
+
+# Space revision observed during the Phase 3 API checkpoint. The Space is owned by
+# a third party and may move; provenance reports this as the configured revision,
+# never as a guarantee.
+REMOTE_SPACE_REVISION = "4768b0d8b743582f6eaa058fde15d303ed073522"
+
+RECOGNITION_MODE_REMOTE_CLASSIFICATION = "remote_bioclip2_open_domain_species"
+
+# The Space runs on shared `cpu-basic` hardware and may queue, so this is more
+# generous than the LLM timeout. It is still a hard bound: no request waits forever.
+DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS = 90.0
+
+# --- taxonomy provider modes ------------------------------------------------
+# "real" is now implemented (Phase 4): live GBIF species-match plus live NCBI
+# Entrez taxonomy esearch. See adapters/taxonomy.py - RealGBIFProvider,
+# RealNCBIProvider, RealTaxonomyProvider.
+TAXONOMY_PROVIDER_MODES = ("mock", "real")
+TAXONOMY_IMPLEMENTED_MODES = ("mock", "real")
+
+# Bounded wait for a single GBIF or NCBI HTTP call. Both public APIs are
+# generally fast; this is a safety bound, not a tuned value.
+DEFAULT_TAXONOMY_TIMEOUT_SECONDS = 10.0
+
+REASONING_LLM_PROVIDER_MODES = ("disabled", "fake", "azure")
+
+# The `recognition_mode` word that goes into every response's provenance, keyed
+# by the classifier mode that produced it. Deriving it means provenance cannot
+# drift from the provider that actually ran; Phase 3 adds the `real` entry in
+# the same commit that adds the real provider, so the two cannot disagree.
+RECOGNITION_MODE_BY_BIOCLIP_MODE = {
+    "mock": RECOGNITION_MODE_MOCK_CLASSIFICATION,
+    "remote": RECOGNITION_MODE_REMOTE_CLASSIFICATION,
+}
+
+# The ceiling the whole agent is built around: one planning call, one grounded
+# explanation call. Configuration may lower it. Nothing may raise it.
+MAX_REASONING_LLM_CALLS_PER_REQUEST = 2
+
+# The ONE timeout that bounds a reasoning call, in seconds.
+# `RECOGNITION_LLM_TIMEOUT_SECONDS` is the only variable that sets it. There
+# used to be a second one, `AZURE_OPENAI_TIMEOUT_SECONDS`, read directly by the
+# Azure adapter - and it was the one that actually took effect, so the value an
+# operator set here was parsed, passed down, and then dropped. The default below
+# is 20 rather than the 10 this field used to declare precisely because 20 is
+# what the agent has really been using; unifying the source must not quietly
+# halve the timeout in production.
+DEFAULT_REASONING_LLM_TIMEOUT_SECONDS = 20.0
 
 
 class ConfigError(RuntimeError):
@@ -85,6 +171,74 @@ def _positive(name: str, value: int | None) -> int:
     return value
 
 
+def _call_budget(name: str, default: int, ceiling: int) -> int:
+    """Parse a per-request LLM call budget.
+
+    `0` means "spend no calls" and must survive as `0`. It previously did not:
+    the old expression ran the parsed value through `or`, so a configured `0`
+    was falsy and silently became the default `2` - an operator who switched the
+    model off got two calls per request instead of none.
+
+    Above the ceiling the value is clamped rather than rejected, because asking
+    for more calls than the workflow has roles for is a harmless over-request.
+    Below zero it is rejected, because a negative budget has no meaning and
+    guessing at one would hide a broken deployment.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError as exc:
+        raise ConfigError(
+            f"{name} must be an integer between 0 and {ceiling}"
+        ) from exc
+    if value < 0:
+        raise ConfigError(f"{name} must not be negative")
+    return min(value, ceiling)
+
+
+def _timeout(name: str, default: float) -> float:
+    """The one bounded timeout for a reasoning call.
+
+    Rejects zero, negative, NaN and infinity: each of those either removes the
+    bound entirely or makes every call fail, and both are worse than refusing
+    to start.
+    """
+    value = _float(name, default)
+    if value is None or not math.isfinite(value) or value <= 0:
+        raise ConfigError(f"{name} must be a positive, finite number of seconds")
+    return value
+
+
+def _provider_selection(
+    name: str,
+    supported: tuple[str, ...],
+    implemented: tuple[str, ...],
+    pending_note: str,
+    default: str = "mock",
+) -> str:
+    """Resolve one provider mode, failing loudly on anything unusable.
+
+    Three outcomes, never a fourth: an implemented mode is returned, a
+    recognised-but-unbuilt mode raises saying which phase will build it, and an
+    unknown mode raises listing the legal values. There is no path here that
+    returns a fallback.
+    """
+    mode = (_str(name, default) or "").strip().lower()
+    if mode not in supported:
+        raise ConfigError(
+            f"{name} must be one of: {', '.join(supported)}. Got {mode!r}."
+        )
+    if mode not in implemented:
+        raise ConfigError(
+            f"{name}={mode!r} selects a provider that is not implemented yet "
+            f"({pending_note}). It will NOT fall back to a mock or fixture "
+            f"provider. Set {name}=mock until that work lands."
+        )
+    return mode
+
+
 @dataclass(frozen=True)
 class ValidationConfig:
     """Bounds applied to an incoming image before it is ever decoded fully."""
@@ -115,7 +269,8 @@ class ThresholdConfig:
 
     These are workflow test boundaries, NOT scientific calibration. They decide
     which branch of the Sprint 2 workflow a request takes; they say nothing
-    about biological accuracy.
+    about biological accuracy, and in Sprint 2 the scores they compare are
+    deterministic mock values.
     """
 
     identified_min_score: float
@@ -124,59 +279,24 @@ class ThresholdConfig:
 
 
 @dataclass(frozen=True)
-class QdrantConfig:
-    """The shared collection contract. Every field is Chahd's to supply.
-
-    `is_frozen` is the single question the real retriever asks before it will
-    construct itself.
-    """
-
-    url: str | None
-    collection: str | None
-    vector_name: str | None
-    expected_dimension: int | None
-    expected_distance: str | None
-    dataset_version: str | None
-    top_k_references: int | None
-    timeout_seconds: float
-
-    # Fields that must be present before a real query may be attempted. The API
-    # key is not listed: some deployments are open on a private network, so its
-    # absence is not proof of an unfrozen contract.
-    _REQUIRED = ("url", "collection", "expected_dimension", "expected_distance",
-                 "dataset_version", "top_k_references")
-
-    @property
-    def missing_contract_fields(self) -> tuple[str, ...]:
-        return tuple(name for name in self._REQUIRED if getattr(self, name) is None)
-
-    @property
-    def is_frozen(self) -> bool:
-        return not self.missing_contract_fields
-
-
-@dataclass(frozen=True)
 class RecognitionConfig:
     validation: ValidationConfig
     thresholds: ThresholdConfig
-    qdrant: QdrantConfig
 
     bioclip_provider_mode: str
+    recognition_mode: str
     mock_provider_version: str
-    mock_embedding_dimension: int
-    mock_embedding_dimension_is_local_default: bool
+    # Optional path to an alternative classification fixture, so a demo can add
+    # its own image hashes without editing the committed test oracle. Holds a
+    # path only - never image data.
+    classification_fixture_path: str | None
 
-    retrieval_mode: str
     taxonomy_provider_mode: str
     text_analyzer_mode: str
 
+    # The maximum number of distinct taxa ever returned, and the value handed to
+    # the classifier as `top_k`.
     top_k_species: int
-    max_references_per_species: int
-
-    # Local development aid: maps an image's SHA-256 to a fixture vector seed so
-    # a known demo image reliably retrieves a known reference. Never required,
-    # never populated in production, and it holds no image data - only hashes.
-    image_seed_overrides: dict[str, str] = field(default_factory=dict)
 
     # --- optional reasoning LLM -------------------------------------------
     # Disabled unless explicitly switched on. Note what is NOT here: no base
@@ -185,9 +305,33 @@ class RecognitionConfig:
     # log line, a fixture or this source file.
     # Two calls at most, and the workflow spends them in fixed roles: one to
     # plan, one to explain. Never more, whatever the model asks for.
+    # --- remote classifier -------------------------------------------------
+    # Bounded wait for the remote Space, covering queue time plus inference.
+    # Mock mode never uses it.
+    remote_classifier_timeout_seconds: float = DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS
+
     reasoning_llm_enabled: bool = False
-    reasoning_llm_max_calls_per_request: int = 2
-    reasoning_llm_timeout_seconds: float = 10.0
+    reasoning_llm_max_calls_per_request: int = MAX_REASONING_LLM_CALLS_PER_REQUEST
+    # The single effective timeout. See DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
+    # for why this is 20 and why no adapter reads a timeout of its own.
+    reasoning_llm_timeout_seconds: float = DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
+    # "disabled" | "fake" | "azure". The code default is `disabled` so a fake
+    # brain can never switch itself on in a running service; `.env.example`
+    # documents `fake` as the local-development value.
+    reasoning_llm_provider_mode: str = "disabled"
+
+    # --- real taxonomy (Phase 4) --------------------------------------------
+    # Bounded wait for a single GBIF or NCBI HTTP call. Mock mode never uses it.
+    taxonomy_timeout_seconds: float = DEFAULT_TAXONOMY_TIMEOUT_SECONDS
+    # Required by NCBI's Entrez usage guidelines when TAXONOMY_PROVIDER_MODE is
+    # "real" - identifies the calling application/contact so NCBI can reach out
+    # if a deployment causes trouble, rather than silently blocking it.
+    # None in mock mode; build_taxonomy_provider() enforces both are set before
+    # constructing a real provider.
+    ncbi_tool: str | None = None
+    ncbi_email: str | None = None
+    # Optional. Only needed to exceed NCBI's default 3 requests/second limit.
+    ncbi_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> RecognitionConfig:
@@ -217,86 +361,69 @@ class RecognitionConfig:
         if thresholds.identified_min_margin < 0.0:
             raise ConfigError("IDENTIFIED_MIN_MARGIN must not be negative")
 
-        qdrant = QdrantConfig(
-            url=_str("QDRANT_URL"),
-            collection=_str("QDRANT_COLLECTION"),
-            vector_name=_str("QDRANT_VECTOR_NAME"),
-            expected_dimension=_int("QDRANT_EXPECTED_DIMENSION", None),
-            expected_distance=_str("QDRANT_EXPECTED_DISTANCE"),
-            dataset_version=_str("QDRANT_DATASET_VERSION"),
-            top_k_references=_int("QDRANT_TOP_K_REFERENCES", None),
-            timeout_seconds=_float("QDRANT_TIMEOUT_SECONDS", 10.0),
+        bioclip_mode = _provider_selection(
+            "BIOCLIP_PROVIDER_MODE",
+            supported=BIOCLIP_PROVIDER_MODES,
+            implemented=BIOCLIP_IMPLEMENTED_MODES,
+            pending_note="no unimplemented BioCLIP mode remains",
         )
 
-        bioclip_mode = _str("BIOCLIP_PROVIDER_MODE", "mock")
-        if bioclip_mode != "mock":
-            raise ConfigError(
-                "BIOCLIP_PROVIDER_MODE must be 'mock' in Sprint 2; real BioCLIP-2 "
-                "inference is explicitly out of scope"
-            )
-
-        taxonomy_mode = _str("TAXONOMY_PROVIDER_MODE", "mock")
-        if taxonomy_mode != "mock":
-            raise ConfigError(
-                "TAXONOMY_PROVIDER_MODE must be 'mock' in Sprint 2; live GBIF/NCBI "
-                "calls are explicitly out of scope"
-            )
-
-        retrieval_mode = _str("RECOGNITION_RETRIEVAL_MODE", "mock")
-        if retrieval_mode not in ("mock", "real"):
-            raise ConfigError("RECOGNITION_RETRIEVAL_MODE must be 'mock' or 'real'")
-
-        # The mock vector length must match the collection when one is configured.
-        # Otherwise every query would be rejected by Qdrant anyway - better to
-        # refuse at startup than to fail one request at a time.
-        configured_dimension = _int("MOCK_EMBEDDING_DIMENSION", None)
-        is_local_default = configured_dimension is None
-        dimension = _positive(
-            "MOCK_EMBEDDING_DIMENSION",
-            configured_dimension if configured_dimension is not None else 32,
+        taxonomy_mode = _provider_selection(
+            "TAXONOMY_PROVIDER_MODE",
+            supported=TAXONOMY_PROVIDER_MODES,
+            implemented=TAXONOMY_IMPLEMENTED_MODES,
+            pending_note="live GBIF and NCBI lookups arrive in Phase 4",
         )
-        if qdrant.expected_dimension is not None and dimension != qdrant.expected_dimension:
-            raise ConfigError(
-                "MOCK_EMBEDDING_DIMENSION does not match QDRANT_EXPECTED_DIMENSION; "
-                "the query vector would be rejected by the collection"
-            )
-
-        raw_overrides = _str("RECOGNITION_IMAGE_SEED_OVERRIDES")
-        overrides: dict[str, str] = {}
-        if raw_overrides:
-            try:
-                parsed: Any = json.loads(raw_overrides)
-            except json.JSONDecodeError as exc:
-                raise ConfigError("RECOGNITION_IMAGE_SEED_OVERRIDES must be a JSON object") from exc
-            if not isinstance(parsed, dict) or not all(
-                isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
-            ):
-                raise ConfigError(
-                    "RECOGNITION_IMAGE_SEED_OVERRIDES must map SHA-256 strings to seed strings"
-                )
-            overrides = parsed
 
         return cls(
             validation=validation,
             thresholds=thresholds,
-            qdrant=qdrant,
             bioclip_provider_mode=bioclip_mode,
-            mock_provider_version=_str("BIOCLIP_MOCK_PROVIDER_VERSION", LOCAL_MOCK_PROVIDER_VERSION),
-            mock_embedding_dimension=dimension,
-            mock_embedding_dimension_is_local_default=is_local_default,
-            retrieval_mode=retrieval_mode,
+            recognition_mode=RECOGNITION_MODE_BY_BIOCLIP_MODE[bioclip_mode],
+            mock_provider_version=_str(
+                "BIOCLIP_MOCK_PROVIDER_VERSION", MOCK_CLASSIFIER_VERSION
+            ),
+            classification_fixture_path=_str("RECOGNITION_CLASSIFICATION_FIXTURE_PATH"),
             taxonomy_provider_mode=taxonomy_mode,
             text_analyzer_mode=_str("TEXT_ANALYZER_MODE", "rules"),
+            remote_classifier_timeout_seconds=_timeout(
+                "RECOGNITION_REMOTE_CLASSIFIER_TIMEOUT_SECONDS",
+                DEFAULT_REMOTE_CLASSIFIER_TIMEOUT_SECONDS,
+            ),
             top_k_species=_positive("RECOGNITION_TOP_K_SPECIES", _int("RECOGNITION_TOP_K_SPECIES", 5)),
-            max_references_per_species=_positive(
-                "RECOGNITION_MAX_REFERENCES_PER_SPECIES",
-                _int("RECOGNITION_MAX_REFERENCES_PER_SPECIES", 3),
-            ),
-            image_seed_overrides=overrides,
             reasoning_llm_enabled=_flag("RECOGNITION_REASONING_LLM_ENABLED"),
-            reasoning_llm_max_calls_per_request=_positive(
+            reasoning_llm_max_calls_per_request=_call_budget(
                 "RECOGNITION_LLM_MAX_CALLS_PER_REQUEST",
-                min(_int("RECOGNITION_LLM_MAX_CALLS_PER_REQUEST", 2) or 2, 2),
+                default=MAX_REASONING_LLM_CALLS_PER_REQUEST,
+                ceiling=MAX_REASONING_LLM_CALLS_PER_REQUEST,
             ),
-            reasoning_llm_timeout_seconds=_float("RECOGNITION_LLM_TIMEOUT_SECONDS", 10.0),
+            reasoning_llm_timeout_seconds=_timeout(
+                "RECOGNITION_LLM_TIMEOUT_SECONDS", DEFAULT_REASONING_LLM_TIMEOUT_SECONDS
+            ),
+            reasoning_llm_provider_mode=_provider_mode(),
+            taxonomy_timeout_seconds=_timeout(
+                "RECOGNITION_TAXONOMY_TIMEOUT_SECONDS", DEFAULT_TAXONOMY_TIMEOUT_SECONDS
+            ),
+            ncbi_tool=_str("NCBI_TOOL"),
+            ncbi_email=_str("NCBI_EMAIL"),
+            ncbi_api_key=_str("NCBI_API_KEY"),
         )
+
+
+def _provider_mode() -> str:
+    """Resolve the reasoning provider mode.
+
+    `RECOGNITION_LLM_PROVIDER_MODE` is the switch. The older
+    `RECOGNITION_REASONING_LLM_ENABLED=true` still selects Azure, so an existing
+    .env keeps working without being rewritten.
+    """
+    mode = (_str("RECOGNITION_LLM_PROVIDER_MODE") or "").strip().lower()
+    if mode:
+        if mode not in REASONING_LLM_PROVIDER_MODES:
+            raise ConfigError(
+                "RECOGNITION_LLM_PROVIDER_MODE must be one of: "
+                + ", ".join(REASONING_LLM_PROVIDER_MODES)
+                + f". Got {mode!r}."
+            )
+        return mode
+    return "azure" if _flag("RECOGNITION_REASONING_LLM_ENABLED") else "disabled"
