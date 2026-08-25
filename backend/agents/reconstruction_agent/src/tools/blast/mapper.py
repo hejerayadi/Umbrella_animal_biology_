@@ -20,10 +20,32 @@ from typing import Any
 
 from domain.models import Reference
 from domain.models.sequence import reverse_complement
+from domain.services.target_profile import organism_from_description
 
 #: What BLAST writes into an aligned row where the other sequence has no
 #: residue. Both spellings appear in the JSON depending on the service version.
 _ALIGNMENT_GAPS = frozenset("-.")
+
+#: Values `hit_os` takes when EBI does not actually know the organism. Measured
+#: on four real searches: `hit_os` was the literal string "NA" on all 200 hits,
+#: so reading it blindly gave every reference an organism of "NA" - which then
+#: ranked as a real name, fired a taxonomy lookup for "NA" once per run, and was
+#: shown to the user as the source organism of the evidence.
+_UNINFORMATIVE_ORGANISM = frozenset({"na", "n/a", "unknown", "unclassified", "none", ""})
+
+
+def _organism(hit: dict[str, Any]) -> str | None:
+    """The organism behind a hit, from `hit_os` if it says anything, else the defline.
+
+    The name is in `hit_desc` even when `hit_os` is not: "Ursus maritimus isolate
+    PB18-N26025 mitochondrion, complete genome." Without this the ranker's
+    relatedness weight - 0.3 of the score - silently multiplied zero on every
+    BLAST-derived reference.
+    """
+    raw = (hit.get("hit_os") or "").strip()
+    if raw and raw.casefold() not in _UNINFORMATIVE_ORGANISM:
+        return raw
+    return organism_from_description(hit.get("hit_desc"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,7 +349,7 @@ def to_references(
         references.append(
             Reference(
                 accession=accession,
-                organism=hit.get("hit_os"),
+                organism=_organism(hit),
                 description=hit.get("hit_desc"),
                 residues=residues,
                 identity=_fraction(best.get("hsp_identity")),

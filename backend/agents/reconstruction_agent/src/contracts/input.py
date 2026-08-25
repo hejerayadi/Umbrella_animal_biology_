@@ -39,14 +39,30 @@ def _organism_from(context: dict[str, Any]) -> str | None:
     dropped on every orchestrated run. It is not cosmetic - reference ranking
     and the Evolution Agent escalation are both written in terms of it.
     """
+    # `species_record.scientific_name` is checked first, ahead of the looser
+    # keys. The orchestrator sends both: a real payload carries
+    # `species: "polar bear"` alongside
+    # `species_record: {"scientific_name": "Ursus maritimus"}`, and reading
+    # `species` first took the common name. Nothing downstream can use it -
+    # `organism_affinity` compares binomials by design, so every reference then
+    # scored nothing on relatedness - and the escalation prompt named the animal
+    # in a form no sequence database indexes. An explicit scientific name wins.
+    record = context.get("species_record")
+    if isinstance(record, dict):
+        value = record.get("scientific_name")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
     for key in ("organism", "species", "species_name"):
         value = context.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
 
-    record = context.get("species_record")
+    # Last resort: whatever else the record calls the animal, common name
+    # included. Better than nothing for the prompt, and NCBI's taxonomy resolves
+    # common names even though the binomial affinity heuristic does not.
     if isinstance(record, dict):
-        for key in ("scientific_name", "organism", "name", "common_name"):
+        for key in ("organism", "name", "common_name"):
             value = record.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()

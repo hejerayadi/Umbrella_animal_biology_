@@ -53,6 +53,8 @@ from contracts.output import ReconstructionStatus  # noqa: E402
 from domain.models import Sequence  # noqa: E402
 from domain.models.sequence import reverse_complement  # noqa: E402
 from observability.events import CollectingEmitter  # noqa: E402
+from tools.blast.advisor import DatabaseAdvisor  # noqa: E402
+from tools.blast.catalogue import EbiDatabaseCatalogue  # noqa: E402
 from tools.blast.tool import BlastSearchTool  # noqa: E402
 from tools.evo.tool import Evo2PlausibilityTool, EvolutionaryContextTool  # noqa: E402
 from tools.mafft.tool import MafftAlignmentTool  # noqa: E402
@@ -419,6 +421,24 @@ class Trace:
     winnable: bool = False
 
 
+class _FakeTaxonomy:
+    """Places the synthetic organisms in a real division, with no network.
+
+    The world's species are invented, so NCBI cannot place them. Returning a
+    mammalian lineage lets the harness exercise the real discovery path -
+    prior, catalogue validation, database choice - rather than routing around
+    it, which is the part most worth regression-testing.
+    """
+
+    async def lineage(self, organism: str) -> tuple[str, ...]:
+        return ("Eukaryota", "Metazoa", "Chordata", "Mammalia", organism)
+
+
+def _advisor() -> DatabaseAdvisor:
+    """Discovery wired to the offline snapshot: no EBI call, real validation."""
+    return DatabaseAdvisor(catalogue=EbiDatabaseCatalogue(None), taxonomy=_FakeTaxonomy())
+
+
 async def run_case(case: Case, threshold: float, seed: int) -> Trace:
     """One case, end to end, through the real graph and the real tools."""
     rng = random.Random(f"{seed}:{case.label}")
@@ -439,7 +459,9 @@ async def run_case(case: Case, threshold: float, seed: int) -> Trace:
     )
 
     settings = settings_for(threshold)
-    runner = AgentRunner(settings, registry, CollectingEmitter())
+    runner = AgentRunner(
+        settings, registry, CollectingEmitter(), databases=_advisor()
+    )
 
     outcome = await runner.run_slice(
         run_id="bench",

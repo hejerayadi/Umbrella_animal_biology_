@@ -173,7 +173,10 @@ class CandidateRanker:
 
         return Candidate(
             gap_id=context.identifier,
-            sequence="".join(consensus_bases),
+            # Anchored, not raw: the aligner may have placed the gap's columns a
+            # base or two off the junction, and the fill has to be expressed
+            # between the flanks the caller actually holds.
+            sequence=alignment.anchor_fill("".join(consensus_bases)),
             method="alignment_consensus",
             support=mean_support,
             supporting_references=supporting or [p.reference_id for p in alignment.pairs],

@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import pytest
 
+from domain.services.target_profile import (
+    Division,
+    Molecule,
+    TargetProfile,
+    candidate_databases,
+)
 from infrastructure.embl_ebi.blast_client import (
     _EXPECT_VALUES,
     _HIT_COUNTS,
@@ -15,6 +21,8 @@ from infrastructure.embl_ebi.blast_client import (
     _snap_hit_count,
 )
 from infrastructure.nvidia.client import Continuation
+from tools.blast.catalogue import TOO_SLOW
+from tools.blast.ena_snapshot import SNAPSHOT
 from tools.blast.schemas import BlastSearchInput
 from tools.evo.tool import Evo2PlausibilityTool
 
@@ -47,10 +55,31 @@ class TestBlastParameterSnapping:
         assert _snap_hit_count(37) == 50
         assert _snap_hit_count(6) == 10
 
-    def test_default_database_is_a_real_ena_partition(self) -> None:
-        """'em_rel' is not a database; EBI partitions ENA by division."""
-        assert BlastSearchInput(sequence="ACGT").database != "em_rel"
-        assert BlastSearchInput(sequence="ACGT").database.startswith("em_")
+    def test_no_database_is_assumed(self) -> None:
+        """The default is "not chosen yet", not a division picked in advance.
+
+        It used to be `em_std_vrt`, and that constant was the agent's central
+        failure: EMBL divisions are mutually exclusive, so a *vertebrate* set
+        excludes mammals and no mammal run could ever find its own homologues.
+        The database is now resolved from the target's taxonomy and settled by
+        measuring which candidate returns references that cross the gap.
+        """
+        assert BlastSearchInput(sequence="ACGT").database is None
+
+    def test_every_database_the_prior_can_propose_really_exists(self) -> None:
+        """EBI 400s on an unknown code - which is how `em_rel_vrt` broke every retry."""
+        for division in Division:
+            for molecule in Molecule:
+                profile = TargetProfile(division=division, molecule=molecule)
+                for code in candidate_databases(profile):
+                    assert code in SNAPSHOT, f"{code} is not an ENA database"
+
+    def test_the_databases_measured_too_slow_are_never_proposed(self) -> None:
+        """`em_all` took 749 s and `em_std` never finished, against a 600 s slice."""
+        for division in Division:
+            for molecule in Molecule:
+                profile = TargetProfile(division=division, molecule=molecule)
+                assert not set(candidate_databases(profile)) & set(TOO_SLOW)
 
 
 class TestEvo2Agreement:

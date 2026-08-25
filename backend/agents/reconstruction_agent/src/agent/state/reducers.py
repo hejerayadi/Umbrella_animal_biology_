@@ -7,6 +7,9 @@ but one.
 """
 from __future__ import annotations
 
+# Aliased: this module defines its own `replace` reducer, and the bare name
+# would shadow it.
+from dataclasses import replace as _replace_fields
 from typing import TypeVar
 
 from domain.models import Reference
@@ -80,15 +83,47 @@ def accumulate_references(
         by_accession: dict[str, Reference] = {}
         for reference in [*merged.get(gap, []), *references]:
             existing = by_accession.get(reference.accession)
-            if existing is None or _prefer(reference, existing):
-                by_accession[reference.accession] = reference
+            by_accession[reference.accession] = (
+                reference if existing is None else _merge_reference(reference, existing)
+            )
         merged[gap] = list(by_accession.values())
 
     return merged
 
 
-def _prefer(candidate: Reference, existing: Reference) -> bool:
-    """Whether `candidate` is the better copy of an accession already held."""
+def _merge_reference(candidate: Reference, existing: Reference) -> Reference:
+    """One reference carrying everything both copies knew.
+
+    Picking a winner loses information whichever way it goes, because the two
+    copies know different things: BLAST measured `gap_bases`, identity and
+    strand; NCBI fetched the residues; `evolutionary_context` supplied
+    relatedness. The old rule chose wholesale on `has_sequence` then `quality`,
+    so a relatedness-only rewrite - which changes neither - was silently
+    discarded and never reached the ranker, while a residue-bearing copy could
+    replace a measured `gap_bases` with nothing.
+
+    Merging field-wise is what this module's docstring already claimed to do.
+    `base` is whichever copy is richer overall, so the scalar fields keep a
+    consistent provenance, and the fields that are *evidence* are then filled in
+    from whichever side has them.
+    """
+    base = candidate if _richer(candidate, existing) else existing
+    other = existing if base is candidate else candidate
+
+    return _replace_fields(
+        base,
+        residues=base.residues or other.residues,
+        gap_bases=base.gap_bases if base.gap_bases is not None else other.gap_bases,
+        relatedness=base.relatedness if base.relatedness is not None else other.relatedness,
+        identity=base.identity if base.identity is not None else other.identity,
+        coverage=base.coverage if base.coverage is not None else other.coverage,
+        organism=base.organism or other.organism,
+        description=base.description or other.description,
+    )
+
+
+def _richer(candidate: Reference, existing: Reference) -> bool:
+    """Whether `candidate` is the better base to merge onto."""
     if candidate.has_sequence != existing.has_sequence:
         return candidate.has_sequence
     return candidate.quality > existing.quality

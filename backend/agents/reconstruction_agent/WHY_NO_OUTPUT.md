@@ -1,144 +1,187 @@
-# Why the Reconstruction Agent produces no output
+# Why the Reconstruction Agent produced no output
 
-*Measured against the real services on 2026-08-24.*
+*Diagnosed against the live services on 2026-08-25. The earlier version of this
+document blamed NUMTs and e-value ranking. **That was wrong**, and the section
+at the bottom records why, so nobody re-derives it.*
 
 ## The real problem
 
-**BLAST never returns a reference that reaches across the gap, so there is
-nothing to read a fill out of.**
+**The agent searched a database that could not contain the answer.**
 
-Everything else works. Every credential is valid, every service answers, the
-graph runs its full six-iteration loop, and the agent returns a well-formed
-result on time. That result is simply empty:
+`BlastSearchInput.database` defaulted to `em_std_vrt`, and
+`_RELAXED_DATABASE` widened to `em_vrt`. EMBL/ENA taxonomic divisions are
+**mutually exclusive**: `vrt` is *"Other Vertebrates"* — the vertebrates that
+are **not** mammal, human, mouse or rodent. Those live in `mam`, `hum`, `mus`
+and `rod`.
 
-```
-gap_1: unresolved (confidence 0.0)
-  why: No reference sequence aligned across gap_1, so no reconstruction
-       could be supported by evidence.
-```
-
-That sentence is **true**. It is not a crash dressed up as an answer — the
-agent really was handed no usable evidence. The failure is upstream of the
-reasoning, in what the homology search brings back.
+So for a polar bear — or any mammal, which is most of what this agent is asked
+about — the correct homologues were not in the searched database at all. No
+e-value, no retry, no ranking change could ever have found them. The relaxed
+retry widened `vrt` to `vrt`, so it could not help either.
 
 ## The evidence
 
-Real test: a 2 kb region of the polar bear mitochondrion (`NC_003428.1`) with a
-known 45-base hole punched in it, so the answer could be scored. The query sent
-to BLAST is the two flanks joined — 500 bases each — so the fill has to cross
-the junction at position **500**. Here is what came back:
+A 45-base hole punched at position 6000 of the polar bear mitochondrion
+(`NC_003428.1`), query = the two 500-base flanks joined, junction at 500 — the
+exact parameters the agent sends:
+
+| database | latency | hits | carrying the gap | top hit | fill vs truth |
+|---|---|---|---|---|---|
+| `em_std_vrt` *(the old default)* | 165 s | 50 | 7 | **fish** — *Corydoras*, *Puntius*, *Brochis*, ~67 % identity | consensus **33 % correct**, no exact match |
+| `em_vrt` *(the old relaxed retry)* | 245 s | 50 | 8 | the same fish | wrong |
+| **`em_std_mam`** | **213 s** | 50 | **50** | *Ursus maritimus* `AF303111.1`, **95.7 %**, single HSP q1–1000 | **exact — all 45 bases** |
+| `em_mam` | 309 s | 50 | 50 | the same | exact |
+| `em_std` *(all divisions)* | **>813 s, never finished** | — | — | — | unusable |
+| `em_all` | 749 s | 50 | 50 | correct, but past the 600 s slice | too slow |
+
+Truth: `TTTGAAAGCATAAAAAAAATAATCTTCTTGCCCCCTCTAATCGTA`.
+From `em_std_mam`, 30 of 50 hits agreed on exactly that.
+
+**The database was the first and largest break, but not the only one.** With
+`em_std_mam` the search returns fifty references all carrying the answer - and
+the run still produced nothing, because a second defect in the MAFFT mapper was
+hiding behind the first (item 4 below). Both had to be fixed before a single
+base came back. The consensus, the reasoner and the critic needed no changes.
+
+## What else was wrong
+
+1. **`hit_os` is the literal string `"NA"`** on all 200 hits across four real
+   searches. `Reference.organism` was read from it, so no BLAST-derived
+   reference ever had an organism: `ReferenceRanker`'s relatedness weight (0.3
+   of the score) silently multiplied zero, `_with_organism_affinity` was inert,
+   and `evolutionary_context` spent a real NCBI lookup per run resolving the
+   string `"NA"`. The organism is in `hit_desc` throughout.
+2. **`gap_bases` was dropped by two field-by-field `Reference` rebuilds**
+   (`_with_residues`, `apply_relatedness`), resetting `carries_gap` to False —
+   and `_with_residues` fires on exactly the multi-HSP bracketing carriers,
+   because the mapper clears their residues so they can be fetched.
+3. **`accumulate_references._prefer` discarded information.** It picked a winner
+   on `has_sequence` then `quality`, so a relatedness-only rewrite — which
+   changes neither — never survived the merge at all.
+4. **The MAFFT mapper demanded an exact indel placement.** This one hid
+   *behind* the database bug and only surfaced once the database was fixed.
+   `_locate_gap_columns` walked to the flank junction and required the inserted
+   run to begin at exactly that column. When the last base of the left flank
+   equals the last base of the missing segment, two placements of the indel
+   describe the identical sequence and an aligner may pick either - and MAFFT
+   picked the earlier one. Measured: the polar bear left flank ends in `A` and
+   the true fill `TTTG...CGTA` also ends in `A`, so the 45 columns landed at
+   column 499 rather than 500. The mapper found no run at all and the run
+   reported *"no reference sequence aligned across gap_1"* while eight
+   references sat in that alignment carrying every base of the answer.
+
+   The fix tolerates the slide - the same allowance `tools/blast/mapper` already
+   made for the same reason - and then **re-anchors the fill**, because a fill
+   read from columns placed one base early is correct *there* and not between
+   the flanks the caller holds: the columns yielded `ATTTG...CGT` where the
+   removed bases were `TTTG...CGTA`.
+
+5. **The orchestrator's species was read wrongly.** `_organism_from` checked
+   `species` before `species_record.scientific_name`; the real payload carries
+   both, so the agent took `"polar bear"` and never saw `"Ursus maritimus"`.
+   `organism_affinity` compares binomials, so it failed on every orchestrated
+   run.
+
+## What the agent does now
 
 ```
-OZ078384.2 | 17 HSP(s)
-   q 1-368  h 101407-100976    ident=82.4
-   q 1-391  h 101431-100983    ident=80.7
-OZ110968.1 | 14 HSP(s)
-   q 1-391  h 3881886-3882352  ident=79.7
-OZ412278.1 |  6 HSP(s)
-   q 1-374  h 29403252-29402879 ident=81.9
+Target + context
+      ↓
+LLM planner  ──  Database Discovery Tool (EBI's live catalogue, 284 nucleotide codes)
+      ↓
+planner picks candidates, seeded by an NCBI-taxonomy prior
+      ↓
+BLAST in parallel  (asyncio.gather — wall clock is max(), not the sum)
+      ↓
+measure blast_hits_carrying_gap per database
+      ↓
+keep the winner, reuse it for every later gap
+      ↓
+MAFFT → candidates → Evo2 / reasoner → critic
 ```
 
-Two things are wrong here, and both are about *which sequences BLAST found*:
+No database is named anywhere in the code. Codes are composed from the target's
+division and **validated against EBI's catalogue before submission** — which is
+the `em_rel_vrt` class of bug (an invented code, HTTP 400 on every retry) made
+structurally impossible rather than fixed once.
 
-1. **Every HSP stops around query position 368–391.** The junction is at 500.
-   Not one hit even reaches the gap, let alone carries bases across it.
-2. **These are not mitochondrial sequences.** They are 78–83% identity matches
-   against multi-megabase nuclear contigs (`OZ…`, at coordinates like
-   3,881,886). Those are NUMTs — old nuclear copies of mitochondrial DNA.
-   The actual mitochondrial homologues, which would be near-identical and would
-   span the region easily, never appear in the top 50 at all.
+## Scale, on a real scaffold
 
-So the search is returning distant nuclear pseudo-copies instead of close real
-relatives, and even those peter out before the part that matters.
+`NW_007907101` — the polar bear scaffold the Genome Agent hands over — has **34
+N-runs of 10+ bases in its first megabase**, so roughly **500** across its
+15.9 Mb, against a budget of 8 BLAST calls. Attempting them all does not give a
+worse answer, it gives none: the planner emits a step per gap and the run spends
+its slices refusing them for budget. Gaps are now ranked (both flanks usable
+first, then shortest) and the run commits to `RECONSTRUCTION_MAX_GAPS_PER_RUN`
+of them, reporting the rest as not attempted with the reason.
 
-## Why that ends the run
+## Latency, measured
 
-The chain is short and each link is behaving correctly:
+| | measured | fits a 480 s slice |
+|---|---|---|
+| `em_std_mam`, mitochondrial query | 213 s | yes |
+| `em_mam`, mitochondrial query | 309 s | yes |
+| `em_mam`, **nuclear scaffold** query | **546 s**, high variance | no — resumes across slices |
+| `em_std` / `em_all` | >813 s / 749 s | no — marked `too_slow`, never proposed |
 
-1. No hit carries bases across the gap → `carries_gap` is false for all of them.
-2. `ToolSelector._mafft` finds no carriers, and aligns the non-carriers instead
-   (logging *"Every reference stops short of the gap; alignment cannot fill it"*).
-3. MAFFT opens no columns at the junction, because no row has anything to put
-   there → `spans_gap=False`.
-4. The reasoner has no candidate, the critic abstains, the gap is reported
-   `unresolved` at confidence 0.
+A nuclear scaffold search does not fit one slice. That is what the parked-job
+resume path is for: the job id is written onto the payload before the poll, the
+payload is parked in `pending_jobs`, and the next slice collects the same job
+instead of paying for it twice.
 
-Nothing here is a bug to fix. Step 4 is the honest consequence of step 1.
+## Superseded — do not re-chase
 
-## Why the database is the suspect
+The previous diagnosis said the hits were **NUMTs** (nuclear copies of
+mitochondrial DNA) and prescribed *"rank on span, not just e-value"*, calling it
+*"a scientific tuning problem, not a broken pipeline."* All of that was wrong:
 
-The first pass searches `em_std_vrt` — ENA's *standard* vertebrate division —
-ranked by e-value. A long, repetitive nuclear contig that matches a flank in
-seventeen fragments can outrank a short, near-identical mitochondrial record,
-and if the right record is not in that division at all, no ranking helps.
+- The `OZ…` contigs it pointed at were not NUMTs outranking real mitochondrial
+  records. The real mitochondrial records were **in a different division** and
+  were never candidates at any rank.
+- Ranking on span would not have helped. `em_std_vrt` contains 7 gap-crossing
+  hits for this query and all 7 are fish; ranking them better still yields a
+  33 %-correct fill.
+- It was a broken pipeline, and a one-line default was the break.
 
-This is the open question, and it is a **scientific tuning problem, not a broken
-pipeline**: which ENA division suits which kind of target, and how to rank a
-short near-perfect match above a long approximate one.
+One earlier correction still stands: `execute_tools` dispatches a round with
+`asyncio.gather`, so searches in one round run **concurrently**. That is what
+makes probing several databases at once cost the slowest search rather than
+their sum.
 
-## How this looks in the two ways the agent is called
-
-**Called on its own.** It repairs *one named sequence* and refuses to pick a
-target for itself — ask it to "reconstruct the mammoth genome" with no sequence
-and no accession and it correctly refuses, which reads like a crash from
-outside. Give it a real sequence and it runs properly, then hits the wall above.
-Note that `POST /api/v1/reconstructions` also has no trace id, so it gets one
-slice and cannot resume; `POST /execute` with a **stable `X-Trace-Id`** across
-calls is the one that can.
-
-**Called from the Genome Agent.** The hand-off works well: the Genome Agent sees
-a Scaffold/Contig assembly, resolves the species' largest RefSeq record under
-2 Mb, and publishes it as `sequence_accession`. That scaffold carries ~17 gaps.
-Each one meets the same evidence wall, so the agent returns `COMPLETED` with
-everything unresolved, the Genome Agent resumes and answers from the draft
-assembly, and the user gets a fluent paragraph in which nothing was
-reconstructed — with no error logged anywhere.
-
-## Already fixed — don't re-chase these
-
-| Was | Now |
-| --- | --- |
-| `AGENT_YIELD_AFTER_SECONDS=75`, sized for a 120 s orchestrator timeout raised to 600 s. One BLAST job takes **193 s**, so no run ever finished a single search. | **480 s.** Six full iterations now complete in one slice. |
-| `_RELAXED_DATABASE = "em_rel_vrt"` — not one of EBI's 409 valid codes, so every relaxed retry died on **HTTP 400**. | `em_vrt`, valid and genuinely broader. |
-| A parked BLAST job resumed only if a freshly planned payload *hashed* the same — hostage to the LLM re-planning byte for byte. | The whole payload is stored and re-issued verbatim. |
-| "Ran out of time" and "no evidence found" produced the same sentence. | Reported separately; a timed-out region says so. |
-| `ScriptedBlast` never set `job_id`, so the QA scenarios guarding resumption could not pass. | Models submit-then-poll; audit 29/32 → 31/32. |
-
-Also corrected: an earlier draft claimed N BLAST searches cost N × 193 s.
-`execute_tools` dispatches a round with `asyncio.gather`, so they run
-**concurrently** — which is why the call budgets were raised (4 → 8 BLAST,
-12 → 24 tool calls) rather than trimmed.
-
-## What would fix the real problem
-
-1. **Pick the database by target type.** A mitochondrial query and a nuclear
-   scaffold gap need different ENA divisions. One default cannot serve both.
-2. **Rank on span, not just e-value.** The only hits worth aligning are the ones
-   that reach the junction. That is measurable before MAFFT is ever called —
-   `blast_hits_carrying_gap` is already in the diagnostics and is currently 0
-   on every run.
-3. **Re-test with ground truth.** Mask a known stretch, reconstruct it, score
-   the proposal against the bases removed. That is the only way to tell a
-   working evidence path from a plausible-looking one.
+Also disproven while investigating: low-complexity flanks were suspected of
+causing the nuclear timeouts. They do not explain it — on that scaffold a flank
+whose search never finished scores 0.85 linguistic complexity against 0.87 for
+one that finished normally. A DUST filter is now sent because nothing was being
+sent before, not because it fixes a timeout.
 
 ## How to check any of this
 
 ```bash
 cd backend/agents/reconstruction_agent
 
-# Graph works with no network at all. Passes; always has.
+# 453 unit/integration tests, and the 32 agentic scenarios.
+./.venv/Scripts/python.exe -m pytest tests -q
+./.venv/Scripts/python.exe scripts/qa_audit.py     # flaky by design: 29-31/32
+
+# Graph works with no network at all.
 ./.venv/Scripts/python.exe scripts/smoke_test.py
 
-# Every credential and service. All OK - and prints the 193 s BLAST latency
-# next to the word "OK", which is how it hid for so long. Takes ~4 minutes.
+# Every credential and service.
 ./.venv/Scripts/python.exe scripts/test_external_services.py
 
-# 364 unit/integration tests, and the 32 agentic scenarios.
-./.venv/Scripts/python.exe -m pytest tests -q
-./.venv/Scripts/python.exe scripts/qa_audit.py
+# The one that matters: mask known bases, reconstruct, score the result
+# against what was removed - through the real services.
+./.venv/Scripts/python.exe scripts/ground_truth.py
+./.venv/Scripts/python.exe scripts/ground_truth.py --control em_std_vrt
 ```
 
-Note what the test suites cannot tell you: **every one of them mocks the network
-edge**, so BLAST returns instantly and always with usable hits. Both the timing
-bug and the evidence problem live entirely in the gap between those fakes and
-the real service.
+`qa_audit.py` is **timing-flaky by construction** — its continuation scenarios
+run with `yield_after_seconds=0.01`, so whether a slice gets cut before or after
+a tool call is a race. Five consecutive runs scored 29, 30, 30, 30 and 31 of 32
+on identical code. Only *REVISE → re-plan with critique attached* fails every
+time, and it fails on `main` too.
+
+Note what the mocked suites cannot tell you: **they all fake the network edge**,
+so BLAST returns instantly and always with usable hits. The database bug and the
+timing bug both lived entirely in the gap between those fakes and the real
+service. `ground_truth.py` is the only test that closes it.

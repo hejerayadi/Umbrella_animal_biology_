@@ -5,6 +5,7 @@ from configuration.settings import (
     AppEnv,
     AppSettings,
     AzureSettings,
+    ContinuationSettings,
     LLMProvider,
     LLMSettings,
     LogFormat,
@@ -119,6 +120,17 @@ class TestNvidiaSettings:
 
     def test_configured_with_a_key(self) -> None:
         assert NvidiaSettings(api_key="nvapi-xxx").configured is True
+
+
+class TestContinuationSettings:
+    def test_deadline_is_derived_from_global_timeout_and_reserve(self) -> None:
+        continuation = ContinuationSettings(
+            _env_file=None,
+            read_timeout_seconds=600,
+            finalization_reserve_seconds=60,
+        )
+
+        assert continuation.effective_yield_after_seconds == 540
 
 
 class TestOrchestratorContextKeys:

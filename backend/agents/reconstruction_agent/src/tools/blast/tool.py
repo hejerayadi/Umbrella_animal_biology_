@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 from configuration.logging import get_logger
 from contracts.output import EvidenceItem
@@ -59,6 +60,20 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
 
     async def run(self, payload: BlastSearchInput) -> BlastSearchOutput:
         try:
+            if not payload.database:
+                # The selector resolves this from the discovery step and never
+                # leaves it unset; an empty value here means a caller built the
+                # payload by hand. Failing loudly beats picking a division at
+                # random, which is the failure this whole path exists to end.
+                return BlastSearchOutput(
+                    succeeded=False,
+                    error=(
+                        "No BLAST database was chosen for this search. The database "
+                        "is resolved from the target's taxonomic division; supply "
+                        "the organism's scientific name so it can be determined."
+                    ),
+                )
+
             job_id = payload.job_id
             if job_id:
                 # Resuming a job an earlier slice submitted and ran out of
@@ -72,6 +87,7 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
                     program=payload.program,
                     max_hits=payload.max_hits,
                     expect=payload.expect,
+                    low_complexity_filter=payload.low_complexity_filter,
                 )
                 # Published before the poll, not after: the poll is what gets
                 # cancelled at the slice deadline, and an id recorded after it
@@ -88,12 +104,18 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
 
             references = await self._attach_residues(references, pending)
             with_sequence = [reference for reference in references if reference.has_sequence]
+            # The count the database choice is settled on. Measured after the
+            # fetch, because a hit whose HSPs bracket the missing segment only
+            # counts once its residues are actually in hand.
+            carrying_gap = sum(1 for reference in references if reference.carries_gap)
 
             return BlastSearchOutput(
                 succeeded=True,
                 references=references,
                 total_hits=total,
                 job_id=job_id,
+                database=payload.database,
+                hits_carrying_gap=carrying_gap,
                 evidence=[
                     EvidenceItem(
                         source="blast",
@@ -120,9 +142,12 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
                     # can produce a fill. Hits can be plentiful and every one
                     # of them useless: homologous to a flank, carrying nothing
                     # across the gap itself.
-                    "blast_hits_carrying_gap": sum(
-                        1 for reference in references if reference.carries_gap
-                    ),
+                    "blast_hits_carrying_gap": carrying_gap,
+                    # Which database produced these numbers, so a result is
+                    # attributable and two rows of the probe are comparable.
+                    "blast_database": payload.database,
+                    "blast_division": payload.division,
+                    "blast_low_complexity_filter": payload.low_complexity_filter,
                 },
             )
 
@@ -187,22 +212,16 @@ class BlastSearchTool(Tool[BlastSearchInput, BlastSearchOutput]):
 def _with_residues(reference: Reference, residues: str) -> Reference:
     """`reference` with its retrieved residues attached.
 
-    A new object rather than a mutation: references are frozen, and the same
-    one may already be held in a previous iteration's evidence.
+    A new object rather than a mutation: references are frozen, and the same one
+    may already be held in a previous iteration's evidence.
+
+    `dataclasses.replace` rather than a field-by-field rebuild. The rebuild
+    listed every field except `gap_bases`, so it reset to None and `carries_gap`
+    became False - on exactly the references this function touches. A hit whose
+    HSPs *bracket* the missing segment has its residues cleared by the mapper so
+    they can be fetched, which means the measured carriers were precisely the
+    ones that lost the measurement. The selector then found no carriers and
+    aligned the non-carriers instead. Any field added later is now carried
+    automatically.
     """
-    return Reference(
-        accession=reference.accession,
-        organism=reference.organism,
-        description=reference.description,
-        residues=residues,
-        identity=reference.identity,
-        coverage=reference.coverage,
-        e_value=reference.e_value,
-        bit_score=reference.bit_score,
-        relatedness=reference.relatedness,
-        source=reference.source,
-        metadata=reference.metadata,
-        strand=reference.strand,
-        iteration=reference.iteration,
-        attempt=reference.attempt,
-    )
+    return replace(reference, residues=residues)

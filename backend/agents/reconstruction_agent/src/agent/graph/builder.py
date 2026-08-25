@@ -24,7 +24,7 @@ retry, keyed by the orchestrator's trace id - see `application/run_agent.py`.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agent.graph import conditions, edges
 from agent.graph.nodes import ReconstructionNodes
@@ -50,6 +50,9 @@ from infrastructure.llm.factory import build_llm_client
 from observability.events import EventEmitter
 from tools.registry import ToolRegistry
 
+if TYPE_CHECKING:
+    from tools.blast.advisor import DatabaseAdvisor
+
 _log = get_logger(__name__)
 
 
@@ -60,13 +63,17 @@ def build_budget_policy(settings: Settings) -> BudgetPolicy:
             max_tool_calls=settings.budgets.max_tool_calls,
             per_tool=settings.budgets.per_tool(),
             max_llm_tokens=settings.budgets.max_llm_tokens,
-            yield_after_seconds=settings.continuation.yield_after_seconds,
+            yield_after_seconds=settings.continuation.effective_yield_after_seconds,
         )
     )
 
 
 def build_nodes(
-    settings: Settings, registry: ToolRegistry, events: EventEmitter | None = None
+    settings: Settings,
+    registry: ToolRegistry,
+    events: EventEmitter | None = None,
+    *,
+    databases: DatabaseAdvisor | None = None,
 ) -> ReconstructionNodes:
     """Wire the node collaborators from settings.
 
@@ -94,6 +101,11 @@ def build_nodes(
         stop_policy=StopPolicy(),
         budgets=build_budget_policy(settings),
         events=events or EventEmitter(),
+        # Optional: with no advisor the planner's own database choice stands
+        # alone, which is what keeps the offline smoke test running with an
+        # empty registry and no network.
+        databases=databases,
+        max_gaps_per_run=settings.max_gaps_per_run,
     )
 
 
@@ -104,6 +116,7 @@ def build_graph(
     *,
     checkpointer: Any | None = None,
     nodes: ReconstructionNodes | None = None,
+    databases: DatabaseAdvisor | None = None,
 ) -> Any:
     """The compiled agent graph.
 
@@ -123,7 +136,7 @@ def build_graph(
     """
     from langgraph.graph import END, StateGraph
 
-    nodes = nodes or build_nodes(settings, registry, events)
+    nodes = nodes or build_nodes(settings, registry, events, databases=databases)
     graph: Any = StateGraph(ReconstructionState)
 
     for name, handler in (

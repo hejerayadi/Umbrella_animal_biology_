@@ -19,7 +19,7 @@ from configuration.settings import Settings, get_settings
 from infrastructure.persistence.checkpoints import CheckpointerHandle, build_checkpointer
 from infrastructure.persistence.repository import RunRepository
 from observability.events import EventEmitter
-from tools.registry import ToolRegistry, build_default_registry
+from tools.registry import ToolRegistry, build_database_advisor, build_default_registry
 
 _log = get_logger(__name__)
 
@@ -46,12 +46,17 @@ async def startup(settings: Settings | None = None) -> None:
     settings = settings or get_settings()
     _checkpointer = await build_checkpointer(settings.database)
     _repository = RunRepository(settings.database)
+    # The database advisor lives here, at the composition root, because it owns
+    # live EBI and NCBI clients. Without it the agent cannot resolve which
+    # taxonomic division to search and every BLAST reports that it did not know
+    # where to look - so this wiring is what makes the real evidence path work.
     _service = ReconstructionService(
         settings,
         get_tool_registry(),
         events=get_event_emitter(),
         checkpointer=_checkpointer.saver,
         runs=_repository,
+        databases=build_database_advisor(settings),
     )
 
     _log.info(
@@ -81,8 +86,15 @@ def get_service() -> ReconstructionService:
     """
     if _service is not None:
         return _service
+    settings = get_settings()
     return ReconstructionService(
-        get_settings(), get_tool_registry(), events=get_event_emitter()
+        settings,
+        get_tool_registry(),
+        events=get_event_emitter(),
+        # Also wired on the un-checkpointed fallback: a run without an advisor
+        # cannot choose a database, so leaving it out here would make every
+        # request served before `startup()` fail to search at all.
+        databases=build_database_advisor(settings),
     )
 
 

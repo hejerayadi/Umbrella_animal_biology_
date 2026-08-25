@@ -13,7 +13,7 @@ from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The agent's own .env, three levels up from this file:
@@ -297,28 +297,27 @@ class BudgetSettings(_Base):
 class ContinuationSettings(_Base):
     """How the agent yields back to the orchestrator mid-run.
 
-    The orchestrator gives each agent 600 s per call (`AGENT_READ_TIMEOUT_
-    SECONDS`) and retries a CONTINUE three times with 1/2/4 s backoff - so four
-    HTTP slices in total, and the fifth is converted to FAILED. Both numbers are
-    mirrored here because the agent has to stay inside them without importing
-    `backend`.
-
-    Mirrored numbers drift, and this pair did: the read timeout was raised from
-    120 s to 600 s for another agent and nothing updated the yield, which stayed
-    sized for the old limit. Since one EMBL-EBI BLAST job takes ~193 s, the agent
-    then could not finish a single search inside its entire allowance and every
-    run returned an empty result. If either number changes again, change both.
+    The agent reads the same global timeout name as the orchestrator and derives
+    its deadline by subtracting a configurable finalisation reserve. That avoids
+    mirroring a second, fixed working-time value that can drift after a timeout
+    change.
     """
 
-    #: Yield before the orchestrator's 600 s read timeout. This doubles as the
-    #: deadline for each individual tool call - see `BudgetPolicy.
-    #: remaining_seconds` - because the yield check only runs between graph
-    #: nodes and so cannot interrupt a submit-and-poll tool on its own. The
-    #: remaining ~120 s covers the critic's LLM call, which runs after the
-    #: tools, serialising the result, and the checkpoint write. Overrunning the
-    #: read timeout is strictly worse than yielding early: the orchestrator
-    #: records the agent as unreachable and discards the whole slice.
-    yield_after_seconds: float = Field(default=480.0, alias="AGENT_YIELD_AFTER_SECONDS", gt=0)
+    #: The request timeout used by the orchestrator. It is explicit in the
+    #: agent's environment as well because the agent runs in a separate process.
+    read_timeout_seconds: float = Field(
+        default=600.0, alias="AGENT_READ_TIMEOUT_SECONDS", gt=0
+    )
+    #: Time kept for the critic, response serialisation and checkpoint write.
+    finalization_reserve_seconds: float = Field(
+        default=60.0, alias="AGENT_FINALIZATION_RESERVE_SECONDS", ge=0
+    )
+    #: Legacy explicit override. Production configuration must use the global
+    #: timeout plus reserve above; this remains for controlled tests and older
+    #: deployment manifests while they migrate.
+    yield_after_seconds: float | None = Field(
+        default=None, alias="AGENT_YIELD_AFTER_SECONDS", gt=0
+    )
     #: Slices the orchestrator will grant: the first call plus three retries.
     #: On the last one the agent must return COMPLETED with whatever it has,
     #: because another CONTINUE would be turned into FAILED.
@@ -326,6 +325,23 @@ class ContinuationSettings(_Base):
     #: Header carrying the orchestrator's run-wide correlation id. It is the
     #: only identifier stable across retries, so it keys the checkpoint.
     trace_id_header: str = Field(default="X-Trace-Id", alias="TRACE_ID_HEADER")
+
+    @model_validator(mode="after")
+    def _validate_window(self) -> ContinuationSettings:
+        deadline = self.effective_yield_after_seconds
+        if deadline <= 0 or deadline >= self.read_timeout_seconds:
+            raise ValueError(
+                "The agent deadline must be positive and stay below "
+                "AGENT_READ_TIMEOUT_SECONDS."
+            )
+        return self
+
+    @property
+    def effective_yield_after_seconds(self) -> float:
+        """The per-slice tool deadline, derived from global configuration."""
+        if self.yield_after_seconds is not None:
+            return self.yield_after_seconds
+        return self.read_timeout_seconds - self.finalization_reserve_seconds
 
 
 class DatabaseSettings(_Base):
@@ -399,6 +415,16 @@ class Settings(_Base):
         default=0.15, alias="RECONSTRUCTION_MIN_CONFIDENCE", ge=0.0, le=1.0
     )
     max_gap_length: int = Field(default=5000, alias="RECONSTRUCTION_MAX_GAP_LENGTH", ge=1)
+    #: How many gaps one run will attempt. A finished mitogenome has one or two
+    #: and this never binds. A draft scaffold is the case it exists for: the
+    #: first megabase of `NW_007907101` holds 34 N-runs, about 500 across the
+    #: whole 15.9 Mb record, against a budget of eight BLAST calls. Attempting
+    #: them all produces no answer at all - just slices spent refusing steps
+    #: for budget - so the run commits to the few it can finish and reports the
+    #: rest as not attempted. Twelve leaves room for the retries a gap needs.
+    max_gaps_per_run: int = Field(
+        default=12, alias="RECONSTRUCTION_MAX_GAPS_PER_RUN", ge=1
+    )
 
     app: AppSettings = Field(default_factory=AppSettings)
     ncbi: NCBISettings = Field(default_factory=NCBISettings)

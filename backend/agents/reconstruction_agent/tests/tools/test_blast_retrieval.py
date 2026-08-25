@@ -35,6 +35,12 @@ BRACKETING_HIT = {
 }
 
 
+#: Every real payload names a database - the tool refuses to guess one, because
+#: guessing a taxonomic division is the defect this suite's subject was fixed
+#: for. Any valid code does here; the fake client ignores it.
+_DATABASE = "em_std_mam"
+
+
 class FakeBlastClient:
     def __init__(self, raw: str) -> None:
         self._raw = raw
@@ -75,7 +81,9 @@ class TestSequenceRetrieval:
         tool = make_tool(payload_with(BRACKETING_HIT), ncbi)
 
         output = await tool.run(
-            BlastSearchInput(sequence="ACGT" * 30, gap_id="gap_1", gap_length=50)
+            BlastSearchInput(
+                sequence="ACGT" * 30, gap_id="gap_1", gap_length=50, database=_DATABASE
+            )
         )
 
         assert output.succeeded
@@ -89,7 +97,9 @@ class TestSequenceRetrieval:
         ncbi = FakeNCBIClient()
         tool = make_tool(payload_with(BRACKETING_HIT), ncbi)
 
-        await tool.run(BlastSearchInput(sequence="ACGT" * 30, gap_id="gap_1", gap_length=50))
+        await tool.run(BlastSearchInput(
+                sequence="ACGT" * 30, gap_id="gap_1", gap_length=50, database=_DATABASE
+            ))
 
         accession, start, stop, _ = ncbi.requests[0]
         assert accession == "REF_1"
@@ -106,7 +116,9 @@ class TestSequenceRetrieval:
         ncbi = FakeNCBIClient()
         tool = make_tool(payload_with(hit), ncbi)
 
-        await tool.run(BlastSearchInput(sequence="ACGT" * 30, gap_length=10))
+        await tool.run(BlastSearchInput(
+                sequence="ACGT" * 30, gap_length=10, database=_DATABASE
+            ))
 
         assert ncbi.requests[0][3] == -1
 
@@ -114,7 +126,9 @@ class TestSequenceRetrieval:
         ncbi = FakeNCBIClient()
         tool = make_tool(payload_with(BRACKETING_HIT, {**BRACKETING_HIT, "hit_acc": "REF_2"}), ncbi)
 
-        output = await tool.run(BlastSearchInput(sequence="ACGT" * 30, gap_length=10))
+        output = await tool.run(BlastSearchInput(
+                sequence="ACGT" * 30, gap_length=10, database=_DATABASE
+            ))
 
         assert output.diagnostics["blast_hits_total"] == 2
         assert output.diagnostics["blast_hits_with_sequence"] == 2
@@ -124,7 +138,9 @@ class TestSequenceRetrieval:
         ncbi = FakeNCBIClient(fail=True)
         tool = make_tool(payload_with(BRACKETING_HIT), ncbi)
 
-        output = await tool.run(BlastSearchInput(sequence="ACGT" * 30, gap_length=10))
+        output = await tool.run(BlastSearchInput(
+                sequence="ACGT" * 30, gap_length=10, database=_DATABASE
+            ))
 
         assert output.succeeded
         assert output.total_hits == 1
@@ -134,7 +150,9 @@ class TestSequenceRetrieval:
         """Degraded rather than broken: the hits are still reported."""
         tool = make_tool(payload_with(BRACKETING_HIT), None)
 
-        output = await tool.run(BlastSearchInput(sequence="ACGT" * 30, gap_length=10))
+        output = await tool.run(BlastSearchInput(
+                sequence="ACGT" * 30, gap_length=10, database=_DATABASE
+            ))
 
         assert output.succeeded
         assert output.total_hits == 1
@@ -144,7 +162,9 @@ class TestSequenceRetrieval:
         ncbi = FakeNCBIClient()
         tool = make_tool(payload_with(*hits), ncbi)
 
-        output = await tool.run(BlastSearchInput(sequence="ACGT" * 30, gap_length=10))
+        output = await tool.run(BlastSearchInput(
+                sequence="ACGT" * 30, gap_length=10, database=_DATABASE
+            ))
 
         assert output.total_hits == 40
         assert len(ncbi.requests) == 12, "one round trip per hit would cost dozens of calls"

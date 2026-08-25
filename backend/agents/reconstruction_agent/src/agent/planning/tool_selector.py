@@ -39,6 +39,11 @@ class ToolInvocation:
     #: True when this payload was widened after an earlier attempt found
     #: nothing. Carried into the observation so a retry is visible as one.
     relaxed: bool = False
+    #: Distinguishes several calls the same step produced in one round - the
+    #: database probe issues one BLAST per candidate. Without it they share an
+    #: `attempts` key, collide on the retry cap, and the probe collapses to a
+    #: single search.
+    variant: str | None = None
 
 
 #: What a second attempt widens. The first pass is deliberately strict - a
@@ -47,16 +52,14 @@ class ToolInvocation:
 #: reach.
 _RELAXED_EXPECT = 1e-3
 _RELAXED_MAX_HITS = 100
-#: A broader ENA division. `em_std_vrt` is the *standard* vertebrate set; this
-#: is the whole vertebrate division, which also carries the WGS, CON and HTG
-#: entries where draft genomic scaffolds actually live - so a gap that finds
-#: nothing among finished records still has somewhere to look.
-#:
-#: NOT `em_rel_vrt`, which was here before and does not exist: EMBL-EBI
-#: validates this against a fixed list of 409 codes and rejects anything else
-#: with a bare HTTP 400, so *every* relaxed retry failed on submission. The
-#: live list is `GET /ncbiblast/parameterdetails/database`.
-_RELAXED_DATABASE = "em_vrt"
+#: No relaxed *database* constant any more. There used to be one - `em_vrt`,
+#: and before that the non-existent `em_rel_vrt` that failed every retry with an
+#: HTTP 400 - and the whole idea was wrong. Widening `vrt` to `vrt` cannot help
+#: a mammal, because EMBL divisions are mutually exclusive and the mammal
+#: records were never in either. The database is now discovered from EBI,
+#: proposed by the planner against a taxonomy prior, probed in parallel, and
+#: kept on the evidence of which one returned references that cross the gap.
+#: See `tools.blast.advisor`.
 
 #: Annotation-based judgement, shared by every selection.
 _QUALITY = ReferenceQualityPolicy()
@@ -67,6 +70,90 @@ class ToolSelector:
 
     def __init__(self, ranker: ReferenceRanker | None = None) -> None:
         self._ranker = ranker or ReferenceRanker()
+
+    def build_many(self, step: PlanStep, state: ReconstructionState) -> list[ToolInvocation]:
+        """Every call this step resolves to, which is usually exactly one.
+
+        Homology search is the exception. Until a database has proved itself,
+        one `blast_search` step becomes one search per candidate database, run
+        in the same round: `execute_tools` gathers them, so comparing three
+        databases costs the wall clock of the slowest rather than their sum, and
+        the winner is then chosen on measured gap carriers instead of on a
+        guess that no run ever revisited.
+        """
+        if step.tool == "blast_search":
+            return self._blast_probe(step, state)
+
+        invocation = self.build(step, state)
+        return [invocation] if invocation is not None else []
+
+    def _blast_probe(self, step: PlanStep, state: ReconstructionState) -> list[ToolInvocation]:
+        """One BLAST per candidate database, or one against the proven winner."""
+        context = self._context_for(step.gap_id, state)
+        if context is None or not context.has_usable_flanks:
+            return []
+
+        relaxed = (state.get("attempts") or {}).get(
+            attempt_key(step.tool, step.gap_id), 0
+        ) > 0
+
+        databases = self._probe_databases(step, state)
+        if not databases:
+            # Nothing named a database and nothing could infer one. The call is
+            # still issued, with the database unresolved, so the failure is
+            # *reported* rather than silent: dropping the step here would leave
+            # a run that looks like it simply chose not to search.
+            #
+            # What is deliberately not done is guess. Picking a division at
+            # random is how this agent failed for its whole history - every
+            # mammal went to `em_std_vrt`, which by construction cannot contain
+            # a mammal - and a confident wrong search is worse than an honest
+            # refusal, because it comes back with fish and a plausible score.
+            _log.warning(
+                "blast_database_undetermined",
+                gap_id=context.identifier,
+                organism=state.get("organism"),
+                detail=(
+                    "No database could be determined for this target; supply the "
+                    "organism's scientific name so its ENA division can be resolved."
+                ),
+            )
+            databases = [None]
+
+        invocations: list[ToolInvocation] = []
+        for database in databases:
+            invocation = self._blast(step, context, relaxed, database=database, state=state)
+            if invocation is not None:
+                invocations.append(invocation)
+
+        if len(invocations) > 1:
+            _log.info(
+                "blast_database_probe",
+                gap_id=context.identifier,
+                databases=[i.variant for i in invocations],
+                detail="Comparing databases in one round; the carrier count decides.",
+            )
+        return invocations
+
+    def _probe_databases(self, step: PlanStep, state: ReconstructionState) -> list[str | None]:
+        """Which databases this step should search, best evidence first.
+
+        Once one database has been shown to produce gap carriers, every later
+        gap goes straight to it. That is what makes a scaffold with hundreds of
+        gaps affordable against a budget of eight BLAST calls - re-probing per
+        gap would spend the entire budget re-answering a settled question.
+        """
+        explicit = step.arguments.get("database")
+        if isinstance(explicit, str) and explicit.strip():
+            return [explicit.strip()]
+
+        preferred = state.get("preferred_database")
+        if isinstance(preferred, str) and preferred:
+            return [preferred]
+
+        advice = state.get("database_advice") or {}
+        candidates = advice.get("candidates") or []
+        return [str(code) for code in candidates if code]
 
     def build(self, step: PlanStep, state: ReconstructionState) -> ToolInvocation | None:
         """The invocation for one step, or None when it cannot be run.
@@ -84,7 +171,7 @@ class ToolSelector:
         ) > 0
 
         if step.tool == "blast_search":
-            return self._blast(step, context, relaxed)
+            return self._blast(step, context, relaxed, state=state)
         if step.tool == "mafft_align":
             return self._mafft(step, context, state, relaxed)
         if step.tool == "ncbi_search":
@@ -100,30 +187,40 @@ class ToolSelector:
     # --- per-tool builders --------------------------------------------------
 
     def _blast(
-        self, step: PlanStep, context: GapContext | None, relaxed: bool = False
+        self,
+        step: PlanStep,
+        context: GapContext | None,
+        relaxed: bool = False,
+        *,
+        database: str | None = None,
+        state: ReconstructionState | None = None,
     ) -> ToolInvocation | None:
         if context is None or not context.has_usable_flanks:
             return None
 
-        arguments = _allowed(step.arguments, {"database", "program", "max_hits", "expect"})
+        arguments = _allowed(step.arguments, {"program", "max_hits", "expect"})
         if relaxed:
-            # An explicit argument from the planner still wins: it asked for
-            # something specific, and overriding it would make the plan a lie.
+            # Widening now means a looser threshold and more hits - never a
+            # different division. An explicit argument from the planner still
+            # wins: it asked for something specific, and overriding it would
+            # make the plan a lie.
             arguments.setdefault("expect", _RELAXED_EXPECT)
             arguments.setdefault("max_hits", _RELAXED_MAX_HITS)
-            arguments.setdefault("database", _RELAXED_DATABASE)
             _log.info(
                 "blast_retry_relaxed",
                 gap_id=context.identifier,
                 expect=arguments.get("expect"),
-                database=arguments.get("database"),
+                database=database,
             )
 
         return ToolInvocation(
             tool="blast_search",
             gap_id=context.identifier,
             relaxed=relaxed,
+            variant=database,
             payload=BlastSearchInput(
+                database=database,
+                division=((state or {}).get("database_advice") or {}).get("division"),
                 sequence=context.query_sequence(),
                 gap_id=context.identifier,
                 # So the tool knows how far past the HSPs to reach when it
@@ -433,23 +530,23 @@ class ToolSelector:
 
         Returns new objects because `Reference` is frozen - the originals stay
         valid for anything already holding them.
+
+        `dataclasses.replace`, and only where a score was actually found. The
+        field-by-field rebuild this replaces omitted `gap_bases`, `strand`,
+        `iteration` and `attempt`, so running it over every gap's references -
+        which happens whenever `evolutionary_context` returns anything - reset
+        `carries_gap` to False across the entire run. Leaving an unscored
+        reference untouched also keeps it byte-identical, which matters to the
+        accumulator: an object that did not change cannot lose a merge.
         """
-        return [
-            Reference(
-                accession=reference.accession,
-                organism=reference.organism,
-                description=reference.description,
-                residues=reference.residues,
-                identity=reference.identity,
-                coverage=reference.coverage,
-                e_value=reference.e_value,
-                bit_score=reference.bit_score,
-                relatedness=relatedness.get(reference.organism or "", reference.relatedness),
-                source=reference.source,
-                metadata=dict(reference.metadata),
-            )
-            for reference in references
-        ]
+        updated: list[Reference] = []
+        for reference in references:
+            score = relatedness.get(reference.organism or "")
+            if score is None or score == reference.relatedness:
+                updated.append(reference)
+                continue
+            updated.append(replace(reference, relatedness=score))
+        return updated
 
 
 def _allowed(arguments: dict[str, Any], keys: set[str]) -> dict[str, Any]:
