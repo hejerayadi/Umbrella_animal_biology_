@@ -19,8 +19,10 @@ import logging
 
 from fastapi import FastAPI
 
+from .llm.client import DISCOVERY, ROUTER, WRITING, describe_config
 from .orchestrator.graph import LiteratureOrchestrator
 from .schema import AgentRequest, AgentResult, AgentStatus
+from .subagents.writing.kb import qdrant_setup
 
 _logger = logging.getLogger(__name__)
 
@@ -33,8 +35,21 @@ _agent = LiteratureOrchestrator()
 
 @app.get("/health")
 def health() -> dict:
-    """Confirms the service is up and which implementation it serves."""
-    return {"agent": "Literature", "implementation": type(_agent).__name__}
+    """Confirms the service is up, and what it is actually wired to.
+
+    The agent answers with or without its Azure deployments and its Qdrant KB
+    - it degrades to a keyword router and an uncited draft - so "up" alone
+    does not tell you whether a disappointing answer is a bug or a missing
+    setting. `describe_config` returns no secrets.
+    """
+    return {
+        "agent": "Literature",
+        "implementation": type(_agent).__name__,
+        "llm": {
+            role: describe_config(role) for role in (ROUTER, WRITING, DISCOVERY)
+        },
+        "knowledge_base": {"configured": qdrant_setup.is_configured()},
+    }
 
 
 @app.post("/execute", response_model=AgentResult)

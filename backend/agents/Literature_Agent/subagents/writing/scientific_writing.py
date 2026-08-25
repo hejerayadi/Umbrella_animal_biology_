@@ -4,6 +4,7 @@ import json
 import logging
 import re
 
+from functools import lru_cache
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -15,7 +16,7 @@ from ...llm.prompts import (
     WRITING_SUB_ROUTING_PROMPT,
 )
 from ...schema import AgentRequest, AgentResult, AgentStatus
-from .kb.retrieval import search_papers, search_related_work, search_citations
+from .kb.retrieval import search_kb_papers, search_related_work, search_citations
 
 _logger = logging.getLogger(__name__)
 
@@ -31,6 +32,38 @@ PLACEHOLDER_REFERENCES_NOTICE = (
     "The references behind this text are placeholders - the discovery step is "
     "not yet connected to PubMed - so the draft cites nothing real."
 )
+
+
+# Which section the user asked for, in the order it is tested. First hit wins,
+# so the more specific phrasings ("related work" before "work") come first.
+# The frontend labels the panel it renders with this, and the Responder uses it
+# to introduce the draft, so it has to name what was actually written rather
+# than always saying "abstract".
+_SECTION_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Related work", ("related work", "related-work")),
+    ("Literature review", ("literature review", "review section", "review of the literature")),
+    ("Introduction", ("introduction", "intro section")),
+    ("Discussion", ("discussion",)),
+    ("Conclusion", ("conclusion", "concluding")),
+    ("Methods", ("methods", "method section", "materials and methods", "methodology")),
+    ("Results", ("results section", "results paragraph")),
+    ("Background", ("background section",)),
+    ("Abstract", ("abstract", "summary paragraph")),
+)
+
+# The system prompt's own default: "Match the section they name; if they name
+# none, write an abstract." Kept identical here so the label never contradicts
+# what was actually asked for.
+_DEFAULT_SECTION = "Abstract"
+
+
+def _section_label(instruction: str) -> str:
+    """Name the piece of academic text this instruction asks for."""
+    lowered = (instruction or "").lower()
+    for label, keywords in _SECTION_KEYWORDS:
+        if any(keyword in lowered for keyword in keywords):
+            return label
+    return _DEFAULT_SECTION
 
 
 def _references(context: dict) -> tuple[list, bool]:
@@ -65,7 +98,7 @@ def _tool_get_abstract_examples(query: str, limit: int = 2) -> str:
     """Retrieves example abstracts (structure/tone only, never citable) from
     the knowledge base, related to `query`."""
     try:
-        hits = search_papers(query, section_type="abstract", limit=limit)
+        hits = search_kb_papers(query, section_type="abstract", limit=limit)
         examples = [h.payload.get("target_text", "")[:500] for h in hits]
         examples = [e for e in examples if e.strip()]
         if not examples:
@@ -192,20 +225,85 @@ _TOOL_SCHEMAS = [
 # ---------------------------------------------------------------------------
 
 
-#Motif binomial simple : Genre (majuscule) + espece/sous-espece (minuscules),
-# ex. "Panthera tigris", "Panthera tigris altaica". Volontairement large :
-# mieux vaut proteger un peu trop de faux positifs latins que d'abimer un
-# vrai nom scientifique.
-_SCIENTIFIC_NAME_PATTERN = re.compile(r"\b[A-Z][a-z]+ [a-z]+(?: [a-z]+)?\b")
- 
- 
-import re
-
 # Motif binomial simple : Genre (majuscule) + espece/sous-espece (minuscules),
-# ex. "Panthera tigris", "Panthera tigris altaica". Volontairement large :
-# mieux vaut proteger un peu trop de faux positifs latins que d'abimer un
-# vrai nom scientifique.
-_SCIENTIFIC_NAME_PATTERN = re.compile(r"\b[A-Z][a-z]+ [a-z]+(?: [a-z]+)?\b")
+# ex. "Panthera tigris", "Panthera tigris altaica".
+_SCIENTIFIC_NAME_PATTERN = re.compile(r"\b([A-Z][a-z]+) ([a-z]+)(?: ([a-z]+))?\b")
+
+# Le motif seul est trop large : il attrape "This study focuses" en tete de
+# phrase, ce qui protegeait - et donc desactivait la correction sur - les trois
+# premiers mots de la plupart des phrases. On garde le biais "proteger un peu
+# trop" voulu au depart, mais on ecarte les tokens qui sont manifestement de
+# l'anglais courant. Un epithete latin n'est jamais dans cette liste.
+_COMMON_WORDS = frozenset(
+    """
+    a an the this that these those it its we our us they their there here
+    and or but nor so yet if then than as at by for from in into of on onto
+    to with within without across among between during after before while
+    when where because since despite unlike whereas although though however
+    therefore thus moreover furthermore additionally similarly notably
+    importantly overall finally together given using based compared
+    according following is are was were be been being has have had do does
+    did may might can could should would will shall must
+    study studies research paper papers work works result results finding
+    findings data analysis analyses method methods approach model models
+    figure table section review evidence effect effects
+    show shows showed shown suggest suggests suggested indicate indicates
+    report reports reported reveal reveals revealed provide provides
+    demonstrate demonstrates found remain remains observe observed
+    increase increased decrease decreased include includes including
+    decline declined declines exhibit exhibits exhibited display displays
+    displayed occur occurs occurred range ranges ranged vary varies varied
+    differ differs differed appear appears appeared emerge emerges emerged
+    evolve evolves evolved adapt adapts adapted inhabit inhabits inhabited
+    migrate migrates migrated represent represents represented
+    population populations species sample samples group groups
+    recent previous current present such both each most many some few one
+    two three several other others same different high low
+    """.split()
+)
+
+_MIN_TOKEN_LEN = 3
+
+
+def _scientific_name_spans(text: str) -> list[tuple[int, int]]:
+    """Les positions des noms binomiaux/trinomiaux a proteger dans `text`.
+
+    Un token doit etre assez long et absent de `_COMMON_WORDS` pour compter
+    comme latin. Le genre et l'espece doivent tous deux passer, sinon rien
+    n'est protege : ca ecarte "This study focuses".
+
+    Le troisieme token est teste separement. Le motif est gourmand, donc
+    "Canis lupus declined" matche en entier ; rejeter le match complet parce
+    que "declined" est un mot courant perdrait aussi le binome "Canis lupus".
+    On retombe donc sur les deux premiers tokens.
+    """
+
+    def _is_latin(token: str | None) -> bool:
+        return bool(
+            token
+            and len(token) >= _MIN_TOKEN_LEN
+            and token.lower() not in _COMMON_WORDS
+        )
+
+    spans: list[tuple[int, int]] = []
+    for match in _SCIENTIFIC_NAME_PATTERN.finditer(text):
+        if not (_is_latin(match.group(1)) and _is_latin(match.group(2))):
+            continue
+        end = match.end(3) if _is_latin(match.group(3)) else match.end(2)
+        spans.append((match.start(1), end))
+    return spans
+
+
+@lru_cache(maxsize=1)
+def _language_tool():
+    """The LanguageTool instance, built once.
+
+    Constructing it starts a JVM and a local server - several seconds. Doing
+    that per draft put that cost in every single request path.
+    """
+    import language_tool_python
+
+    return language_tool_python.LanguageTool("en-US")
 
 
 def _apply_style_correction(text: str) -> tuple[str, bool]:
@@ -222,12 +320,9 @@ def _apply_style_correction(text: str) -> tuple[str, bool]:
     try:
         import language_tool_python
 
-        tool = language_tool_python.LanguageTool("en-US")
-        matches = tool.check(text)
+        matches = _language_tool().check(text)
 
-        protected_spans = [
-            (m.start(), m.end()) for m in _SCIENTIFIC_NAME_PATTERN.finditer(text)
-        ]
+        protected_spans = _scientific_name_spans(text)
 
         def _overlaps_protected(match) -> bool:
             start, end = match.offset, match.offset + match.error_length
@@ -235,9 +330,8 @@ def _apply_style_correction(text: str) -> tuple[str, bool]:
 
         filtered_matches = [m for m in matches if not _overlaps_protected(m)]
 
-        corrected = language_tool_python.utils.correct(text, filtered_matches)
-        tool.close()
-        return corrected, True
+        # The tool is cached and shared, so it is deliberately not closed here.
+        return language_tool_python.utils.correct(text, filtered_matches), True
     except Exception as exc:  # noqa: BLE001 - style correction is a nice-to-have
         _logger.warning("style correction unavailable: %s", exc)
         return text, False
@@ -267,7 +361,11 @@ class WritingSupportAgent:
         # "write an abstract from this content: <paper body>"). Kept separate
         # from `instruction` so the model always sees clearly what is the
         # task and what is the raw material to work from.
-        source_content = context.get("source_content", "")
+        # `or ""` rather than a `.get` default: a caller that sends the key
+        # explicitly set to null is normal over JSON, and `None.strip()` here
+        # would raise outside the try below - escaping as an AttributeError
+        # instead of degrading into a draft without source content.
+        source_content = context.get("source_content") or ""
         source_block = (
             f"\n\nSource content to work from:\n{source_content}"
             if source_content.strip()
@@ -352,6 +450,7 @@ class WritingSupportAgent:
 
         output = {
             "draft": draft,
+            "section": _section_label(request.instruction),
             "references_used": papers,
             "style": "academic",
             "style_corrected": style_corrected,
@@ -531,10 +630,14 @@ class ScientificWritingOrchestrator:
                 "writing": writing.output if writing else None,
                 "publication": publication.output if publication else None,
             }
+            # COMPLETED only when every branch that ran actually produced
+            # something. `any()` here reported a half-failed run as a success,
+            # so a draft that never got written was indistinguishable from one
+            # that did. See the same reasoning in `orchestrator/graph.py`.
             ran = [r for r in (writing, publication) if r]
             status = (
                 AgentStatus.COMPLETED
-                if any(r.status == AgentStatus.COMPLETED for r in ran)
+                if ran and all(r.status == AgentStatus.COMPLETED for r in ran)
                 else AgentStatus.FAILED
             )
 

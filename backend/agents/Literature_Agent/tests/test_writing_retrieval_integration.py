@@ -5,6 +5,7 @@ protection des noms scientifiques dans la correction de style.
 
 Usage (depuis Literature_Agent/) :
     pytest tests/test_writing_retrieval_integration.py -v
+(aucun appel reseau : Azure, Qdrant et LanguageTool sont tous mockes)
 """
 
 import json
@@ -66,12 +67,12 @@ def _skip_real_style_correction():
 # 1. Le modele appelle un outil, le resultat est reinjecte, puis le draft final
 # ---------------------------------------------------------------------------
 
-@patch(f"{MODULE}.search_papers")
+@patch(f"{MODULE}.search_kb_papers")
 @patch(f"{MODULE}.call_llm_with_tools")
 def test_agent_calls_a_tool_and_uses_its_result(
-    mock_call_llm_with_tools, mock_search_papers, _skip_real_style_correction
+    mock_call_llm_with_tools, mock_search_kb_papers, _skip_real_style_correction
 ):
-    mock_search_papers.return_value = [_fake_paper_hit("Retrieved abstract example about migration.")]
+    mock_search_kb_papers.return_value = [_fake_paper_hit("Retrieved abstract example about migration.")]
 
     mock_call_llm_with_tools.side_effect = [
         _tool_call_message("get_abstract_examples", {"query": "tiger migration"}),
@@ -190,22 +191,41 @@ def test_scientific_names_are_protected_from_style_correction():
     par _skip_real_style_correction) : verifie qu'un match qui tomberait sur
     un nom scientifique binomial (ex. Panthera tigris) est filtre avant
     d'etre applique."""
-    from agents.Literature_Agent.subagents.writing.scientific_writing import _apply_style_correction
+    from agents.Literature_Agent.subagents.writing.scientific_writing import (
+        _apply_style_correction,
+        _language_tool,
+    )
 
     text = "This study focuses on Panthera tigris altaica in the wild."
+    # 23..31 lands inside "Panthera tigris altaica" -> must be filtered out.
     bogus_match_on_scientific_name = _fake_lt_match(offset=23, error_length=8)
+    # 0..18 is "This study focuses". The naive binomial pattern matched that
+    # too, so ordinary prose at the start of a sentence was protected and
+    # never corrected. This match must survive.
+    real_match_on_plain_prose = _fake_lt_match(offset=0, error_length=18)
 
     fake_tool = MagicMock()
-    fake_tool.check.return_value = [bogus_match_on_scientific_name]
+    fake_tool.check.return_value = [
+        bogus_match_on_scientific_name,
+        real_match_on_plain_prose,
+    ]
 
-    with patch("language_tool_python.LanguageTool", return_value=fake_tool), \
-         patch("language_tool_python.utils.correct") as mock_correct:
-        mock_correct.side_effect = lambda t, matches: t
-        corrected, applied = _apply_style_correction(text)
+    # `_language_tool` is an lru_cache singleton (one JVM start instead of one
+    # per draft), so the MagicMock below would otherwise stay cached for every
+    # later caller in the process.
+    _language_tool.cache_clear()
+    try:
+        with patch("language_tool_python.LanguageTool", return_value=fake_tool), \
+             patch("language_tool_python.utils.correct") as mock_correct:
+            mock_correct.side_effect = lambda t, matches: t
+            corrected, applied = _apply_style_correction(text)
+    finally:
+        _language_tool.cache_clear()
 
     assert applied is True
     passed_matches = mock_correct.call_args.args[1]
     assert bogus_match_on_scientific_name not in passed_matches
+    assert real_match_on_plain_prose in passed_matches
 
 
 if __name__ == "__main__":

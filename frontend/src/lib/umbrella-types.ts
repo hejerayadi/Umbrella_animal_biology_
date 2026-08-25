@@ -227,6 +227,37 @@ export interface GenomeChartSpec {
   note?: string | null;
 }
 
+/**
+ * A piece of academic text the Literature Agent wrote, and/or the venues it
+ * suggested for it.
+ *
+ * Shown in its own panel rather than inside the answer text. The draft is not
+ * a finding *about* the user's question the way a genome size is - it is the
+ * deliverable itself, meant to be read as a unit, copied, and pasted into a
+ * manuscript. Run together with the surrounding prose there is no boundary
+ * showing where the generated text starts and stops.
+ */
+export interface WritingDraftSpec {
+  /** "Abstract", "Introduction", "Related work"... Names what was written. */
+  section: string;
+  /** The generated text itself. Absent when only venues were requested. */
+  draft?: string | null;
+  /** Markdown list of suggested journals, when publication support ran. */
+  recommendedJournals?: string | null;
+  /** Citation lines the draft was allowed to use. Empty means it cites nothing. */
+  referencesUsed: string[];
+  /**
+   * The references were placeholders, not real publications. Surfaced in the
+   * panel because a draft that looks citable but is not is the one failure
+   * this platform most needs to make visible.
+   */
+  referencesArePlaceholder: boolean;
+  /** Whether the grammar/coherence pass actually ran on the draft. */
+  styleCorrected: boolean;
+  /** The agent's own caveat, when it set one. */
+  notice?: string | null;
+}
+
 export type MessageSender = "user" | "assistant";
 
 export interface Message {
@@ -280,6 +311,12 @@ export interface Message {
    * which is a 700 KB document fetched from the agent by URL.
    */
   genomeChart?: GenomeChartSpec;
+  /**
+   * The text the Literature Agent wrote for this answer, when it ran. A few
+   * kilobytes of prose, so it travels with the message like `genomeChart`
+   * rather than being fetched.
+   */
+  writingDraft?: WritingDraftSpec;
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

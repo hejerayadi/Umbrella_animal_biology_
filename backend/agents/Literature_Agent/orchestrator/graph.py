@@ -37,10 +37,16 @@ def aggregate_results(state: OrchestratorState) -> dict:
     # reported as COMPLETED with an empty payload: the Responder treats a
     # completed-but-empty finding as something to write around, and fills the
     # gap from its own memory. An explicit failure it explains honestly.
+    #
+    # This has to be `all`, not `any`. Discovery currently reads from a
+    # placeholder that cannot fail, so on either "both" route `any` made the
+    # result COMPLETED no matter what writing did - a draft that was never
+    # produced was reported to the Global Orchestrator as a success. Both
+    # payloads are still returned either way, so nothing is lost by failing.
     ran = [r for r in (discovery, writing) if r]
     status = (
         AgentStatus.COMPLETED
-        if any(r.status == AgentStatus.COMPLETED for r in ran)
+        if ran and all(r.status == AgentStatus.COMPLETED for r in ran)
         else AgentStatus.FAILED
     )
 

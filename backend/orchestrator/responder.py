@@ -14,6 +14,7 @@ It handles the two ways a conversation can end:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.output_parsers import StrOutputParser
@@ -172,7 +173,11 @@ def _render_value(value: Any) -> str:
 # The note matters as much as the exclusion: told nothing, the model closes
 # with "to view this structure, go to rcsb.org and search for 1KZY" while the
 # rotatable structure sits directly underneath its own answer.
-_RENDER_ONLY_KEYS: dict[str, str] = {
+# A note may be a plain string, or a function of the value when what the model
+# needs to be told depends on what the agent actually produced - see the
+# "writing" entry, where the section written and whether its references were
+# real both change the sentence.
+_RENDER_ONLY_KEYS: dict[str, str | Callable[[Any], str]] = {
     "protein_viewer": (
         "An interactive 3D viewer showing this structure is displayed directly below your "
         "answer. Refer to it as already visible; never tell the user to open RCSB, AlphaFold "
@@ -192,13 +197,85 @@ _RENDER_ONLY_KEYS: dict[str, str] = {
         "already visible - describe what it shows and the biology behind it. Never say you "
         "cannot draw or display images, and never suggest searching for one elsewhere."
     ),
+    # The Literature Agent's draft is the one finding the user asked to *read*,
+    # and the frontend now renders it in its own panel under the answer. Left
+    # in the findings it was reproduced verbatim in the answer as well, so the
+    # user got the same 200-word abstract twice on one screen - and the model
+    # spent most of `_MAX_FINDING_CHARS` on text it was only meant to hand over.
+    "writing": lambda value: _writing_note(value),
 }
+
+
+def _writing_note(value: Any) -> str:
+    """What the model should say about a draft it must not reproduce.
+
+    Returns "" when this run produced no text at all. That is not a detail:
+    an empty note puts the key back into the ordinary findings, so a failed
+    writing run is explained by the answer instead of being suppressed - and
+    the model is not told to point at a panel that the frontend, seeing no
+    draft and no journals, does not render.
+    """
+    if not isinstance(value, dict):
+        return ""
+
+    # The sub-orchestrator's "both" route nests the two payloads; the single
+    # routes return one of them flat. Handle both rather than assuming.
+    writing = value.get("writing") if isinstance(value.get("writing"), dict) else value
+    publication = value.get("publication") if isinstance(value.get("publication"), dict) else value
+
+    parts: list[str] = []
+
+    if isinstance(writing, dict) and writing.get("draft"):
+        section = str(writing.get("section") or "text").lower()
+        parts.append(
+            f"The requested {section} has been written and is displayed in full, in its own "
+            f"panel directly below your answer. Introduce it in one or two sentences - say "
+            f"what it covers and how it is structured - and then STOP. Do NOT reproduce the "
+            f"{section} itself, do not quote more than a few words of it, and never say you "
+            f"are unable to write it."
+        )
+        if writing.get("references_are_placeholder"):
+            parts.append(
+                "Its reference list is placeholder data, not real publications, so add one "
+                "short line telling the user the text cites nothing real yet."
+            )
+        elif not writing.get("references_used"):
+            parts.append(
+                "No literature was retrieved for it, so it deliberately contains no "
+                "citations. Mention that in one short line."
+            )
+
+    if isinstance(publication, dict) and publication.get("recommended_journals"):
+        parts.append(
+            "Suggested publication venues are listed in the same panel below your answer. "
+            "Refer to them as already visible rather than repeating the list."
+        )
+
+    return " ".join(parts)
+
+
+def _render_notes(context: dict[str, Any]) -> dict[str, str]:
+    """The render-only keys that actually rendered something, and their notes."""
+    notes: dict[str, str] = {}
+    for key, note in _RENDER_ONLY_KEYS.items():
+        value = context.get(key)
+        if not value:
+            continue
+        text = note(value) if callable(note) else note
+        if text:
+            notes[key] = text
+    return notes
 
 
 def _format_findings(context: dict[str, Any]) -> str:
     """Plain-text rendering of everything the agents produced."""
-    findings = {key: value for key, value in context.items() if key not in _RENDER_ONLY_KEYS}
-    rendered = [note for key, note in _RENDER_ONLY_KEYS.items() if context.get(key)]
+    # A key is only held back from the findings when it actually put something
+    # on screen. A note function that returns "" is saying "nothing rendered
+    # this time" - that key stays an ordinary finding, so a run that produced
+    # no draft is still explained rather than silently dropped.
+    notes = _render_notes(context)
+    findings = {key: value for key, value in context.items() if key not in notes}
+    rendered = list(notes.values())
 
     if not findings and not rendered:
         return "(the agents did not produce any findings)"

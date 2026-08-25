@@ -6,6 +6,19 @@ langgraph==1.2.10
 openai==2.50.0
 python-dotenv==1.0.1
 
+# --- Writing knowledge base (subagents/writing/kb/) - required, do not remove.
+# `scientific_writing.py` imports `kb.retrieval` at module level, which sits on
+# the import chain behind `api.py`. Without this the whole agent is
+# unimportable and the service will not start.
+qdrant-client==1.19.0
+
+# --- Style correction (subagents/writing/scientific_writing.py) ------------
+# Needs a JVM on PATH. Missing Java is handled: `_apply_style_correction`
+# degrades to returning the draft uncorrected. Missing *package* was not -
+# it is imported inside the function, so it stays a soft dependency, but it
+# is pinned here so a normal install gets the correction step.
+language_tool_python==3.4.0
+
 # --- Agent API layer (api.py) - required, do not remove ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0

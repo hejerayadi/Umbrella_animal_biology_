@@ -29,14 +29,34 @@ PLACEHOLDER_NOTICE = (
 def search_papers(query: str) -> dict:
     """Search the literature for `query`.
 
-    Returns the discovery payload: the papers found, how many, where they came
-    from, and whether they are real. The shape is what `knowledge_discovery.py`
+    Returns the discovery payload. The shape is what `knowledge_discovery.py`
     formats and what ends up under the `discovery` key of the agent's output,
-    so a real implementation must keep these keys.
+    so a real implementation must keep these keys:
+
+        papers      list[str]   human-readable citation lines. Fed to the
+                                writing subagent as the only references it is
+                                allowed to cite.
+        records     list[dict]  structured evidence, one dict per paper, with
+                                keys pmid / title / year / short_summary. The
+                                Trait Discovery Agent reads this directly
+                                (kb/sources/literature_agent_client.py) to back
+                                trait->gene edges in Neo4j.
+        total_found int
+        source      str
+
+    `records` is deliberately EMPTY while this is a placeholder, even though
+    `papers` is not. A record is only useful to the Trait Discovery Agent if it
+    carries a pmid, and that agent writes the pmid it is given straight into
+    the knowledge graph as evidence for a trait->gene link. Inventing pmids
+    here would put fabricated citations into shared, persisted scientific
+    state - a much worse failure than returning nothing. `papers` can stay
+    populated because it never leaves this agent unflagged: it goes to the
+    writing subagent, which carries `references_are_placeholder` alongside it.
     """
     papers = list(_PLACEHOLDER_PAPERS)
     return {
         "papers": papers,
+        "records": [],
         "total_found": len(papers),
         "source": "placeholder",
         "is_placeholder": True,
