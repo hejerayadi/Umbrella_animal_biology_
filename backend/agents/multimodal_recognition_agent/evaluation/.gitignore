@@ -6,3 +6,12 @@
 # an image payload, and the licences involved are honoured by pointing at the
 # original file page rather than redistributing a copy from here.
 assets/
+
+# Evaluation results are GENERATED, never committed.
+#
+# A results file records what one run observed: labels, identifiers, provider
+# modes, counts and sanitized error class names. It is safe by construction, but
+# it is still generated output, it is large, and a committed copy would rot the
+# moment the benchmark or the agent moved. Phase 3 attaches the results it wants
+# to preserve to its own report instead.
+results/

@@ -646,13 +646,30 @@ def test_the_thresholds_are_named_so_they_cannot_be_quietly_moved():
         assert threshold in note
 
 
-def test_the_evaluation_package_contains_no_runner():
-    """Phase 1 delivers data and validation only. A scorer or an agent call
-    appearing in this package would mean Phase 2 started early."""
+# The dataset modules. Phase 2 added a runner to this package, which is what
+# Phase 2 is for - but these two describe and fetch data, and a call into the
+# agent from either of them would mean the dataset had started depending on the
+# thing it exists to measure.
+DATASET_ONLY_MODULES = ("manifest_schema.py", "fetch_assets.py")
+
+
+def test_the_dataset_modules_never_call_the_agent():
+    """Originally this asserted the whole package contained no runner, which held
+    until Phase 2 legitimately added one. The property worth keeping is narrower
+    and permanent: the manifest loader and the asset fetcher must stay free of
+    the agent, so loading or fetching the benchmark can never execute it."""
     package = ms.MANIFEST_PATH.parent
-    for module in package.glob("*.py"):
-        source = module.read_text(encoding="utf-8")
-        assert "RecognitionAgent" not in source.replace(
-            "`RecognitionAgent`", ""
-        ), f"{module.name} references RecognitionAgent"
-        assert "AgentRequest(" not in source, f"{module.name} builds an AgentRequest"
+    for name in DATASET_ONLY_MODULES:
+        source = (package / name).read_text(encoding="utf-8")
+        assert "RecognitionAgent" not in source.replace("`RecognitionAgent`", ""), (
+            f"{name} references RecognitionAgent"
+        )
+        assert "AgentRequest(" not in source, f"{name} builds an AgentRequest"
+
+
+def test_the_dataset_modules_import_nothing_that_can_execute_the_agent():
+    package = ms.MANIFEST_PATH.parent
+    for name in DATASET_ONLY_MODULES:
+        source = (package / name).read_text(encoding="utf-8")
+        for forbidden in ("from ..agent import", "from .runner import", "import runner"):
+            assert forbidden not in source, f"{name} imports {forbidden!r}"
