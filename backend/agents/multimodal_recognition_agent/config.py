@@ -277,6 +277,21 @@ class ThresholdConfig:
     identified_min_margin: float
     uncertain_min_score: float
 
+@dataclass(frozen=True)
+class LangSmithConfig:
+    """Optional trace-export configuration for LangSmith.
+
+    Disabled by default. Disabled mode reads nothing else here and needs no
+    credential, network access or account. Enabling tracing without the
+    required configuration fails loudly at startup - it never falls back to
+    silently untraced execution, and it never prints a configured value.
+    """
+
+    tracing_enabled: bool = False
+    api_key: str | None = None
+    project: str | None = None
+    endpoint: str | None = None
+    workspace_id: str | None = None
 
 @dataclass(frozen=True)
 class RecognitionConfig:
@@ -331,7 +346,13 @@ class RecognitionConfig:
     ncbi_tool: str | None = None
     ncbi_email: str | None = None
     # Optional. Only needed to exceed NCBI's default 3 requests/second limit.
+    # Optional. Only needed to exceed NCBI's default 3 requests/second limit.
     ncbi_api_key: str | None = None
+
+    # --- LangSmith tracing (Sprint 4 Phase 4) -------------------------------
+    # Optional and disabled by default. See LangSmithConfig for what each
+    # field means and _langsmith_config() for how it is resolved.
+    langsmith: LangSmithConfig = LangSmithConfig()
 
     @classmethod
     def from_env(cls) -> RecognitionConfig:
@@ -407,6 +428,7 @@ class RecognitionConfig:
             ncbi_tool=_str("NCBI_TOOL"),
             ncbi_email=_str("NCBI_EMAIL"),
             ncbi_api_key=_str("NCBI_API_KEY"),
+            langsmith=_langsmith_config(),
         )
 
 
@@ -427,3 +449,39 @@ def _provider_mode() -> str:
             )
         return mode
     return "azure" if _flag("RECOGNITION_REASONING_LLM_ENABLED") else "disabled"
+
+def _langsmith_config() -> LangSmithConfig:
+    """Resolve LangSmith configuration from the environment.
+
+    Tracing is opt-in: LANGSMITH_TRACING must be an explicit truthy value.
+    When it is, LANGSMITH_API_KEY and LANGSMITH_PROJECT are required - an
+    enabled trace exporter with nowhere to send traces is a misconfiguration,
+    not a silent no-op. LANGSMITH_ENDPOINT and LANGSMITH_WORKSPACE_ID stay
+    optional, for accounts/regions that need them.
+    """
+    enabled = _flag("LANGSMITH_TRACING")
+    api_key = _str("LANGSMITH_API_KEY")
+    project = _str("LANGSMITH_PROJECT")
+    endpoint = _str("LANGSMITH_ENDPOINT")
+    workspace_id = _str("LANGSMITH_WORKSPACE_ID")
+
+    if not enabled:
+        return LangSmithConfig()
+
+    missing = [name for name, value in (
+        ("LANGSMITH_API_KEY", api_key), ("LANGSMITH_PROJECT", project),
+    ) if not value]
+    if missing:
+        raise ConfigError(
+            "LANGSMITH_TRACING is enabled but the following required "
+            "variable(s) are not set: " + ", ".join(missing) + ". Set them, "
+            "or set LANGSMITH_TRACING=false to disable tracing."
+        )
+
+    return LangSmithConfig(
+        tracing_enabled=True,
+        api_key=api_key,
+        project=project,
+        endpoint=endpoint,
+        workspace_id=workspace_id,
+    )
