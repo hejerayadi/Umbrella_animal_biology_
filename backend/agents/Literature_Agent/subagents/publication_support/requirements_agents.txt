@@ -1,0 +1,16 @@
+# Core pipeline
+openai>=1.0.0
+python-dotenv>=1.0.0
+numpy>=1.21.0
+requests>=2.31.0
+
+# Vector store
+qdrant-client>=1.7.0
+
+# Embeddings (BAAI/bge-small-en-v1.5, see embeddings/embedder.py)
+sentence-transformers>=2.2.0
+
+# If deploying to Foundry with FastAPI:
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
