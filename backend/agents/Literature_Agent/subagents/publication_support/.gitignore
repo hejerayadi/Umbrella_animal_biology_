@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Regenerable data (data/journals.json is ~48 MB)
+data/*.json
+data/*.json.tmp
+
+# Model cache
+.cache/

@@ -38,3 +38,6 @@ build/
 backend/agents/biodiversity_agent/outputs/
 
 .env
+
+# macOS
+.DS_Store
