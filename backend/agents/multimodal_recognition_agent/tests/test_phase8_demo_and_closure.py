@@ -14,7 +14,15 @@ import pytest
 from ..adapters.taxonomy import MockTaxonomyProvider
 from ..agent import RecognitionAgent
 from ..domain.errors import ErrorCode
-from .conftest import StubClassifier, jpeg_bytes, make_config, png_bytes, prediction
+from .conftest import (
+    StubClassifier,
+    forbidden_tracked,
+    git_tracked_paths,
+    jpeg_bytes,
+    make_config,
+    png_bytes,
+    prediction,
+)
 
 DEMO_MODULE = "backend.agents.multimodal_recognition_agent.demo_sprint3"
 
@@ -433,21 +441,18 @@ def test_the_seven_key_contract_is_still_exactly_seven():
 
 
 def test_no_tracked_file_under_the_package_is_an_image_weight_or_log():
-    import pathlib
+    """The name of this test was always the contract: TRACKED, not present.
 
-    package = pathlib.Path(__file__).resolve().parent.parent
-    offenders = []
-    for path in package.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in path.parts for part in (".venv", "__pycache__", "demo_images")):
-            continue
-        if path.name == ".env":
-            continue
-        if path.suffix.lower() in (".pt", ".pth", ".bin", ".safetensors", ".ckpt",
-                                   ".png", ".jpg", ".jpeg", ".webp", ".log", ".csv"):
-            offenders.append(path.name)
-    assert offenders == []
+    It now asks git, so a git-ignored directory of generated or downloaded
+    material cannot fail it, and a genuinely committed offender cannot hide in
+    one either. `.csv` is included here as well as the shared suffix list.
+    """
+    from .conftest import FORBIDDEN_TRACKED_SUFFIXES
+
+    offenders = forbidden_tracked(
+        git_tracked_paths(), FORBIDDEN_TRACKED_SUFFIXES + (".csv",)
+    )
+    assert offenders == [], f"forbidden files are tracked: {offenders}"
 
 
 def test_the_demo_loads_the_agent_env_only_after_the_opt_in_guard(monkeypatch, tmp_path):

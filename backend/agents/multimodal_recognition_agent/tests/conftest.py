@@ -160,3 +160,52 @@ class StubClassifier:
             raise RecognitionError(self._raises)
         self.last_top_k = top_k
         return list(self._predictions)[:top_k]
+
+
+# --- git truth for the "nothing forbidden is committed" gates ----------------
+#
+# Three architecture gates enforce that no image, model weight or log is
+# committed under this package. They used to approximate "committed" by walking
+# the filesystem and excluding known generated directories by name. That held
+# while `fixtures/demo_images/` was the only git-ignored image directory; it
+# stopped holding when the Sprint 4 benchmark added `evaluation/assets/`, which
+# is equally git-ignored and equally not committed.
+#
+# Asking git directly removes the approximation. A new ignored directory can
+# never break these gates again, and - more importantly - the rule gets STRICTER,
+# not weaker: a forbidden file that is genuinely tracked is caught even if it
+# sits inside a directory the old exclusion list happened to skip.
+
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+
+#: Suffixes that may never be tracked under the package.
+FORBIDDEN_TRACKED_SUFFIXES = (
+    ".pt", ".pth", ".bin", ".safetensors", ".ckpt",   # model weights
+    ".png", ".jpg", ".jpeg", ".webp",                 # raw images
+    ".log",                                           # logs
+)
+
+
+def git_tracked_paths(root: Path = PACKAGE_ROOT) -> list[Path]:
+    """Every file git actually tracks under `root`.
+
+    Uses `-z` so a path containing a space or a newline cannot split a record.
+    """
+    completed = subprocess.run(
+        ["git", "ls-files", "-z", "--", str(root)],
+        cwd=str(root), capture_output=True, check=True,
+    )
+    return [
+        Path(entry) for entry in completed.stdout.decode("utf-8").split("\0") if entry
+    ]
+
+
+def forbidden_tracked(paths, suffixes=FORBIDDEN_TRACKED_SUFFIXES) -> list[str]:
+    """The names of any tracked paths carrying a forbidden suffix."""
+    return sorted(
+        Path(path).name for path in paths
+        if Path(path).suffix.lower() in tuple(s.lower() for s in suffixes)
+    )

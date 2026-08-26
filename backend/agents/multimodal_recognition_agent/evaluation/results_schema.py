@@ -20,6 +20,7 @@ cannot widen the result file on its own.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
@@ -78,6 +79,54 @@ _CANDIDATE_KEYS = (
 
 #: Substrings that must never appear in a serialized result. Checked by test.
 FORBIDDEN_SUBSTRINGS = ("data:image", ";base64,", "-----BEGIN", "Authorization")
+
+#: Longest sanitized answer kept for rubric review. The agent's own grounding
+#: check already rejects an explanation over 2000 characters
+#: (`reasoning_llm.explanation_is_grounded`), so this cannot truncate a
+#: legitimate explanation - it exists so that an unexpectedly long or repetitive
+#: string cannot balloon a result file, and so truncation is a documented,
+#: visible act rather than a silent one.
+MAX_ANSWER_CHARS = 2000
+TRUNCATION_MARKER = " …[truncated]"
+
+_REDACTIONS = (
+    # data URLs and long base64 runs, before anything else can match inside them
+    (re.compile(r"data:[a-zA-Z0-9.+-]+/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+"), "[redacted-data-url]"),
+    (re.compile(r"[A-Za-z0-9+/]{80,}={0,2}"), "[redacted-blob]"),
+    # credentials and headers
+    (re.compile(r"(?i)\b(authorization|api[_-]?key|bearer|access[_-]?token|secret)\b\s*[:=]?\s*\S+"), "[redacted-credential]"),
+    (re.compile(r"-----BEGIN[^-]*-----.*?-----END[^-]*-----", re.S), "[redacted-key-block]"),
+    # private absolute paths
+    (re.compile(r"[A-Za-z]:\\[^\s\"']+"), "[redacted-path]"),
+    (re.compile(r"/(?:home|Users)/[^\s\"']+"), "[redacted-path]"),
+    # a bare dotenv assignment, in case an exception ever quoted one
+    (re.compile(r"\b[A-Z][A-Z0-9_]{3,}=\S+"), "[redacted-env]"),
+)
+
+
+def sanitize_answer(text: Any) -> str | None:
+    """The one place a user-facing answer becomes safe to store.
+
+    Evaluation-only. The agent is never asked to change what it says; this
+    redacts and bounds what the *evaluation* keeps, so a human reviewer can score
+    relevance and explanation quality without a result file ever carrying a
+    payload, a credential or a private path.
+
+    Redaction is by substitution rather than by rejection, because an answer that
+    somehow contained one of these is still evidence worth reviewing - with the
+    offending span replaced by a visible marker.
+    """
+    if not isinstance(text, str):
+        return None
+    cleaned = text.strip()
+    if not cleaned:
+        return None
+    for pattern, replacement in _REDACTIONS:
+        cleaned = pattern.sub(replacement, cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) > MAX_ANSWER_CHARS:
+        cleaned = cleaned[:MAX_ANSWER_CHARS].rstrip() + TRUNCATION_MARKER
+    return cleaned or None
 
 
 def safe_provenance(provenance: Any) -> dict[str, Any]:
@@ -219,6 +268,11 @@ class CaseResult:
     metrics: list[MetricOutcome] = field(default_factory=list)
     human_review: HumanReview = field(default_factory=HumanReview)
     consistency: ConsistencySlot = field(default_factory=ConsistencySlot)
+    #: The final user-facing answer, redacted and length-bounded. Populated
+    #: only by a supplemental capture run; None on the certified primary run,
+    #: whose allow-list predated this field.
+    final_answer_sanitized: str | None = None
+    supplemental_explanation_capture: bool = False
     #: Sanitized class name if the runner itself could not complete the case.
     execution_error: str | None = None
     skipped_reason: str | None = None

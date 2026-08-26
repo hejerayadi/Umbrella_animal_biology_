@@ -28,6 +28,7 @@ from ..evaluation.results_schema import (
     RunSummary,
     safe_candidates,
     safe_provenance,
+    sanitize_answer,
     sanitize_error,
 )
 
@@ -379,6 +380,40 @@ def test_provenance_fails_if_taxonomy_claims_to_have_run_with_no_candidates():
     assert "taxonomy_executed=True with no candidate" in result.detail
 
 
+def test_a_spent_but_rejected_llm_call_is_consistent_provenance():
+    """`reasoning_llm_used` means "a result was genuinely accepted", not "a call
+    was made" (workflows/state.py:65-66). A planner call that was spent and then
+    failed or was rejected leaves calls=1 with used=False and the deterministic
+    path in charge - which is correct behaviour, not a provenance contradiction.
+
+    Pinned because the live run exposed this on 25 of 30 cases; the offline dry
+    run never could, since the fake provider always succeeds."""
+    provenance = dict(
+        observation()["provenance"],
+        reasoning_llm_calls=1, reasoning_llm_used=False,
+        plan_source="deterministic", explanation_source="deterministic",
+        plan_rejected=False,
+    )
+    result = evaluators.evaluate_provenance(REAL_CASE, observation(provenance=provenance))
+    assert result.outcome is Outcome.PASS, result.detail
+
+
+@pytest.mark.parametrize("field", ["plan_source", "explanation_source"])
+def test_claiming_an_llm_source_without_accepting_a_result_is_inconsistent(field):
+    provenance = dict(observation()["provenance"], reasoning_llm_used=False, **{field: "llm"})
+    result = evaluators.evaluate_provenance(REAL_CASE, observation(provenance=provenance))
+    assert result.outcome is Outcome.FAIL
+    assert field in result.detail
+
+
+def test_claiming_the_model_was_used_without_spending_a_call_is_inconsistent():
+    provenance = dict(observation()["provenance"],
+                      reasoning_llm_calls=0, reasoning_llm_used=True)
+    result = evaluators.evaluate_provenance(REAL_CASE, observation(provenance=provenance))
+    assert result.outcome is Outcome.FAIL
+    assert "no call was made" in result.detail
+
+
 def test_provenance_is_not_applicable_on_a_controlled_failure():
     obs = observation(status="failed", output={"error_code": "MISSING_IMAGE", "error": "x"})
     assert evaluators.evaluate_provenance(
@@ -554,6 +589,87 @@ def test_safe_candidates_drops_anything_not_on_the_allow_list():
 
 def test_sanitize_error_records_only_the_exception_class_name():
     assert sanitize_error(ValueError("secret-endpoint https://x.invalid/key")) == "ValueError"
+
+
+# --- sanitized answer capture (Phase 3 addition) ----------------------------
+
+def test_a_plain_answer_survives_sanitisation_unchanged():
+    text = "The image shows Panthera leo. The score is a ranking value, not a probability."
+    assert sanitize_answer(text) == text
+
+
+@pytest.mark.parametrize("blank", [None, "", "   ", 42, [], {}])
+def test_a_missing_or_non_string_answer_becomes_none(blank):
+    assert sanitize_answer(blank) is None
+
+
+@pytest.mark.parametrize("canary,marker", [
+    (CANARY_DATA_URL, "[redacted-data-url]"),
+    ("A" * 300, "[redacted-blob]"),
+    ("Authorization: Bearer abc123def456", "[redacted-credential]"),
+    ("api_key=sk-live-0123456789abcdef", "[redacted-credential]"),
+    ("-----BEGIN PRIVATE KEY-----zzz-----END PRIVATE KEY-----", "[redacted-key-block]"),
+    (r"C:\Users\someone\secret\photo.jpg", "[redacted-path]"),
+    ("/home/someone/.env", "[redacted-path]"),
+    ("/Users/someone/Desktop/private.png", "[redacted-path]"),
+    ("AZURE_OPENAI_API_KEY=abcdef123456", "[redacted-env]"),
+])
+def test_every_canary_is_redacted_out_of_a_captured_answer(canary, marker):
+    cleaned = sanitize_answer(f"The animal is Panthera leo. {canary} End.")
+    assert marker in cleaned
+    assert canary not in cleaned
+    assert "Panthera leo" in cleaned, "redaction must not destroy the reviewable answer"
+
+
+@pytest.mark.parametrize("forbidden", FORBIDDEN_SUBSTRINGS)
+def test_a_captured_answer_never_retains_a_forbidden_substring(forbidden):
+    cleaned = sanitize_answer(f"prefix {CANARY_DATA_URL} Authorization: Bearer x suffix")
+    assert forbidden not in cleaned
+
+
+def test_a_long_answer_is_truncated_at_the_documented_bound():
+    from ..evaluation.results_schema import MAX_ANSWER_CHARS, TRUNCATION_MARKER
+
+    cleaned = sanitize_answer("word " * 2000)
+    assert len(cleaned) <= MAX_ANSWER_CHARS + len(TRUNCATION_MARKER)
+    assert cleaned.endswith(TRUNCATION_MARKER)
+
+
+def test_an_answer_at_the_bound_is_not_truncated():
+    from ..evaluation.results_schema import MAX_ANSWER_CHARS, TRUNCATION_MARKER
+
+    # Deliberately prose-shaped rather than one long run of characters: an
+    # unbroken 2000-character alphanumeric string is exactly what the blob
+    # redaction is meant to catch, and it would fire before truncation.
+    sentence = "Panthera leo is shown in the photograph. "
+    text = (sentence * (MAX_ANSWER_CHARS // len(sentence) + 2))[:MAX_ANSWER_CHARS]
+    text = text[:-1] + "x" if text.endswith(" ") else text
+
+    cleaned = sanitize_answer(text)
+    assert len(cleaned) == MAX_ANSWER_CHARS
+    assert TRUNCATION_MARKER not in cleaned
+    assert "[redacted" not in cleaned
+
+
+def test_whitespace_in_a_captured_answer_is_collapsed():
+    assert sanitize_answer("a\n\n  b\tc") == "a b c"
+
+
+def test_the_offline_run_captures_a_sanitized_answer_for_every_executed_case():
+    for result in runner.run().results:
+        assert result.final_answer_sanitized, result.case_id
+        for forbidden in FORBIDDEN_SUBSTRINGS:
+            assert forbidden not in result.final_answer_sanitized
+
+
+def test_a_captured_answer_is_never_the_complete_internal_state():
+    """Only the user-facing answer is kept - never the state object, the context
+    or the candidate payload."""
+    for result in runner.run().results:
+        answer = result.final_answer_sanitized or ""
+        for leak in ("recognition_provenance", "image_sha256", "normalized",
+                     "RecognitionState", "image_bytes"):
+            assert leak not in answer, result.case_id
 
 
 @pytest.mark.parametrize("forbidden", FORBIDDEN_SUBSTRINGS)
