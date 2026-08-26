@@ -55,6 +55,7 @@ from .results_schema import (
     RunSummary,
     safe_candidates,
     safe_provenance,
+    sanitize_answer,
     sanitize_error,
 )
 
@@ -250,13 +251,25 @@ def observe(result: Any, *, latency_ms: float, classifier_invocations: int | Non
         "provenance": {},
     }
 
+    # The final user-facing answer, redacted and bounded. Evaluation-only: it is
+    # what a human reviewer needs to score relevance and explanation quality, and
+    # it is the only free text this module keeps.
+    if result.prompt_to_target_agent:
+        obs["final_answer"] = sanitize_answer(result.prompt_to_target_agent)
+
     if isinstance(output, dict):
         if "error_code" in output:
             obs["error_code"] = output.get("error_code")
+            obs["final_answer"] = sanitize_answer(output.get("error"))
         recognition = output.get("recognition")
         if isinstance(recognition, dict):
             obs["decision"] = recognition.get("decision")
             obs["unsupported_capability"] = recognition.get("unsupported_capability")
+            answer = recognition.get("explanation") or ""
+            clarification = recognition.get("clarification_question")
+            if clarification:
+                answer = f"{answer} {clarification}".strip()
+            obs["final_answer"] = sanitize_answer(answer)
         obs["primary_species"] = output.get("species")
         obs["species_id"] = output.get("species_id")
         obs["gbif_id"] = output.get("gbif_id")
@@ -386,6 +399,7 @@ def run(
         result.provenance = obs.get("provenance") or {}
         result.latency_ms = obs.get("latency_ms")
         result.classifier_invocations = obs.get("classifier_invocations")
+        result.final_answer_sanitized = obs.get("final_answer")
         result.agent_llm_calls = result.provenance.get("reasoning_llm_calls")
         result.evaluator_llm_calls = 0  # no judge model exists in Phase 2
         output = obs.get("output")

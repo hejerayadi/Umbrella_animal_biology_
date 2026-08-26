@@ -1,0 +1,248 @@
+{
+  "_note": "Certified live consistency protocol. Three repetitions per selected case. Explanation wording deliberately not compared.",
+  "mode": "live",
+  "cases": [
+    "REC-PLEO-01",
+    "REC-PLEO-02",
+    "REC-PTIG-01",
+    "AMB-01",
+    "DEL-01"
+  ],
+  "repetitions_per_case": 3,
+  "executions_expected": 15,
+  "executions_performed": 15,
+  "compared_fields": [
+    "status",
+    "decision",
+    "primary_species",
+    "candidate_order",
+    "target_agent"
+  ],
+  "excluded_fields": {
+    "explanation": "phrasing varies by design when a language model writes it",
+    "latency_ms": "a timing measurement, not a decision",
+    "clarification_question": "derived from the decision, which is already compared"
+  },
+  "verdicts": {
+    "REC-PLEO-01": {
+      "stable": true,
+      "reason": "all_compared_fields_identical",
+      "observed_repetitions": 3,
+      "differing_fields": []
+    },
+    "REC-PLEO-02": {
+      "stable": true,
+      "reason": "all_compared_fields_identical",
+      "observed_repetitions": 3,
+      "differing_fields": []
+    },
+    "REC-PTIG-01": {
+      "stable": true,
+      "reason": "all_compared_fields_identical",
+      "observed_repetitions": 3,
+      "differing_fields": []
+    },
+    "AMB-01": {
+      "stable": true,
+      "reason": "all_compared_fields_identical",
+      "observed_repetitions": 3,
+      "differing_fields": []
+    },
+    "DEL-01": {
+      "stable": true,
+      "reason": "all_compared_fields_identical",
+      "observed_repetitions": 3,
+      "differing_fields": []
+    }
+  },
+  "observations": {
+    "REC-PLEO-01": [
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera leo",
+        "candidate_order": [
+          "Panthera leo",
+          "Garreta laetus",
+          "Kobus vardonii",
+          "Ceratophaga vastellus",
+          "Potamochoerus larvatus"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera leo",
+        "candidate_order": [
+          "Panthera leo",
+          "Garreta laetus",
+          "Kobus vardonii",
+          "Ceratophaga vastellus",
+          "Potamochoerus larvatus"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera leo",
+        "candidate_order": [
+          "Panthera leo",
+          "Garreta laetus",
+          "Kobus vardonii",
+          "Ceratophaga vastellus",
+          "Potamochoerus larvatus"
+        ],
+        "target_agent": null
+      }
+    ],
+    "REC-PLEO-02": [
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera leo",
+        "candidate_order": [
+          "Panthera leo",
+          "Ernestokokenia chaishoer",
+          "Potamochoerus larvatus",
+          "Panthera gombaszoegensis",
+          "Panthera zdanskyi"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera leo",
+        "candidate_order": [
+          "Panthera leo",
+          "Ernestokokenia chaishoer",
+          "Potamochoerus larvatus",
+          "Panthera gombaszoegensis",
+          "Panthera zdanskyi"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera leo",
+        "candidate_order": [
+          "Panthera leo",
+          "Ernestokokenia chaishoer",
+          "Potamochoerus larvatus",
+          "Panthera gombaszoegensis",
+          "Panthera zdanskyi"
+        ],
+        "target_agent": null
+      }
+    ],
+    "REC-PTIG-01": [
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera tigris",
+        "candidate_order": [
+          "Panthera tigris",
+          "Bubo bengalensis",
+          "Danaus genutia",
+          "Cuon alpinus",
+          "Prionailurus bengalensis"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera tigris",
+        "candidate_order": [
+          "Panthera tigris",
+          "Bubo bengalensis",
+          "Danaus genutia",
+          "Cuon alpinus",
+          "Prionailurus bengalensis"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "identified",
+        "primary_species": "Panthera tigris",
+        "candidate_order": [
+          "Panthera tigris",
+          "Bubo bengalensis",
+          "Danaus genutia",
+          "Cuon alpinus",
+          "Prionailurus bengalensis"
+        ],
+        "target_agent": null
+      }
+    ],
+    "AMB-01": [
+      {
+        "status": "completed",
+        "decision": "not_identified",
+        "primary_species": null,
+        "candidate_order": [
+          "Tillandsia utriculata",
+          "Casuarina grandis",
+          "Cordyline australis",
+          "Tillandsia fasciculata",
+          "Harringtonia lauricola"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "not_identified",
+        "primary_species": null,
+        "candidate_order": [
+          "Tillandsia utriculata",
+          "Casuarina grandis",
+          "Cordyline australis",
+          "Tillandsia fasciculata",
+          "Harringtonia lauricola"
+        ],
+        "target_agent": null
+      },
+      {
+        "status": "completed",
+        "decision": "not_identified",
+        "primary_species": null,
+        "candidate_order": [
+          "Tillandsia utriculata",
+          "Casuarina grandis",
+          "Cordyline australis",
+          "Tillandsia fasciculata",
+          "Harringtonia lauricola"
+        ],
+        "target_agent": null
+      }
+    ],
+    "DEL-01": [
+      {
+        "status": "needs_agent",
+        "decision": null,
+        "primary_species": null,
+        "candidate_order": [],
+        "target_agent": "Genome"
+      },
+      {
+        "status": "needs_agent",
+        "decision": null,
+        "primary_species": null,
+        "candidate_order": [],
+        "target_agent": "Genome"
+      },
+      {
+        "status": "needs_agent",
+        "decision": null,
+        "primary_species": null,
+        "candidate_order": [],
+        "target_agent": "Genome"
+      }
+    ]
+  },
+  "stable_cases": 5
+}

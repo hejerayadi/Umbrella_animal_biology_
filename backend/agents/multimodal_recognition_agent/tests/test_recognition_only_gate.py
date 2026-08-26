@@ -12,7 +12,16 @@ from ..adapters.taxonomy import MockTaxonomyProvider
 from ..agent import RecognitionAgent
 from ..config import RECOGNITION_IMAGE_CONTEXT_KEY, ConfigError, RecognitionConfig
 from ..schema import AgentRequest, AgentStatus
-from .conftest import StubClassifier, image_entry, make_config, png_bytes, prediction
+from .conftest import (
+    FORBIDDEN_TRACKED_SUFFIXES,
+    StubClassifier,
+    forbidden_tracked,
+    git_tracked_paths,
+    image_entry,
+    make_config,
+    png_bytes,
+    prediction,
+)
 
 PACKAGE = pathlib.Path(__file__).resolve().parent.parent
 REPO_ROOT = PACKAGE.parent.parent.parent
@@ -500,25 +509,75 @@ def test_every_branch_terminates_with_the_shared_contract(instruction, context):
 def test_no_secret_model_weight_or_raw_image_is_committed():
     """`.env` exists locally and is git-ignored; nothing else may be added.
 
-    Demo images are generated on demand into a git-ignored directory - see
-    `fixtures/make_demo_images.py` - so no image bytes live in the repository.
+    The rule is about what is COMMITTED, so it asks git rather than walking the
+    filesystem. Generated and downloaded material - `fixtures/demo_images/` and
+    the Sprint 4 benchmark's `evaluation/assets/` - lives on disk in git-ignored
+    directories and is correctly invisible here.
     """
     ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert ".env" in [line.strip() for line in ignored], "the .env file must stay ignored"
-    assert "fixtures/demo_images/" in (PACKAGE / ".gitignore").read_text(encoding="utf-8")
+    agent_ignore = (PACKAGE / ".gitignore").read_text(encoding="utf-8")
+    assert "fixtures/demo_images/" in agent_ignore
 
-    committed = [
-        path for path in PACKAGE.rglob("*")
-        if path.is_file()
-        and ".venv" not in path.parts
-        and "__pycache__" not in path.parts
-        and "demo_images" not in path.parts
-        and path.name != ".env"
-    ]
-    for path in committed:
-        assert path.suffix not in (".pt", ".pth", ".bin", ".safetensors", ".ckpt"), path.name
-        assert path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"), path.name
-        assert path.suffix not in (".log",), path.name
+    offenders = forbidden_tracked(git_tracked_paths(PACKAGE))
+    assert offenders == [], f"forbidden files are tracked under the package: {offenders}"
+
+    assert ".env" not in {path.name for path in git_tracked_paths(PACKAGE)}
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["leaked.png", "photo.JPG", "sample.jpeg", "frame.webp",
+     "model.pt", "weights.safetensors", "checkpoint.ckpt", "adapter.bin",
+     "run.log"],
+)
+def test_a_tracked_forbidden_file_would_fail_the_gate(name):
+    """The gate must still bite. Fed a tracked path with a forbidden suffix, the
+    predicate has to report it - otherwise moving from a filesystem walk to git
+    would have quietly disarmed the rule instead of sharpening it."""
+    assert forbidden_tracked([pathlib.Path("evaluation/assets") / name]) == [name]
+
+
+def test_a_forbidden_file_is_caught_even_inside_an_ignored_directory_path():
+    """Directory name no longer buys an exemption. Under the old filesystem walk,
+    anything under `demo_images/` was skipped by name; if such a file were ever
+    genuinely committed, the gate would have missed it. Git-truth does not care
+    where the file sits - only whether it is tracked."""
+    assert forbidden_tracked(
+        [pathlib.Path("fixtures/demo_images/demo_identified.png")]
+    ) == ["demo_identified.png"]
+
+
+def test_the_ignored_benchmark_assets_do_not_fail_the_gate():
+    """The Sprint 4 benchmark downloads real photographs into
+    `evaluation/assets/`. They are git-ignored and never committed, so they must
+    not trip a gate about what is committed - which is exactly what they used to
+    do when the gate walked the filesystem."""
+    assets = PACKAGE / "evaluation" / "assets"
+    tracked_names = {str(path) for path in git_tracked_paths(PACKAGE)}
+    assert not any("evaluation/assets" in name.replace("\\", "/")
+                   for name in tracked_names), "a benchmark asset is tracked"
+
+    if assets.is_dir():
+        on_disk = [p for p in assets.iterdir() if p.is_file()]
+        # Whether or not the fetch has been run, nothing here may be tracked.
+        assert forbidden_tracked(git_tracked_paths(PACKAGE)) == []
+        for path in on_disk:
+            assert path.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"), path.name
+
+
+def test_the_benchmark_asset_directory_is_ignored():
+    ignore = (PACKAGE / "evaluation" / ".gitignore").read_text(encoding="utf-8")
+    assert "assets/" in ignore
+    assert "results/" in ignore
+
+
+def test_no_forbidden_file_is_tracked_anywhere_under_the_package():
+    """The live assertion, stated once more on its own so a failure names it
+    plainly rather than arriving inside a longer gate."""
+    tracked = git_tracked_paths(PACKAGE)
+    assert tracked, "git reported no tracked files - the gate would pass vacuously"
+    assert forbidden_tracked(tracked, FORBIDDEN_TRACKED_SUFFIXES + (".csv",)) == []
 
 
 def test_the_environment_example_holds_no_secret_value():

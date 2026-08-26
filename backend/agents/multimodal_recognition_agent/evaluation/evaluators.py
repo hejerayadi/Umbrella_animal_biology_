@@ -361,9 +361,21 @@ def evaluate_provenance(case: dict, obs: dict) -> MetricOutcome:
     if executed is False and has_candidates:
         problems.append("taxonomy_executed=False despite candidates being present")
 
+    # `reasoning_llm_used` means "a result was genuinely accepted", NOT "a call
+    # was made" - see workflows/state.py:65-66. So calls>0 with used=False is
+    # perfectly consistent: the call was spent and its result was rejected or
+    # never arrived, and the deterministic path took over. An earlier version of
+    # this check treated that as an inconsistency, which was wrong; the offline
+    # dry run never exposed it because the fake provider always succeeds.
+    #
+    # The genuinely impossible states are the reverse ones.
     calls = provenance.get("reasoning_llm_calls")
-    if isinstance(calls, int) and calls > 0 and provenance.get("reasoning_llm_used") is not True:
-        problems.append("reasoning_llm_calls > 0 but reasoning_llm_used is not True")
+    used = provenance.get("reasoning_llm_used")
+    if isinstance(calls, int) and calls == 0 and used is True:
+        problems.append("reasoning_llm_used is True but no call was made")
+    for field in ("plan_source", "explanation_source"):
+        if provenance.get(field) == "llm" and used is not True:
+            problems.append(f"{field} is 'llm' but reasoning_llm_used is not True")
 
     return _verdict(metric, not problems, "provenance_consistent", "provenance_inconsistent",
                     "; ".join(problems))

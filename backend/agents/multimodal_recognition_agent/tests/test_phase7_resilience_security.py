@@ -1535,24 +1535,19 @@ def test_13_1_no_vector_or_similarity_dependency_is_importable_from_the_runtime(
     assert offenders == []
 
 
-def test_13_2_no_model_weight_or_raw_image_is_present_in_the_package():
-    import pathlib
+def test_13_2_no_model_weight_or_raw_image_is_committed_in_the_package():
+    """No model weight, raw image or log may be COMMITTED under the package.
 
-    package = pathlib.Path(__file__).resolve().parent.parent
-    offenders = []
-    for path in package.rglob("*"):
-        if not path.is_file():
-            continue
-        if ".venv" in path.parts or "__pycache__" in path.parts:
-            continue
-        if "demo_images" in path.parts:   # generated, git-ignored
-            continue
-        if path.name == ".env":           # git-ignored
-            continue
-        if path.suffix.lower() in (".pt", ".pth", ".bin", ".safetensors", ".ckpt",
-                                   ".png", ".jpg", ".jpeg", ".webp", ".log"):
-            offenders.append(path.name)
-    assert offenders == []
+    Asks git rather than walking the filesystem. Generated and downloaded
+    material lives in git-ignored directories - `fixtures/demo_images/` and the
+    Sprint 4 benchmark's `evaluation/assets/` - and is correctly not visible to
+    this gate. Naming ignored directories to skip was the old approach; it had to
+    be kept in sync by hand and silently stopped covering new ones.
+    """
+    from .conftest import forbidden_tracked, git_tracked_paths
+
+    offenders = forbidden_tracked(git_tracked_paths())
+    assert offenders == [], f"forbidden files are tracked: {offenders}"
 
 
 def test_13_3_the_env_file_stays_ignored_and_the_example_holds_no_secret():
