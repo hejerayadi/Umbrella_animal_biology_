@@ -16,6 +16,7 @@ gradio_client==2.6.0
 
 # --- Recognition internal workflow (LangGraph StateGraph) ---
 langgraph==1.2.10
+langsmith==0.11.0
 
 # --- Recognition validation and test dependencies ---
 pydantic==2.13.4
