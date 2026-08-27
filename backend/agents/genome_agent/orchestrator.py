@@ -22,7 +22,7 @@ Graph shape::
   get_genome_metadata → join_parallel
   get_gene_annotation → join_parallel
   join_parallel → (conditional)
-    ├─ gaps detected      → reconstruction_resolver → explanation_writer → END
+    ├─ gaps detected      → find_target_gaps → reconstruction_resolver → explanation_writer → END
     ├─ viz needed         → generate_visualization
     └─ viz not needed     → explanation_writer → END
   generate_visualization → (conditional)
@@ -42,6 +42,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from .workflows.nodes.capability_resolver_node import capability_resolver_node
 from .workflows.nodes.explanation_writer_node import error_end_node, explanation_writer_node
+from .workflows.nodes.gap_finder_node import find_target_gaps_node
 from .workflows.nodes.genome_data_nodes import get_gene_annotation_node, get_genome_metadata_node
 from .workflows.nodes.query_router_node import query_router_node
 from .workflows.nodes.reconstruction_resolver_node import reconstruction_resolver_node
@@ -82,7 +83,7 @@ def _route_after_species_resolver(state: GenomeAgentState) -> str:
 def _route_after_join_parallel(state: GenomeAgentState) -> str:
     need = state.reconstruction_need or {}
     if need.get("status") == "NEEDS_AGENT":
-        return "reconstruction_resolver"
+        return "find_target_gaps"
     if state.visualization_scope == "none":
         return "explanation_writer"
     return "generate_visualization"
@@ -115,6 +116,7 @@ def build_genome_graph() -> CompiledStateGraph:
     graph.add_node("get_gene_annotation", get_gene_annotation_node)
     graph.add_node("join_parallel", _join_parallel_node)
     graph.add_node("generate_visualization", generate_visualization_node)
+    graph.add_node("find_target_gaps", find_target_gaps_node)
     graph.add_node("reconstruction_resolver", reconstruction_resolver_node)
     graph.add_node("capability_resolver", capability_resolver_node)
     graph.add_node("explanation_writer", explanation_writer_node)
@@ -144,11 +146,12 @@ def build_genome_graph() -> CompiledStateGraph:
         "join_parallel",
         _route_after_join_parallel,
         {
-            "reconstruction_resolver": "reconstruction_resolver",
+            "find_target_gaps": "find_target_gaps",
             "generate_visualization": "generate_visualization",
             "explanation_writer": "explanation_writer",
         },
     )
+    graph.add_edge("find_target_gaps", "reconstruction_resolver")
 
     graph.add_conditional_edges(
         "generate_visualization",

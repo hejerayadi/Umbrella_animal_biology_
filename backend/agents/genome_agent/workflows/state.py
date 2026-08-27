@@ -20,6 +20,8 @@ class GenomeAgentState:
     annotation: dict | None = None
     visualization: dict | None = None
     reconstruction_need: dict | None = None   # ← NEW
+    sequence_accession: str | None = None     # ← NEW: real NW_.../NC_... accession, resolved by find_target_gaps_node
+    target_gaps: list[dict] | None = None     # ← NEW: [{start, end, length, left_flank, right_flank}, ...]
     explanation: str | None = None
     errors: Annotated[list[str], operator.add] = field(default_factory=list)
     waiting_stack: list[str] = field(default_factory=list)

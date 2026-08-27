@@ -48,6 +48,11 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
         reconstruction_need = {
             "status": "NEEDS_AGENT",
             "target_agent": None,
+            # Carried here (not just left inside state.metadata) so it's
+            # available to the adapter/reconstruction handoff even when the
+            # caller didn't ask for metadata to be surfaced (needs_metadata
+            # gates state.metadata, not this flag).
+            "assembly_level": result["assembly_level"],
             "prompt_to_target_agent": (
                 f"Genome assembly {assembly_id} is at '{result['assembly_level']}' level "
                 f"with gaps/unresolved regions. Reconstruct the complete genome sequence."

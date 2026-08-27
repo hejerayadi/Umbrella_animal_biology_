@@ -9,20 +9,6 @@ This keeps rendering logic separate from LLM reasoning and NCBI data fetching.
 
 from __future__ import annotations
 
-from xml.sax.saxutils import escape as _xml_escape
-
-
-def _text(value: object) -> str:
-    """XML-escape a value before it goes inside an SVG <text> element.
-
-    Gene names, locations and species labels come from NCBI, and an ampersand
-    in any of them (or a stray angle bracket) makes the document malformed.
-    That matters more than it looks: SVG is parsed as strict XML, so a browser
-    showing this chart as an image renders nothing at all - no error, just a
-    blank frame - for the one species whose gene happened to contain an "&".
-    """
-    return _xml_escape("" if value is None else str(value))
-
 
 def render_chromosome_map(
     gene_table: list[dict],
@@ -69,11 +55,11 @@ def render_chromosome_map(
         )
         # Draw gene name
         svg_parts.append(
-            f'<text x="30" y="{y-2}" font-size="12" fill="white">{_text(gene_name)}</text>'
+            f'<text x="30" y="{y-2}" font-size="12" fill="white">{gene_name}</text>'
         )
         # Draw location
         svg_parts.append(
-            f'<text x="180" y="{y-2}" font-size="11" fill="#666">{_text(location)}</text>'
+            f'<text x="180" y="{y-2}" font-size="11" fill="#666">{location}</text>'
         )
     
     svg_parts.append('</svg>')
@@ -152,7 +138,7 @@ def render_size_comparison(
         svg_parts.append(
             f'<text x="{left_margin - 10}" y="{y + bar_height * 0.65}" '
             f'text-anchor="end" font-size="14" font-family="sans-serif" '
-            f'fill="{axis_color}">{_text(label)}</text>'
+            f'fill="{axis_color}">{label}</text>'
         )
         
         # Draw bar
