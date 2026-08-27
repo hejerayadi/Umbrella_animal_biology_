@@ -20,10 +20,25 @@ The species candidates exist only after `classify_with_mock_bioclip2`, and the
 confidence gate closes before the taxonomy sources are consulted at all. Neither
 the text, nor the reasoning model, nor GBIF, nor NCBI has any point at which it
 could add a taxon to that list.
+
+--- Sprint 4 Phase 5 -------------------------------------------------------
+
+`plan`, `classify`, `taxonomy` and `explain` each accept an optional
+`RecognitionTracer` (see `..observability`) and, at the end of their work,
+record one sanitized event describing what actually happened: which provider
+or LLM role ran, whether it fell back to the deterministic path, and (for
+classify) the fixed error code on a controlled failure. Nothing else about a
+node's behaviour changes. Tracing is disabled by default - every node factory
+defaults to a shared, disabled `_NULL_TRACER`, so a call site or test that
+predates Phase 5 needs no change and reaches no client, no network and no
+extra work at all when tracing is off. LangGraph's own tracing already covers
+the node-to-node skeleton when LangSmith is configured; the events recorded
+here are the provider-level detail LangGraph's tracing cannot see on its own.
 """
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable
 
 from ..adapters.bioclip import BioCLIP2Classifier
@@ -36,10 +51,11 @@ from ..adapters.reasoning_llm import (
     sanitize_plan,
 )
 from ..adapters.taxonomy import MockTaxonomyProvider
-from ..config import RECOGNITION_MODE_MOCK_CLASSIFICATION, RecognitionConfig
+from ..config import RECOGNITION_MODE_MOCK_CLASSIFICATION, LangSmithConfig, RecognitionConfig
 from ..domain import confidence, ranking
 from ..domain.errors import RecognitionError
 from ..domain.models import RecognitionDecision
+from ..observability import RecognitionTracer
 from ..text_analysis import RuleBasedTextAnalyzer, align_text_with_candidates
 from ..validation import validate_paired_request
 from .state import HELPER_OUTPUT_KEYS, RecognitionState
@@ -53,6 +69,16 @@ Node = Callable[[RecognitionState], dict]
 # What the response says when the instruction asked for something this agent
 # does not provide. There is one such thing, and this is where it is named.
 UNSUPPORTED_SIMILARITY_CAPABILITY = "visual_similarity_search"
+
+# The default when a node factory is called without a tracer - e.g. by an
+# existing test that predates Phase 5. Disabled, so it builds no client and
+# makes no call; every `.record()` on it is a no-op. One shared instance, not
+# one per node: it holds no per-request state, so sharing it is safe.
+_NULL_TRACER = RecognitionTracer(LangSmithConfig())
+
+
+def _ms_since(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
 
 
 def _failed(exc: RecognitionError) -> dict:
@@ -145,7 +171,8 @@ def make_validate_node(config: RecognitionConfig) -> Node:
 # --- 2. plan_or_analyze_text (LLM call 1 of 2) -----------------------------
 
 def make_plan_node(
-    analyzer: RuleBasedTextAnalyzer, llm: Any, config: RecognitionConfig
+    analyzer: RuleBasedTextAnalyzer, llm: Any, config: RecognitionConfig,
+    tracer: RecognitionTracer = _NULL_TRACER,
 ) -> Node:
     """Deterministic evidence first, then let the model plan on top of it.
 
@@ -156,6 +183,7 @@ def make_plan_node(
     """
 
     def _node(state: RecognitionState) -> dict:
+        started = time.perf_counter()
         assert state.normalized is not None
         evidence = analyzer.analyze(state.normalized.instruction)
         default_top_k = config.top_k_species
@@ -231,6 +259,14 @@ def make_plan_node(
             "[Recognition] plan source=%s intent=%s steps=%d llm_calls=%d",
             plan.source, merged.intent, len(plan.steps), calls,
         )
+        tracer.record({
+            "node": "plan",
+            "operation": "plan_or_analyze_text",
+            "duration_ms": _ms_since(started),
+            "llm_role": "planner",
+            "llm_call_count": calls,
+            "fallback": plan.source != "llm",
+        })
         return updates
 
     return _node
@@ -238,7 +274,10 @@ def make_plan_node(
 
 # --- 3. classify_with_mock_bioclip2 ----------------------------------------
 
-def make_classify_node(classifier: BioCLIP2Classifier, config: RecognitionConfig) -> Node:
+def make_classify_node(
+    classifier: BioCLIP2Classifier, config: RecognitionConfig,
+    tracer: RecognitionTracer = _NULL_TRACER,
+) -> Node:
     """The ONLY source of species candidates in this agent.
 
     One image goes in, an already-ranked list of taxonomic labels comes back.
@@ -248,15 +287,26 @@ def make_classify_node(classifier: BioCLIP2Classifier, config: RecognitionConfig
     """
 
     def _node(state: RecognitionState) -> dict:
+        started = time.perf_counter()
         assert state.normalized is not None
         # A plan may narrow K, never widen it past the configured maximum.
         planned = getattr(state.plan, "top_k", None) or config.top_k_species
         top_k = min(planned, config.top_k_species)
+        provider_mode = getattr(classifier, "recognition_mode", None)
 
         try:
             predictions = classifier.classify(state.normalized, top_k)
             candidates = ranking.build_candidates(list(predictions), top_k=top_k)
         except RecognitionError as exc:
+            # Only the fixed error code - never the exception body, which
+            # could quote a malformed fixture or an upstream response.
+            tracer.record({
+                "node": "classify",
+                "operation": "classify_with_mock_bioclip2",
+                "duration_ms": _ms_since(started),
+                "bioclip_provider_mode": provider_mode,
+                "error_code": exc.code.value,
+            })
             return _failed(exc)
 
         _logger.info(
@@ -265,6 +315,13 @@ def make_classify_node(classifier: BioCLIP2Classifier, config: RecognitionConfig
             getattr(classifier, "recognition_mode", "unknown"),
             len(candidates), top_k,
         )
+        tracer.record({
+            "node": "classify",
+            "operation": "classify_with_mock_bioclip2",
+            "duration_ms": _ms_since(started),
+            "bioclip_provider_mode": provider_mode,
+            "candidate_count": len(candidates),
+        })
         return {
             "predictions": list(predictions),
             "candidates": candidates,
@@ -329,7 +386,9 @@ def make_confidence_node(config: RecognitionConfig) -> Node:
 
 # --- 5. validate_taxonomy_with_mock_gbif_and_ncbi --------------------------
 
-def make_taxonomy_node(provider: MockTaxonomyProvider) -> Node:
+def make_taxonomy_node(
+    provider: MockTaxonomyProvider, tracer: RecognitionTracer = _NULL_TRACER,
+) -> Node:
     """Validate and normalise through both mocked sources.
 
     Deliberately downstream of the confidence gate: neither source can pick a
@@ -339,6 +398,7 @@ def make_taxonomy_node(provider: MockTaxonomyProvider) -> Node:
     """
 
     def _node(state: RecognitionState) -> dict:
+        started = time.perf_counter()
         decision = state.decision
         enriched = []
         report: dict[str, Any] = {}
@@ -389,6 +449,13 @@ def make_taxonomy_node(provider: MockTaxonomyProvider) -> Node:
             updates["decision"] = decision.model_copy(
                 update={"candidates": enriched, "primary_species": primary}
             )
+        tracer.record({
+            "node": "taxonomy",
+            "operation": "validate_taxonomy_with_mock_gbif_and_ncbi",
+            "duration_ms": _ms_since(started),
+            "taxonomy_provider_mode": getattr(provider, "mode", None),
+            "taxonomy_available": not degraded,
+        })
         return updates
 
     return _node
@@ -396,7 +463,9 @@ def make_taxonomy_node(provider: MockTaxonomyProvider) -> Node:
 
 # --- 6. explain (LLM call 2 of 2) ------------------------------------------
 
-def make_explain_node(llm: Any, config: RecognitionConfig) -> Node:
+def make_explain_node(
+    llm: Any, config: RecognitionConfig, tracer: RecognitionTracer = _NULL_TRACER,
+) -> Node:
     """Ask the model to phrase the evidence - then check what it wrote.
 
     An explanation naming a species the classifier did not return is discarded
@@ -405,6 +474,7 @@ def make_explain_node(llm: Any, config: RecognitionConfig) -> Node:
     """
 
     def _node(state: RecognitionState) -> dict:
+        started = time.perf_counter()
         decision = state.decision
         assert decision is not None
 
@@ -469,6 +539,14 @@ def make_explain_node(llm: Any, config: RecognitionConfig) -> Node:
         # this run, so neither the model nor a stale constant may author it.
         body = f"{body} {_safety_footer(state, gbif_mode, ncbi_mode, taxonomy_executed)}"
 
+        tracer.record({
+            "node": "explain",
+            "operation": "explain",
+            "duration_ms": _ms_since(started),
+            "llm_role": "explainer",
+            "llm_call_count": calls,
+            "fallback": source != "llm",
+        })
         return {
             "decision": decision.model_copy(update={"explanation": body}),
             "llm_explain_calls": calls,
