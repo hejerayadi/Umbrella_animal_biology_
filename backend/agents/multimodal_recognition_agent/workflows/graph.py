@@ -26,10 +26,20 @@ state built in `run`.
 Providers are captured by the node factories rather than carried in the state -
 the same pattern the Global Orchestrator uses for its worker nodes - so the
 state stays a plain data object with nothing unserializable in it.
+
+--- Sprint 4 Phase 5 -------------------------------------------------------
+
+One `RecognitionTracer` is built here, from this workflow's own config, and
+passed into the node factories that make a provider or LLM call (plan,
+classify, taxonomy, explain - see `nodes.py`). Disabled by default; see
+`LangSmithConfig`. `run()` also records one root event per request, whatever
+branch was taken, so a single trace roots the whole request without
+duplicating what LangGraph's own tracing already covers node-to-node.
 """
 from __future__ import annotations
 
 import logging
+import time
 
 from langgraph.graph import END, START, StateGraph
 
@@ -37,6 +47,7 @@ from ..adapters.bioclip import BioCLIP2Classifier
 from ..adapters.reasoning_llm import NullRecognitionLLM
 from ..adapters.taxonomy import MockTaxonomyProvider
 from ..config import MODEL_TARGET, RECOGNITION_MODE_MOCK_CLASSIFICATION, RecognitionConfig
+from ..observability import RecognitionTracer, build_tracer
 from ..schema import AgentResult, AgentStatus
 from ..text_analysis import RuleBasedTextAnalyzer
 from . import nodes
@@ -241,6 +252,11 @@ class RecognitionWorkflow:
         self._text_analyzer = text_analyzer
         # Disabled unless one is supplied. Recognition never depends on it.
         self._reasoning_llm = reasoning_llm or NullRecognitionLLM()
+        # One tracer for the whole workflow's lifetime, built from Recognition's
+        # own config. Disabled by default - see LangSmithConfig. Passed into
+        # only the nodes that make a provider or LLM call; the rest have
+        # nothing a graph-level LangGraph trace does not already show.
+        self._tracer: RecognitionTracer = build_tracer(self._config.langsmith)
         self._graph = self._build_graph()
 
     def _build_graph(self):
@@ -248,11 +264,13 @@ class RecognitionWorkflow:
 
         graph.add_node(VALIDATE, nodes.make_validate_node(self._config))
         graph.add_node(PLAN, nodes.make_plan_node(
-            self._text_analyzer, self._reasoning_llm, self._config))
-        graph.add_node(CLASSIFY, nodes.make_classify_node(self._classifier, self._config))
+            self._text_analyzer, self._reasoning_llm, self._config, self._tracer))
+        graph.add_node(CLASSIFY, nodes.make_classify_node(
+            self._classifier, self._config, self._tracer))
         graph.add_node(CONFIDENCE, nodes.make_confidence_node(self._config))
-        graph.add_node(TAXONOMY, nodes.make_taxonomy_node(self._taxonomy))
-        graph.add_node(EXPLAIN, nodes.make_explain_node(self._reasoning_llm, self._config))
+        graph.add_node(TAXONOMY, nodes.make_taxonomy_node(self._taxonomy, self._tracer))
+        graph.add_node(EXPLAIN, nodes.make_explain_node(
+            self._reasoning_llm, self._config, self._tracer))
         graph.add_node(DELEGATE, nodes.make_delegation_node())
         graph.add_node(FINALIZE, make_finalize_node())
 
@@ -270,6 +288,7 @@ class RecognitionWorkflow:
     # -- entry point --------------------------------------------------------
 
     def run(self, instruction, context) -> AgentResult:
+        started = time.perf_counter()
         initial = RecognitionState(instruction=instruction, context=context)
         # Config values the finalize node needs, snapshotted so the state stays
         # a plain data object with no provider references in it.
@@ -281,11 +300,28 @@ class RecognitionWorkflow:
             else final.get("agent_result")
         )
         if result is None:  # defensive: the graph always reaches finalize
-            return AgentResult(
+            result = AgentResult(
                 status=AgentStatus.FAILED,
                 output={"error_code": "WORKFLOW_INCOMPLETE",
                         "error": "The recognition workflow produced no result."},
             )
+
+        # One root record per request, whatever branch was taken. The fixed
+        # error code only - never the output dict, which may carry a
+        # not-otherwise-sensitive but still request-shaped value.
+        event: dict = {
+            "node": "finalize",
+            "operation": "recognition_request",
+            "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+            "status": result.status.value,
+        }
+        if result.status is AgentStatus.FAILED and isinstance(result.output, dict):
+            event["error_code"] = result.output.get("error_code")
+        elif result.status is AgentStatus.COMPLETED and isinstance(result.output, dict):
+            recognition = result.output.get("recognition") or {}
+            event["decision"] = recognition.get("decision")
+        self._tracer.record(event)
+
         return result
 
     def _config_snapshot(self) -> dict:
