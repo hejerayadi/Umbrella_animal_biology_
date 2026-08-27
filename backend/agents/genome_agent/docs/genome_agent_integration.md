@@ -172,12 +172,67 @@ incomplete/gapped assembly would be misleading.
 LLM-with-deterministic-fallback pattern used by the protein-structure handoff)
 and finalizes `prompt_to_target_agent`, then hands off to `explanation_writer`.
 
-**Adapter precedence.** `orchestrator_adapter.to_result()` checks
-`reconstruction_need` before the visualization `NEEDS_AGENT` check, for the
-same reason the graph does — the two are mutually exclusive in practice
+**Gap finding (new).** Before the resolver runs, `find_target_gaps_node`
+(`workflows/nodes/gap_finder_node.py`, backed by the new
+`subagents/gap_finder.py`) locates the assembly's actual gap coordinates and
+resolves its real Nuccore sequence accession:
+
+1. Resolve the assembly accession (e.g. `GCF_000687225.1`) to a Nuccore UID
+   via the same esearch/elink two-hop dance `sequence_window.py` already
+   documents, then esummary that UID to recover the real accession string
+   (e.g. `NW_007907101.1`) — this is `state.sequence_accession`.
+2. Fetch that sequence's NCBI feature table (`efetch rettype=ft`, KB-scale
+   regardless of chromosome size) and parse out `gap`/`assembly_gap`
+   features for start/end/length — this is where `state.target_gaps` comes
+   from; nothing before this wired up actual per-gap coordinates.
+3. For each gap (capped at `DEFAULT_MAX_GAPS = 5`), call
+   `sequence_window.fetch_sequence_window` for `DEFAULT_FLANK_BP = 50` bp on
+   each side, giving each gap its `left_flank`/`right_flank` strings. This is
+   the first real caller of `sequence_window.py`, which until now was a
+   standalone subagent not wired into the graph.
+
+A gap-finding failure (e.g. NCBI unreachable) is non-fatal: the reconstruction
+handoff still proceeds with `sequence_accession: None` / `target_gaps: []`
+and the failure recorded in `state.errors`, surfaced as a `warnings` key in
+the handoff context — better than dropping the escalation entirely.
+
+**Adapter precedence and payload shape.** `orchestrator_adapter.to_result()`
+checks `reconstruction_need` before the visualization `NEEDS_AGENT` check, for
+the same reason the graph does — the two are mutually exclusive in practice
 (the graph only reaches `generate_visualization` when `reconstruction_need`
 was *not* triggered), but checking in the same order keeps the adapter's
 logic legible on its own.
+
+Unlike every other branch of `to_result()`, the reconstruction branch does
+**not** reuse the generic `output` dict (`genome`, `genome_metadata`,
+`gene_list`, etc.) — the Reconstruction Agent doesn't read those keys. It
+instead builds the exact payload the Reconstruction Agent's contract expects:
+
+```json
+{
+  "instruction": "Reconstruct the selected unresolved regions.",
+  "context": {
+    "scientific_name": "Ursus maritimus",
+    "assembly_id": "GCF_000687225.1",
+    "sequence_accession": "NW_007907101",
+    "assembly_level": "Scaffold",
+    "target_gaps": [
+      {
+        "start": 125430,
+        "end": 125474,
+        "length": 45,
+        "left_flank": "ACTG...",
+        "right_flank": "GCTA..."
+      }
+    ]
+  }
+}
+```
+
+`AgentResult.prompt_to_target_agent` carries the fixed `instruction` string
+above; `AgentResult.output` carries `context`. `target_agent` is still
+whatever `reconstruction_resolver_node` decided (usually `"Reconstruction
+Agent"`).
 
 This makes Genome Metadata's role broader than "genome size / chromosome
 count / karyotype" (section 2's routing table) — it is also the sole

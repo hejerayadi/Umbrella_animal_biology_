@@ -277,6 +277,20 @@ def _make_annotation():
     }
 
 
+_FAKE_GAP_RESULT = {
+    "sequence_accession": "NW_007907101.1",
+    "target_gaps": [
+        {
+            "start": 125430,
+            "end": 125474,
+            "length": 45,
+            "left_flank": "ACTG",
+            "right_flank": "GCTA",
+        }
+    ],
+}
+
+
 class TestGraphReconstructionRouting:
     """
     End-to-end graph run with all external calls mocked.
@@ -306,6 +320,10 @@ class TestGraphReconstructionRouting:
             patch(
                 "genome_agent.workflows.nodes.genome_data_nodes.get_gene_annotation",
                 new=self._annotation_mock,
+            ),
+            patch(
+                "genome_agent.workflows.nodes.gap_finder_node.find_target_gaps",
+                new=AsyncMock(return_value=_FAKE_GAP_RESULT),
             ),
             patch(
                 "genome_agent.workflows.nodes.reconstruction_resolver_node.resolve_capability",
@@ -362,13 +380,21 @@ class TestGraphReconstructionRouting:
         result = self._run("axolotl")
         assert result.prompt_to_target_agent, "prompt_to_target_agent must not be empty"
 
-    def test_scaffold_output_still_contains_metadata(self):
-        """Even when escalating, the partial output should carry whatever data was fetched."""
+    def test_scaffold_output_is_reconstruction_context_shape(self):
+        """Escalating to the Reconstruction Agent emits the {instruction, context}
+        shape it actually expects, not the generic output dict (see
+        docs/genome_agent_integration.md §9a and orchestrator_adapter.to_result)."""
         self._metadata_mock.return_value = _SCAFFOLD_METADATA
         result = self._run("axolotl")
-        assert result.output.get("genome_metadata") is not None, (
-            "output['genome_metadata'] should be populated even when escalating to Reconstruction Agent"
-        )
+        assert result.prompt_to_target_agent == "Reconstruct the selected unresolved regions."
+        context = result.output
+        assert context == {
+            "scientific_name": _SCAFFOLD_SPECIES["scientific_name"],
+            "assembly_id": _SCAFFOLD_ASSEMBLY,
+            "sequence_accession": _FAKE_GAP_RESULT["sequence_accession"],
+            "assembly_level": "Scaffold",
+            "target_gaps": _FAKE_GAP_RESULT["target_gaps"],
+        }
 
     # ── contig (second incomplete level) ──────────────────────────────────
 
