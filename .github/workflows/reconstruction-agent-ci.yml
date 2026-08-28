@@ -1,0 +1,146 @@
+name: Reconstruction Agent CI
+
+# Every job runs with `working-directory` set to the agent, so a check that is
+# green on a developer's machine is green here. That is not cosmetic: the
+# agent's `pyproject.toml` sets `mypy_path = "src"` and `pythonpath = ["src"]`,
+# both resolved against the *current directory* rather than the config file.
+# Run from the repository root, mypy cannot resolve the package at all and
+# degrades every import to `Any` - which reported 40 errors against 0 locally,
+# none of them real.
+
+on:
+  push:
+    # Not a branch allowlist. A CI that only fires on the integration branches
+    # tells you about a break after the merge request is open, which is the one
+    # moment it is expensive to hear it.
+    branches: ["**"]
+    paths:
+      - "backend/agents/reconstruction_agent/**"
+      - ".github/workflows/reconstruction-agent-ci.yml"
+  pull_request:
+    paths:
+      - "backend/agents/reconstruction_agent/**"
+      - ".github/workflows/reconstruction-agent-ci.yml"
+  workflow_dispatch:
+
+# A new push to the same branch makes the previous run irrelevant. Cancelling
+# it keeps the queue short without losing any signal.
+concurrency:
+  group: reconstruction-agent-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON: "3.12"
+
+defaults:
+  run:
+    working-directory: backend/agents/reconstruction_agent
+
+jobs:
+  offline-tests:
+    name: Lint, types and offline tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/agents/reconstruction_agent/uv.lock
+
+      # `--locked` fails the build if pyproject.toml and uv.lock have drifted
+      # apart, so a dependency can never change without its lock entry.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Format check
+        run: uv run ruff format --check src tests
+
+      - name: Type check
+        run: uv run mypy src
+
+      # `external` reaches NCBI and EMBL-EBI and spends minutes in their
+      # queues; `evaluation` is slow by construction. Neither belongs on a
+      # commit, and both are covered by the ground-truth script instead.
+      - name: Offline tests
+        run: uv run pytest tests -q -m "not external and not evaluation"
+
+  platform-contract:
+    name: Platform contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Deliberately separate from the job above and rooted at the repository,
+    # because what it checks is this agent's effect on *other* agents. It needs
+    # no dependencies installed: everything here is standard library.
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # `backend/registry.py` reads card.json for all nine agents at import
+      # time, so a malformed or missing card here takes down the orchestrator,
+      # `backend/api.py` and `run_agents.py` - not just this agent. It has
+      # happened; it is cheap to check and expensive to miss.
+      - name: Agent card is loadable and keeps its contract
+        run: |
+          python - <<'PY'
+          import json
+          import pathlib
+
+          card = json.loads(
+              pathlib.Path("backend/agents/reconstruction_agent/card.json").read_text()
+          )
+          for key in ("name", "description", "capabilities", "input", "output"):
+              assert key in card, f"card.json is missing {key!r}"
+
+          # Other agents read these keys out of the shared orchestrator
+          # context. They are a cross-agent contract, not a response format.
+          assert set(card["output"]) == {
+              "reconstruction",
+              "reconstruction_summary",
+              "reconstruction_sequence",
+          }, "card.json output keys are a cross-agent contract and changed"
+          print("card.json OK:", card["name"])
+          PY
+
+      # The launcher targets `backend.agents.reconstruction_agent.api:app`. A
+      # shim that does not expose `app` fails at startup rather than at import,
+      # which is a much later and much noisier place to find out.
+      - name: Launcher shim exposes the application
+        run: |
+          python - <<'PY'
+          import ast
+          import pathlib
+
+          source = pathlib.Path("backend/agents/reconstruction_agent/api.py").read_text()
+          tree = ast.parse(source)
+          exported = {
+              alias.asname or alias.name
+              for node in ast.walk(tree)
+              if isinstance(node, ast.ImportFrom)
+              for alias in node.names
+          }
+          assert "app" in exported, "api.py must re-export `app` for run_agents.py"
+          print("launcher shim OK")
+          PY
+
+      # The agent owns exactly one directory. A stray package at the repository
+      # root shadows the installed one - `sys.path[0]` is the root when the
+      # launcher runs - and every import silently resolves to the wrong copy.
+      - name: No shadowing package at the repository root
+        run: |
+          test ! -d reconstruction_agent \
+            || (echo "A root-level reconstruction_agent/ shadows the installed package." && exit 1)
+          echo "no shadowing package"
