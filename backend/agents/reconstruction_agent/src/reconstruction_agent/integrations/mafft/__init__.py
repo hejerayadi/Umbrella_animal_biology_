@@ -1,0 +1,1 @@
+"""EMBL-EBI MAFFT integration."""
