@@ -1,331 +1,226 @@
 # Reconstruction Agent
 
-Reconstructs unresolved regions of incomplete animal genomes from homologous
-reference sequence, and explains the evidence behind every proposed base.
+Fills unresolved regions (`N...N`) in incomplete animal genome assemblies, from
+homology evidence, or refuses and says why. Umbrella slot **8006**.
 
-The scientific objective is in [description.md](description.md); the
-orchestrator-facing metadata is in [card.json](card.json). This file is about
-how the code is arranged and how to run it.
+The agent never generates DNA. Every base it returns came from a real sequenced
+organism, arrived through an alignment that demonstrably spans the gap, and
+carries a confidence computed from measurable evidence by deterministic code.
 
-## What it actually does
+- [What it does](#what-it-does)
+- [The two contracts](#the-two-contracts)
+- [How the search is scoped](#how-the-search-is-scoped)
+- [What it refuses to do](#what-it-refuses-to-do)
+- [Running and testing](#running-and-testing)
+- [Configuration](#configuration)
+- [Layout](#layout)
+- [Known limits](#known-limits)
 
-Given a nucleotide sequence containing runs of `N`, the agent runs a genuine
-agentic loop — not a fixed pipeline. It can reject its own answer and go round
-again:
+## What it does
 
 ```
-load_or_init → detect_gaps → (work?) ──no──> finalize
-                                │yes
-                                ▼
-        ┌──────────► plan ──► select_tools ──► (runnable?) ──no──> critique
-        │                            │yes                             ▲
-        │                            ▼                                │
-        │                   execute_tools ──► observe ──► reason ──► validate
-        │                                                              │
-        │                                                              ▼
-        └──── REVISE ◄──────────────────────────────────────────── decide
-                                     │
-                  ACCEPT / ABSTAIN / budget spent / out of time
-                                     ▼
-                                 finalize
+accession ─► NCBI record ─► gap detection ─► triage
+                  │
+                  ▼
+           NCBI Taxonomy ─► TargetProfile
+                                  │
+                       taxonomic scopes (family, order, class)
+                                  │
+                   concurrent NCBI BLAST round, target excluded
+                                  │
+                        fetch homologues ─► MAFFT (EMBL-EBI)
+                                  │
+                          gap-column analysis
+                                  │
+                      competing candidates ─► scoring
+                                  │
+                        RESOLVED  or  UNRESOLVED + reason
 ```
 
-1. **Finds the gaps** and the known sequence flanking each one.
-2. **Plans** which tools to run — with an LLM when configured, otherwise a
-   deterministic pipeline that is the correct plan for the common case.
-3. **Selects** concrete invocations, refusing any the budget cannot pay for.
-4. **Acts**, then records an **observation** per attempt — including the ones
-   that found nothing, because "BLAST returned no hits" is evidence about the
-   gap.
-5. **Reasons** a consensus out of the alignment and **validates** it.
-6. **Critiques** its own answer and **decides**: ACCEPT, REVISE (re-plan with
-   the objection attached), or ABSTAIN.
+Measured end to end on a withheld 45-base region of the polar bear mitogenome
+`NC_003428.1`: all 45 bases recovered exactly, confidence 0.96, in 78 s.
 
-**ABSTAIN is a result, not a failure.** "These gaps cannot be reconstructed
-from the references available" is a real scientific answer, and it comes back
-as `completed` with the gaps marked unresolved.
+Two services are used, for two different jobs. **NCBI** provides the sequences,
+the taxonomy and the homology search. **EMBL-EBI** provides MAFFT and nothing
+else - NCBI publishes no alignment service, and no MAFFT binary is installed
+anywhere in this repository.
 
-Every reconstructed base is an inference from homologous sequence, not an
-observation. The output says so, carries the accessions behind it, and reports
-a confidence that falls as the evidence weakens.
+## The two contracts
 
-## Talking to the orchestrator
+**`POST /execute`** - the Umbrella orchestrator's. Root-mounted, returns the bare
+repo-wide `AgentResult`, never the envelope, and **always HTTP 200** even on
+failure. The orchestrator parses one schema and turns any non-200 into "agent
+unreachable", which would hide a well-described error behind a transport one.
 
-The agent runs inside someone else's HTTP request, and two numbers in
-`backend/orchestrator/langgraph/nodes/worker_node.py` shape everything:
-
-| Constraint | Consequence |
-| --- | --- |
-| **600 s** per call (`AGENT_READ_TIMEOUT_SECONDS` in `worker_node.py`) | One EMBL-EBI BLAST job takes ~193 s, so a round of searches fits in a single call — but a many-gap scaffold still does not. |
-| **3 CONTINUE retries** (`CONTINUE_RETRY_DELAYS` in `worker_node.py`) | The agent gets **four HTTP slices**; a fifth is force-failed and every finding discarded. |
-
-So the agent **slices** its work. It derives its tool deadline from the global
-`AGENT_READ_TIMEOUT_SECONDS` minus `AGENT_FINALIZATION_RESERVE_SECONDS`, then
-checkpoints and returns `CONTINUE` with `retryable=true`; the orchestrator
-retries, and the next slice resumes from the checkpoint. On the **last** slice
-it returns partial results as `completed` rather than asking for another.
-
-> The deadline is derived rather than duplicated: configure the global timeout
-> and a finalisation reserve. This prevents an old per-agent yield value from
-> starving a BLAST job after the orchestrator timeout changes.
-
-The checkpoint is keyed on **`X-Trace-Id`** — the orchestrator's run-wide id
-(`orchestrator/state.py:35`), which is the only identifier stable across
-retries. `X-Request-Id` is unique per attempt and would never resume.
-
-`output` is namespaced under `reconstruction`, because the orchestrator merges
-it flat into the context all nine agents share; bare keys like `summary` would
-collide.
-
-When phylogeny is the blocker the agent returns `NEEDS_AGENT` for the Evolution
-Agent, carrying its findings so far — the orchestrator force-fails an
-escalation that adds no new context keys.
-
-## Budgets
-
-Guard rails, not cost control: an unbounded loop gets the whole run
-force-failed.
-
-| Budget | Default | Setting |
-| --- | --- | --- |
-| Tool calls | 24 | `RECONSTRUCTION_MAX_TOOL_CALLS` |
-| BLAST / MAFFT calls | 8 / 8 | `RECONSTRUCTION_MAX_BLAST_CALLS`, `..._MAFFT_CALLS` |
-| LLM tokens | 60 000 | `RECONSTRUCTION_MAX_LLM_TOKENS` |
-| Wall clock per slice | timeout − reserve | `AGENT_READ_TIMEOUT_SECONDS` − `AGENT_FINALIZATION_RESERVE_SECONDS` |
-
-The call counts bound **how many gaps** a run works on, not how long it takes:
-`execute_tools` dispatches a round with `asyncio.gather`, so eight concurrent
-BLAST searches cost about what one costs. The wall clock is the real limit.
-
-Consumption is reported in the result (`budget`, `slices`, `stop_reason`,
-`observations`), so a partial answer explains itself rather than looking
-truncated. A region left unresolved says **which** kind of unresolved it is —
-"no usable reference evidence" is a finding about the sequence, while "the run
-ran out of time before the search returned" is a fact about the run and invites
-another attempt. Collapsing the two is what let a starved run read as a
-scientific abstention.
-
-## Persistence
-
-The agent shares **one database and one schema** with the rest of Umbrella.
-The URL is declared **once, in `backend/.env` as `DATABASE_URL`** — this agent
-reads that file directly, so there is no second copy to drift when the password
-or port changes. Its tables are told apart by name, not by namespace.
-
-Reading a config file is not importing a package: the agent still has its own
-`.venv` and never imports `backend`. Set `RECONSTRUCTION_DATABASE_URL` only to
-point it somewhere else (a container, a CI job); it wins when present.
-
-- **Checkpoints** — `AsyncPostgresSaver` (`checkpoints`, `checkpoint_writes`,
-  `checkpoint_blobs`, `checkpoint_migrations`), created and managed by
-  LangGraph itself. Without a database URL the agent falls back to in-memory
-  and **CONTINUE cannot resume**; `/api/v1/health` reports which you have.
-- **Audit** — `reconstruction_runs`, one row per logical run (keyed by trace
-  id) recording slices, budgets and why it stopped. Owned by this agent's
-  Alembic history.
-
-```bash
-uv run alembic upgrade head
+```jsonc
+// in
+{"instruction": "...", "context": {"sequence_accession": "NC_003428.1"}}
+// out
+{"status": "completed", "output": {
+  "reconstruction": { /* full detail */ },
+  "reconstruction_summary": "Reconstructed 1 of 1 unresolved regions in Ursus maritimus.",
+  "reconstruction_sequence": "AAGCTATCGGG..."
+}}
 ```
 
-**The agent keeps its own Alembic version table**, `alembic_version_reconstruction`.
-The backend runs a separate history in the default `alembic_version`; sharing
-one row would make each treat the other's revision as unknown and try to repair
-it. Autogenerate is scoped to an allow-list drawn from this agent's own
-metadata, so it never proposes touching `users`, `invitations` or anything else
-the backend adds later.
+Those three `output` keys are declared in `card.json` and read by other agents
+from the shared context. Renaming one breaks them silently.
+
+**`/api/v1/...`** - everyone else. `{data, meta, error}` on every response, and
+HTTP status codes used properly (404 not found, 422 bad domain values, 502
+upstream broke, 503 dependency down, 504 deadline). Currently `GET
+/api/v1/health` and `GET /api/v1/ready`.
+
+`/ready` answers 503 when a *required* dependency is missing. Without
+`EMBL_EBI_CONTACT_EMAIL` the agent starts and detects gaps but resolves none,
+because EBI rejects anonymous job submissions - reporting that as healthy would
+hide a total loss of function behind a green check.
+
+## How the search is scoped
+
+No database code and no clade name appears anywhere in this repository. The
+scope of a search is derived at runtime from the target lineage.
+
+NCBI accepts a taxonomic restriction directly - `ENTREZ_QUERY=txid9632[ORGN]` -
+so the clade searched is *stated*, using the tax id the agent already holds
+from the lineage it already fetched. Nothing is matched against a collection
+label, and the failure this agent was rebuilt around cannot occur: searching a
+collection that excludes the target clade is not expressible.
+
+What remains is choosing how narrow to be. Family returns close relatives and
+little else; class returns far more sequence, most of it too distant to fill a
+gap accurately. The configured ranks (`HOMOLOGY_NCBI_SCOPE_RANKS`) are searched
+concurrently, narrowest first, and the scope with the most gap-spanning hits
+wins. For *Ursus maritimus* that is Ursidae, then Carnivora, then Mammalia.
+
+**The record being repaired is excluded from its own search** (`NOT
+NC_003428[ACCN]`). It cannot be evidence about its own unresolved region, and
+in a ground-truth measurement - where bases are withheld from the agent while
+the public record still holds them - leaving it in turns the exercise into a
+lookup of the answer.
+
+Two wire details are load-bearing and both were measured, not assumed:
+
+- **`blastn`, not megablast.** megablast is a local aligner: on a 1 kb flank
+  query it returned twenty hits at identity 1.000 with *none* spanning the gap,
+  because it split at the 45-base indel into two half-coverage HSPs. Gapped
+  blastn bridges the indel in one HSP, which is the alignment a reconstruction
+  needs. `PROGRAM=megablast` is also rejected outright - it is `blastn` with a
+  flag.
+- **No API key.** NCBI issues keys for E-utilities only; the BLAST URL API
+  neither accepts nor is rate-limited by one. What it asks for instead is a
+  `tool` and `email` on every call, one request per ten seconds, and one poll
+  per minute per search. All three are honoured, and the cost is that a fast
+  search is noticed late.
+
+## What it refuses to do
+
+Refusal is a first-class result, returned as `status: completed` with the gap
+`UNRESOLVED`, its original coordinates intact, and a stated reason:
+
+| reason | meaning |
+|---|---|
+| `NO_HOMOLOGS_FOUND` | nothing searchable returned a homologue |
+| `INSUFFICIENT_GAP_SPANNING_HOMOLOGS` | homologues exist, none covers both flanks |
+| `CONFIDENCE_BELOW_THRESHOLD` | the best candidate scored under the floor |
+| `BIOLOGICAL_VALIDATION_FAILED` | the fill failed a deterministic check |
+| `DEADLINE_EXCEEDED` / `NOT_ATTEMPTED` | the run committed to what it could finish |
+
+A homologue matching one flank beautifully proves the flank is conserved and
+says nothing about the bases between. It is never counted as support.
+
+## Running and testing
+
+```powershell
+cd backend\agents\reconstruction_agent
+uv sync
+uv run ruff check src tests ; uv run ruff format --check src tests
+uv run mypy src
+uv run pytest tests -q                       # offline, ~1.5 s
+```
+
+With the whole platform, from the repository root:
+
+```powershell
+python -m backend.run_agents                 # all nine agents
+curl http://localhost:8006/api/v1/health
+```
+
+**The test that matters.** Everything in `tests/` mocks the network edge, which
+proves the code runs but cannot distinguish a working evidence path from a
+plausible-looking one. Only ground truth can - a known region is withheld and
+the answer compared against what was actually there:
+
+```powershell
+uv run python scripts\ground_truth.py                  # the whole battery
+uv run python scripts\ground_truth.py --only "polar"   # one case
+$env:RUN_EXTERNAL_TESTS=1; uv run pytest tests -q      # same case, as a test
+```
+
+It costs a NCBI BLAST search and an EMBL-EBI alignment per case - minutes of
+queue time on somebody else's servers - which is why it is marked `external`
+and skipped by default.
+
+## Configuration
+
+Copy `.env.example` to `.env`. Everything is documented there; the values that
+decide whether the agent works at all:
+
+| variable | why |
+|---|---|
+| `NCBI_BLAST_CONTACT_EMAIL` | NCBI asks to be able to contact whoever is submitting searches |
+| `NCBI_API_KEY` | E-utilities only. Lifts the sequence and taxonomy rate from 3/s to 10/s; the agent paces at 6/s under it, because sitting at the ceiling was measured earning a silent block |
+| `EMBL_EBI_CONTACT_EMAIL` | **required for alignment** - EBI rejects anonymous jobs, so without it every gap that reaches MAFFT is unresolved |
+| `RECONSTRUCTION_DEADLINE_SECONDS` | 300 by default, well inside the orchestrator's 600 s |
+| `NVIDIA_API_KEY` | optional - without it Evo 2 arbitration is simply not registered |
+
+No database code and no clade is configurable, because none is named.
 
 ## Layout
 
 ```
-reconstruction_agent/
-├── pyproject.toml / uv.lock     Dependencies, pinned.
-├── api.py                       Launcher shim (see below).
-├── card.json                    Read by backend/registry.py. Do not move.
-└── src/
-    ├── api/                     HTTP boundary. No business logic.
-    │   └── v1/                  Versioned surface + {data, meta, error}.
-    ├── agent/                   The agentic loop.
-    │   ├── graph/               LangGraph nodes, edges, conditions, builder.
-    │   ├── planning/            What to do next, and when to stop.
-    │   ├── reasoning/           Building reconstructions, and criticising them.
-    │   ├── state/               The state object and its merge reducers.
-    │   └── prompts/             Prompt *loading*. The text is in src/prompts/.
-    ├── prompts/                 Every LLM prompt, as markdown. See its README.
-    ├── domain/                  The science. No I/O, no framework.
-    │   ├── models/              Sequence, Gap, Reference, Alignment, Candidate.
-    │   ├── services/            Gap detection, ranking, consensus, validation.
-    │   └── policies/            Confidence scoring and admission rules.
-    ├── tools/                   Capabilities the planner can select.
-    │   ├── ncbi/ blast/ mafft/  Reference retrieval, homology, alignment.
-    │   └── evo/                 Phylogeny heuristic + Evo 2 plausibility.
-    ├── infrastructure/          Everything that talks to the outside world.
-    │   ├── http/ ncbi/ embl_ebi/
-    │   ├── llm/                 Azure OpenAI / Foundry, and the null client.
-    │   ├── nvidia/              Evo 2 via NVIDIA NIM.
-    │   └── persistence/
-    ├── application/             Use cases, expressed without reference to HTTP.
-    ├── contracts/               What the agent accepts, returns, and reports.
-    ├── configuration/           Settings and structlog setup.
-    └── observability/           Events, metrics, correlation ids, tracing.
+api/            HTTP only. v1/ is enveloped; orchestrator.py is not.
+agent/          Planner, reasoner, critic - see Known limits.
+domain/         Frozen models, enums, exceptions. Imports no integration.
+services/       The biology: taxonomy, homology, alignment, candidate, scoring, validation.
+integrations/   NCBI E-utilities, NCBI BLAST URL API, EMBL-EBI MAFFT, Evo 2, HTTP.
+orchestration/  Budget ledger and run deadline.
+observability/  Structured logging.
+config/         Settings - the only place that reads the environment.
 ```
 
-The dependency rule is one-way: `domain` depends on nothing, `tools` and
-`application` depend on `domain`, and `api` depends on `application`. Nothing
-depends on `api`. That is what keeps the science testable without a network.
+`domain/` never imports `integrations/` or `services/`. Provider vocabulary
+lives in `integrations/blast/` and `services/homology/` and nowhere else -
+`TargetProfile` carries `scientific_name`, `tax_id`, `taxonomy_lineage`,
+`taxonomy_ranks`, `molecule_type`, and nothing about any provider.
 
-`src/` is a flat package root — the importable names are `api`, `domain`,
-`agent`, … with no wrapping package. `pythonpath = ["src"]` in `pyproject.toml`
-is what makes that work for the tests.
+## Known limits
 
-## The two HTTP surfaces
+Stated plainly, because a reader should not have to discover these by reading
+the source.
 
-| | `POST /execute` | `POST /api/v1/reconstructions` |
-| --- | --- | --- |
-| Caller | The orchestrator | Anything else |
-| Body | `{instruction, context}` | Typed, self-documenting |
-| Response | `{status, target_agent, prompt_to_target_agent, output}` | `{data, meta, error}` |
-
-**`/execute` is deliberately not enveloped.** `backend/orchestrator/schema.py`
-parses that exact shape, and wrapping it would break every reconstruction the
-system performs. Both endpoints return HTTP 200 with the failure described in
-the body, because a client that has to branch on both a status code and an
-error field has two things to get wrong instead of one.
-
-`GET /api/v1/health` reports capability, not just liveness — which external
-services are actually configured. `GET /api/v1/health/live` is the cheap
-container probe.
-
-## Running it
-
-The agent has its own `.venv` and pins its own dependencies, isolated from the
-rest of the backend.
-
-```bash
-cd backend/agents/reconstruction_agent
-cp .env.example .env          # then fill in the credentials
-uv sync --group dev           # creates .venv and installs from uv.lock
-```
-
-Then either start this agent alone:
-
-```bash
-uv run reconstruction-agent   # binds APP_HOST:APP_PORT from .env
-```
-
-(Not `python -m api`: the launcher shim `api.py` at the agent root shadows the
-installed `api` package when the agent root is the working directory. The
-console script is resolved from the venv, so it is unambiguous.)
-
-or start the whole system from the repository root, which is the normal path:
-
-```bash
-python -m backend.run_agents --setup   # once, to build every agent's venv
-python -m backend.run_agents
-```
-
-`backend/run_agents.py` launches this agent as
-`backend.agents.reconstruction_agent.api:app`. That module is a shim
-([api.py](api.py)) that re-exports the real app from `src/`; the launcher
-convention is shared with eight other agents, so the shim is cheaper than
-special-casing it.
-
-### Configuration
-
-`.env.example` documents every setting. The ones that decide what works:
-
-| Setting | Effect if unset |
-| --- | --- |
-| `EMBL_EBI_CONTACT_EMAIL` | **BLAST and MAFFT refuse to run**, so every gap comes back unresolved. EMBL-EBI rejects anonymous job submissions. |
-| `AZURE_OPENAI_*` | Planning falls back to the deterministic pipeline. Not a degraded stub — it is the correct plan for the common case, and it is what the tests exercise. |
-| `NVIDIA_API_KEY` | The Evo 2 plausibility tool is not registered at all. An unusable tool in the catalogue is worse than an absent one. |
-| `NCBI_API_KEY` | Optional; raises the rate budget from 3/s to 10/s. |
-| `DATABASE_URL` (in `backend/.env`) | Checkpoints fall back to in-memory, so **CONTINUE cannot resume** and a slow run fails after three retries. |
-
-`APP_ENV` drives the defaults that should differ between a laptop and a
-server: `LOG_FORMAT` (pretty vs JSON) and whether `/docs` is exposed.
-
-### Logging
-
-structlog, rendered by rich in development and as JSON lines elsewhere. Every
-record carries the correlation id from `X-Request-ID`, so one request — and the
-whole reconstruction it triggers — can be followed across the graph, the tools
-and the HTTP clients.
-
-Log with an event name and key/value pairs, not an f-string:
-
-```python
-log.info("gap_detected", gap_id=gap.identifier, length=gap.length)
-```
-
-That is what makes the field queryable once the logs are shipped.
-
-## Testing
-
-```bash
-uv run pytest                         # everything offline, with coverage
-uv run pytest --no-cov -q             # faster, no coverage
-uv run pytest -m "not evaluation"     # skip the slower accuracy suite
-RUN_EXTERNAL_TESTS=1 uv run pytest    # also run tests that hit real services
-```
-
-- `tests/unit` — domain logic, settings, and prompt loading.
-- `tests/tools` — parsing real payload shapes from saved fixtures.
-- `tests/agent` — consensus, reasoning, and the stop policy.
-- `tests/integration` — both HTTP contracts.
-- `tests/evaluation` — punches a hole in a known sequence and checks the agent
-  puts back what was there. Accuracy is the measure that matters, and it cannot
-  be read off unit tests of the parts.
-
-Two scripts complement the suite:
-
-```bash
-uv run python scripts/smoke_test.py              # end to end, no network
-uv run python scripts/test_external_services.py  # NCBI/BLAST/MAFFT/Azure/Evo2
-uv run python scripts/tune_settings.py --offline # measure the confidence threshold
-```
-
-The second is how you diagnose a deployment that starts cleanly but fails
-every reconstruction — a wrong Azure deployment name surfaces as a 404 that
-reads like a missing model.
-
-### Tuning
-
-`scripts/tune_settings.py` is where the settings come from. It punches holes in
-360 synthetic sequences spanning gap length, reference count, reference
-agreement, flank availability and divergence, reconstructs each one, and
-compares against the known answer.
-
-It reports precision and recall by threshold, and recommends the lowest
-threshold that accepts **no** incorrect reconstruction — not the F1 optimum. F1
-treats a wrong base and a missing base as equally bad; in an assembly they are
-not.
-
-`--offline` runs only that sweep and costs nothing. Without the flag it also
-sweeps `LLM_TEMPERATURE` against Azure, measuring whether the planner's JSON
-parses, whether it names real tools, and whether the same question gives the
-same plan twice. Temperature cannot affect reconstruction accuracy — the bases
-come from alignment consensus, never from the model — so reproducibility is the
-only thing being optimised there.
-
-Current settings and what produced them:
-
-| Setting | Value | Evidence |
-| --- | --- | --- |
-| `RECONSTRUCTION_MIN_CONFIDENCE` | 0.15 | Lowest threshold with precision 1.000 over the 360-scenario grid (recall 0.93). Was 0.65 against the old score, which needed a high threshold to compensate for ranking correct above incorrect at only 0.575. |
-| `LLM_TEMPERATURE` | 0.0 | 100% parse rate at every temperature tried; 0.0–0.3 gave 0.92 plan repeatability vs 0.83 at 0.7–1.0. |
-
-## Prompts
-
-No prompt text is hardcoded. Everything the agent sends to an LLM is a
-markdown file in [src/prompts/](src/prompts/) — see
-[its README](src/prompts/README.md) for the naming and the one editing rule
-(`.user.md` files go through `str.format`, so literal braces must be doubled).
-
-## The Evolution Agent
-
-`card.json` lists **Evolution Agent** under `may_need`. Ranking references by
-phylogenetic proximity is a real part of this agent's job, and the local
-heuristic in `tools/evo/` is genus-level only — it cannot tell that *Loxodonta*
-and *Mammuthus* are close relatives. When it cannot separate candidates it says
-so, and the question is better routed to the Evolution Agent.
+- **The loop is a pipeline, not yet an agent.** `agent/` is scaffolded but the
+  run currently executes a fixed sequence. There is no LLM planning, no critic
+  verdict, and no replanning: a weak result is reported, not retried with a
+  different strategy. The evidence feedback the selector needs for a replan is
+  already plumbed and unused.
+- **Evo 2 is not wired.** `CandidateScores.evo2` is always `None`, the engine
+  redistributes its weight correctly, and nothing calls NVIDIA. NIM exposes no
+  scoring endpoint, so when it is wired it will be an agreement check against
+  the model's own continuation, not a likelihood.
+- **`GET /api/v1/reconstructions/{id}` does not exist.** Only `/health` and
+  `/ready` are served under v1; reconstruction is reachable through `/execute`.
+- **Nuclear scaffolds will usually time out.** A nuclear BLAST was measured at
+  ~550 s against a 300 s deadline. The agent abstains cleanly rather than
+  returning a guess, but it does abstain.
+- **One round per gap.** No second attempt with widened flanks or a relaxed
+  e-value, because that is the replanning that does not exist yet.
+- **Only the best HSP per hit is read.** A homologue whose two HSPs straddle
+  the junction does span the gap, and the subject coordinates between them give
+  the fill directly - but it is currently counted as not spanning. This is what
+  made the megablast failure total rather than partial; using gapped blastn
+  avoids it without fixing it.
+- **The result format is undocumented.** `FORMAT_TYPE=XML` is still served but
+  no longer appears in NCBI's parameter list (which offers XML2, XML2_S, JSON2,
+  JSON2_S, SAM). It is configurable, so the day it stops being served is a
+  config change and a new parser, not a rewrite.
