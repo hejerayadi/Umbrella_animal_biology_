@@ -79,8 +79,12 @@ class TestDeadline:
         Scoring and serialising after the clock has run out produces nothing at
         all, which is worse than a partial answer delivered on time.
         """
-        deadline = Deadline(total_seconds=100.0, reserve_seconds=30.0)
-        monkeypatch.setattr(time, "monotonic", lambda: deadline.started_at + 10.0)
+        # Both instants are stated, and stated as round numbers. Deriving the
+        # second from `started_at` reintroduces the problem in another form:
+        # `(t + 10) - t` is not exactly 10 for an arbitrary monotonic reading,
+        # so the assertion failed by one part in 10^16.
+        deadline = Deadline(total_seconds=100.0, reserve_seconds=30.0, started_at=1000.0)
+        monkeypatch.setattr(time, "monotonic", lambda: 1010.0)
 
         assert deadline.remaining() == 90.0
         assert deadline.remaining_for_work() == 60.0
@@ -106,8 +110,8 @@ class TestDeadline:
         the window would leave the hits it found with no time to be fetched or
         aligned, which is how a run ends holding evidence it never used.
         """
-        deadline = Deadline(total_seconds=50.0, reserve_seconds=10.0)
-        monkeypatch.setattr(time, "monotonic", lambda: deadline.started_at)
+        deadline = Deadline(total_seconds=50.0, reserve_seconds=10.0, started_at=1000.0)
+        monkeypatch.setattr(time, "monotonic", lambda: 1000.0)
         phases = PhaseBudget(homology_seconds=200.0)
 
         assert phases.for_homology(deadline) == 40.0
