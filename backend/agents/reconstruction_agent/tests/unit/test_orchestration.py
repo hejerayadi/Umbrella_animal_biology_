@@ -7,6 +7,8 @@ external services. These are the deterministic guard rails that sit outside it.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from reconstruction_agent.domain.enums import ToolName
@@ -63,16 +65,26 @@ class TestBudgetReservation:
 
 
 class TestDeadline:
-    def test_the_finalisation_reserve_is_withheld_from_tools(self) -> None:
+    """The clock is read live, so any test comparing two readings has to stop
+    it first. Left running, these assertions hold on Windows - where
+    `time.monotonic` advances in ~15 ms steps, so both reads return the same
+    value - and fail on Linux, where they do not. Freezing is what makes the
+    arithmetic under test the only thing being tested."""
+
+    def test_the_finalisation_reserve_is_withheld_from_tools(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Tools may only spend what still leaves room to build a result.
 
         Scoring and serialising after the clock has run out produces nothing at
         all, which is worse than a partial answer delivered on time.
         """
         deadline = Deadline(total_seconds=100.0, reserve_seconds=30.0)
+        monkeypatch.setattr(time, "monotonic", lambda: deadline.started_at + 10.0)
 
+        assert deadline.remaining() == 90.0
+        assert deadline.remaining_for_work() == 60.0
         assert deadline.remaining_for_work() < deadline.remaining()
-        assert deadline.remaining_for_work() == max(deadline.remaining() - 30.0, 0.0)
 
     def test_expiry_is_reached_while_wall_clock_time_remains(self) -> None:
         """Expiry means "start finalising", not "the run is over"."""
@@ -87,11 +99,18 @@ class TestDeadline:
         assert deadline.allows(10.0) is True
         assert deadline.allows(120.0) is False
 
-    def test_a_phase_never_outlives_the_run(self) -> None:
-        """A phase allowance is clipped to the time that actually remains."""
+    def test_a_phase_never_outlives_the_run(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A phase allowance is clipped to the time that actually remains.
+
+        200 seconds of homology asked for, 40 available: a phase that overran
+        the window would leave the hits it found with no time to be fetched or
+        aligned, which is how a run ends holding evidence it never used.
+        """
         deadline = Deadline(total_seconds=50.0, reserve_seconds=10.0)
+        monkeypatch.setattr(time, "monotonic", lambda: deadline.started_at)
         phases = PhaseBudget(homology_seconds=200.0)
 
+        assert phases.for_homology(deadline) == 40.0
         assert phases.for_homology(deadline) <= deadline.remaining_for_work()
 
 
