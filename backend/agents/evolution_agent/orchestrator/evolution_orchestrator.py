@@ -327,10 +327,12 @@ class EvolutionOrchestrator:
         phylo = state.phylo_result
         feature = state.planned_feature
 
-        # phylo.overall_confidence is None when UFBoot did not run; it must
-        # not be silently treated as a number.
+        # phylo.overall_confidence is None when UFBoot did not run, and
+        # mc.confidence is None when there's no separation signal to
+        # measure (e.g. every species landed in one group); neither must
+        # be silently treated as a number.
         phylo_conf = getattr(phylo, "overall_confidence", None) if phylo else None
-        mc_conf = round(self._mc_mean(mc), 4) if mc else None
+        mc_conf = mc.confidence if mc else None
 
         parts = [c for c in (mc_conf, phylo_conf) if c is not None]
         overall_confidence = round(sum(parts) / len(parts), 4) if parts else None
@@ -571,13 +573,3 @@ class EvolutionOrchestrator:
             )
         }
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _mc_mean(mc: MolecularComparisonResult) -> float:
-        scores = mc.similarity_scores
-        if not scores:
-            return 0.0
-        return sum(e.score for e in scores) / len(scores)

@@ -1,8 +1,14 @@
 """Real implementation of the Molecular Comparison sub-agent (Sprint 3+).
 
-Pipeline: UniProt (raw sequence fetch) -> ESM-2 embeddings (mean-pooled,
-raw cosine similarity -- no centering, see validation notes) -> relative-
-threshold connected-components clustering -> NetworkX similarity graph.
+Pipeline: UniProt (raw sequence fetch) -> ESM-2 embeddings (mean-pooled) ->
+batch mean-centered cosine similarity -> relative-threshold connected-
+components clustering -> NetworkX similarity graph.
+
+Centering matters: raw ESM-2 embeddings are anisotropic (they cluster
+tightly around one dominant direction), which compresses raw cosine
+similarity into a narrow, low-signal band regardless of true sequence
+divergence -- see scripts/validate_esm2.py, which first demonstrated this
+and the batch-mean-centering fix.
 
 No alignment step runs here -- MAFFT is exclusive to Phylogenetic
 Reconstruction. Fetch/embed functions are injectable so tests never need
@@ -119,12 +125,20 @@ def embed_sequences(sequences: dict[str, str]) -> dict[str, torch.Tensor]:
 
 def compute_similarity_scores(embeddings: dict[str, torch.Tensor]) -> list[SimilarityEdge]:
     species = list(embeddings.keys())
+
+    # Subtract the batch mean before computing cosine similarity -- raw
+    # ESM-2 embeddings share a dominant direction (anisotropy) that makes
+    # every pair look artificially similar otherwise. Centered relative to
+    # this request's own species batch, matching scripts/validate_esm2.py.
+    matrix = torch.stack([embeddings[s] for s in species])
+    centered = matrix - matrix.mean(dim=0)
+
     edges: list[SimilarityEdge] = []
     for i in range(len(species)):
         for j in range(i + 1, len(species)):
             a, b = species[i], species[j]
             sim = torch.nn.functional.cosine_similarity(
-                embeddings[a].unsqueeze(0), embeddings[b].unsqueeze(0)
+                centered[i].unsqueeze(0), centered[j].unsqueeze(0)
             ).item()
             edges.append(SimilarityEdge(species_a=a, species_b=b, score=round(sim, 4)))
     return edges
@@ -178,6 +192,46 @@ def compute_species_groups(
         mean = round(sum(intra) / len(intra), 4) if intra else 1.0
         result.append(SpeciesGroup(group_id=gid, species=members, mean_score=mean))
     return result
+
+
+def compute_confidence(
+    scores: list[SimilarityEdge], groups: list[SpeciesGroup]
+) -> float | None:
+    """How well-separated the reported groups actually are, in [0, 1].
+
+    NOT the mean similarity score -- centered cosine similarity can be
+    negative, so a plain mean can itself go negative and render as a
+    nonsensical "-24% confidence". Instead this compares mean intra-group
+    similarity against mean cross-group similarity: if species inside a
+    group are much more similar to each other than to species outside it,
+    the grouping is well-supported (confidence near 1). If there's no
+    difference, the grouping carries no real signal (confidence near 0.5,
+    a coin flip). If it's backwards, confidence approaches 0.
+
+    Returns None -- never a fabricated number -- when there is nothing to
+    compare: every species landed in one group (no cross-group pairs) or
+    every species is its own singleton group (no intra-group pairs).
+    """
+    intra_pairs = {
+        frozenset({a, b})
+        for g in groups
+        for i, a in enumerate(g.species)
+        for b in g.species[i + 1:]
+    }
+    intra_scores = [
+        e.score for e in scores if frozenset({e.species_a, e.species_b}) in intra_pairs
+    ]
+    cross_scores = [
+        e.score for e in scores if frozenset({e.species_a, e.species_b}) not in intra_pairs
+    ]
+
+    if not intra_scores or not cross_scores:
+        return None
+
+    separation = statistics.mean(intra_scores) - statistics.mean(cross_scores)
+    # Cosine similarity lives in [-1, 1], so separation lives in [-2, 2].
+    # Map that onto [0, 1], centered at 0.5 for "no separation".
+    return round(max(0.0, min(1.0, (separation + 2) / 4)), 4)
 
 
 def build_similarity_network(species: list[str], scores: list[SimilarityEdge]) -> dict:
@@ -264,12 +318,14 @@ class MolecularComparisonAgent:
         scores = compute_similarity_scores(embeddings)
         groups = compute_species_groups(species, scores)
         network = build_similarity_network(species, scores)
+        confidence = compute_confidence(scores, groups)
 
         mc_result = MolecularComparisonResult(
             species_list=species,
             similarity_scores=scores,
             species_groups=groups,
             similarity_network=network,
+            confidence=confidence,
         )
 
         return AgentResult(
@@ -279,7 +335,7 @@ class MolecularComparisonAgent:
                 {"species_a": e.species_a, "species_b": e.species_b, "score": e.score}
                 for e in scores
             ],
-            confidence=round(sum(e.score for e in scores) / len(scores), 4) if scores else 0.0,
+            confidence=confidence,
             source_agents=["Molecular Comparison Agent"],
         )
 

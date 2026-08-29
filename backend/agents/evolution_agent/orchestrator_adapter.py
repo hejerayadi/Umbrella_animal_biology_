@@ -93,7 +93,13 @@ def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
     n       = len(species)
 
     if feature == PlannedFeature.PHYLOGENETIC_TREE.value and phylo:
-        conf = f"{analysis.overall_confidence * 100:.0f}%"
+        # overall_confidence is None when UFBoot did not run (e.g. too few
+        # species) — never fabricate a percentage in that case.
+        conf = (
+            f"{analysis.overall_confidence * 100:.0f}%"
+            if analysis.overall_confidence is not None
+            else "not available (bootstrap not run)"
+        )
         return (
             f"Phylogenetic tree built for {n} species "
             f"using {phylo.model} model with {conf} overall confidence."
@@ -111,7 +117,13 @@ def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
 
         groups    = len(mc.species_groups)
         group_str = f"forming {groups} evolutionary group" + ("s" if groups != 1 else "")
-        conf      = f"{analysis.overall_confidence * 100:.0f}%"
+        # None when there's no separation signal to measure (e.g. every
+        # species landed in one group) — never fabricate a percentage.
+        conf = (
+            f"{analysis.overall_confidence * 100:.0f}%"
+            if analysis.overall_confidence is not None
+            else "not available (no group separation to measure)"
+        )
 
         return (
             f"Analysed {n} species. "
@@ -133,7 +145,11 @@ def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
         parts.append(f"forming {groups} evolutionary group" + ("s" if groups != 1 else ""))
     if phylo:
         parts.append(f"Phylogenetic tree built using {phylo.model} model")
-    conf = f"{analysis.overall_confidence * 100:.0f}%"
+    conf = (
+        f"{analysis.overall_confidence * 100:.0f}%"
+        if analysis.overall_confidence is not None
+        else "not available"
+    )
     return f"Analysed {n} species. {'. '.join(parts)}. Overall confidence: {conf}."
 
 

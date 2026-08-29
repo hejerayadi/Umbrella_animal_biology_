@@ -244,6 +244,7 @@ class MolecularComparisonResult:
     similarity_scores:  list[SimilarityEdge]
     species_groups:     list[SpeciesGroup]
     similarity_network: dict[str, Any]
+    confidence:         float | None = None
 
 @dataclass
 class PhylogeneticResult:

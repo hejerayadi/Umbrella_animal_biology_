@@ -45,10 +45,18 @@ import logging
 
 from fastapi import FastAPI
 
+from .framework.llm_client import load_env
 from .orchestrator_adapter import OrchestratorEvolutionAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
 
 _logger = logging.getLogger(__name__)
+
+# Load .env unconditionally at startup. The Planner (LLM #1) also loads it,
+# but only lazily inside its own function — a request that skips the
+# Planner (an explicit "feature" in the payload) would otherwise never
+# trigger it, leaving MAFFT_BINARY / IQTREE_BINARY / LLM credentials unset
+# even when backend/agents/evolution_agent/.env defines them.
+load_env()
 
 app = FastAPI(
     title="Evolution Agent",
