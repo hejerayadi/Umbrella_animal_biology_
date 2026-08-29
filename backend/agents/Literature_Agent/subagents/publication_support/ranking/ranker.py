@@ -1,6 +1,6 @@
 import numpy as np
 
-from embeddings.embedder import model
+from ..embeddings.embedder import get_model
 
 
 # Topic labels repeat heavily across journals (OpenAlex has a few thousand
@@ -28,7 +28,7 @@ def embed_texts(texts):
 
     if missing:
 
-        vectors = model.encode(
+        vectors = get_model().encode(
             missing,
             batch_size=64,
             normalize_embeddings=True

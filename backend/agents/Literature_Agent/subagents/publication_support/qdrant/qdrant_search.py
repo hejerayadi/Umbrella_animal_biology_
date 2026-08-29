@@ -1,7 +1,6 @@
-from qdrant.client import get_client, COLLECTION_NAME
+from .client import get_client, COLLECTION_NAME
 
 
-client = get_client()
 
 
 def search_qdrant(query_vector, limit: int = 50, query_filter=None):
@@ -15,7 +14,7 @@ def search_qdrant(query_vector, limit: int = 50, query_filter=None):
     restrict the search to journals matching a payload condition.
     """
 
-    results = client.query_points(
+    results = get_client().query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
         limit=limit,

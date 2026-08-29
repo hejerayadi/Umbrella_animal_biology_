@@ -3,17 +3,16 @@
     python3 -m qdrant.test_cloud
 """
 
-from qdrant.client import get_client, COLLECTION_NAME
+from .client import get_client, COLLECTION_NAME
 
 
-client = get_client()
 
 print("Connected.")
-print("Collections:", client.get_collections())
+print("Collections:", get_client().get_collections())
 
-if client.collection_exists(COLLECTION_NAME):
+if get_client().collection_exists(COLLECTION_NAME):
 
-    count = client.count(
+    count = get_client().count(
         collection_name=COLLECTION_NAME,
         exact=True
     ).count

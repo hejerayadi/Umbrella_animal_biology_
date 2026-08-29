@@ -12,6 +12,24 @@ python-dotenv==1.0.1
 # unimportable and the service will not start.
 qdrant-client==1.19.0
 
+# --- Embeddings & retrieval (subagents/publication_support/, ---------------
+#     subagents/retrieval_knowledge/) - required, do not remove.
+# `embeddings/embedder.py` and `retrieval_knowledge/finalagenttt.py` both load a
+# sentence-transformers model. Both build it lazily, so nothing is downloaded
+# until a journal recommendation or a semantic search actually runs - but the
+# package itself must be installed or those imports fail at agent start.
+#
+# This pulls torch (~2GB on Windows CPU wheels). It is the single heaviest
+# dependency in the repo; the two subagents that need it are the reason.
+sentence-transformers==3.3.1
+
+# TF-IDF fallback ranking in retrieval_knowledge/finalagenttt.py.
+scikit-learn==1.5.2
+
+# Used directly by ranking/ranker.py and the retrieval subagent. Already an
+# indirect dependency, pinned here because it is imported by name.
+numpy>=1.26,<3
+
 # --- Style correction (subagents/writing/scientific_writing.py) ------------
 # Needs a JVM on PATH. Missing Java is handled: `_apply_style_correction`
 # degrades to returning the draft uncorrected. Missing *package* was not -
@@ -22,6 +40,15 @@ language_tool_python==3.4.0
 # --- Agent API layer (api.py) - required, do not remove ---
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
+
+# --- Writing KB ingestion (subagents/writing/kb/ingest_*.py) ---------------
+# One-off corpus builders, not on the service path: nothing imports them at
+# runtime, so the agent starts fine without these. Declared because the
+# scripts import them by name and were previously undeclared - `ingest_*.py`
+# failed with ModuleNotFoundError on a clean venv.
+datasets>=3.0
+pandas>=2.0
+tiktoken>=0.7
 
 # --- Testing ---
 pytest==8.3.2

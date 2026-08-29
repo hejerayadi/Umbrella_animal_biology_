@@ -1,6 +1,6 @@
-from ingestion.retrieval import retrieve_journals
-from ranking.llm_reranker import rerank_journals, apply_preferences
-from ranking.query_interpreter import (
+from .ingestion.retrieval import retrieve_journals
+from .ranking.llm_reranker import rerank_journals, apply_preferences
+from .ranking.query_interpreter import (
     interpret_query,
     describe_interpretation,
     build_llm_topic,

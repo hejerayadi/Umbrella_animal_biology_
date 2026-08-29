@@ -1,4 +1,4 @@
-from models.journal import Journal, JournalTopic
+from ..models.journal import Journal, JournalTopic
 
 
 def normalize_journal(data: dict) -> Journal:
