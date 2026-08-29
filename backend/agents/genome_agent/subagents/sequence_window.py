@@ -3,12 +3,12 @@ Sequence Window — real NCBI Nuccore efetch subagent.
 Fetches a small DNA sequence window for a resolved assembly.
 
 Never cached — pass-through only. Wired into the LangGraph orchestrator via
-`subagents/gap_finder.py` / `workflows/nodes/gap_finder_node.py`, which call
-`fetch_sequence_window` to pull `left_flank`/`right_flank` sequence around
-each detected assembly gap ahead of the Reconstruction Agent handoff. It
-remains a standalone, importable subagent otherwise — nothing here assumes
-that caller; any other node needing an arbitrary sequence window can call it
-directly.
+`subagents/gap_finder.py` / `workflows/nodes/gap_finder_node.py`, which read a
+whole scaffold through `fetch_window_by_accession` one window at a time,
+scanning it for the runs of N that become `target_gaps` in the Reconstruction
+Agent handoff. It remains a standalone, importable subagent otherwise —
+nothing here assumes that caller; any other node needing an arbitrary sequence
+window can call either entry point directly.
 
 Assembly accessions (e.g. "GCF_018350195.1") are NOT valid Nuccore IDs —
 Nuccore holds individual sequences (chromosomes, scaffolds, contigs),
@@ -108,6 +108,45 @@ async def _resolve_nuccore_id(assembly_id: str, assembly_uid: str) -> str | None
     return None
 
 
+async def fetch_window_by_accession(
+    accession: str,
+    seq_start: int,
+    seq_stop: int,
+) -> str:
+    """A window of one *named* Nuccore record, as FASTA text.
+
+    The half of `fetch_sequence_window` that does the actual fetching, split
+    out because a caller that already knows which record it wants should not
+    pay for the assembly -> Nuccore resolution again. `gap_finder.py` reads a
+    whole scaffold this way, one window at a time: re-resolving per window
+    would cost two extra requests each, and (worse) leave the windows only
+    incidentally pointing at the same record.
+
+    An accession like "NW_024426341.1" is a valid Nuccore id, so it goes
+    straight to efetch. Coordinates are 1-based inclusive, as NCBI takes them.
+    """
+    window_size = seq_stop - seq_start
+    if window_size > MAX_WINDOW_BP:
+        raise WindowTooLargeError(
+            f"Requested window size ({window_size} bp) exceeds "
+            f"MAX_WINDOW_BP ({MAX_WINDOW_BP} bp)"
+        )
+
+    resp = await asyncio.to_thread(
+        ncbi_get,
+        {
+            "path": "efetch.fcgi",
+            "db": "nuccore",
+            "id": accession,
+            "seq_start": seq_start,
+            "seq_stop": seq_stop,
+            "rettype": "fasta",
+            "retmode": "text",
+        },
+    )
+    return resp.text
+
+
 async def fetch_sequence_window(
     assembly_id: str,
     seq_start: int,
@@ -130,19 +169,7 @@ async def fetch_sequence_window(
             f"No Nuccore sequence is linked to assembly '{assembly_id}'."
         )
 
-    resp = await asyncio.to_thread(
-        ncbi_get,
-        {
-            "path": "efetch.fcgi",
-            "db": "nuccore",
-            "id": nuccore_id,
-            "seq_start": seq_start,
-            "seq_stop": seq_stop,
-            "rettype": "fasta",
-            "retmode": "text",
-        },
-    )
-    return resp.text
+    return await fetch_window_by_accession(nuccore_id, seq_start, seq_stop)
 
 
 if __name__ == "__main__":

@@ -15,9 +15,13 @@ Run from the repository root:
 
     python -m backend.run_agents --setup    # create all nine venvs + install
     python -m backend.run_agents            # start all nine services
+    python -m backend.run_agents --reload   # ...and restart one when it changes
 
 `--setup` is a one-time (slow) step. Ctrl+C stops every service. Logs are
 interleaved on this terminal, prefixed with the agent name.
+
+Without `--reload` an agent serves whatever was on disk when it started, for
+as long as it runs - editing its source changes nothing until it is restarted.
 
 This is a convenience for local development only - in a real deployment each
 agent is its own container, which is why each declares its own dependencies.
@@ -420,8 +424,19 @@ def setup() -> None:
     sys.exit(1)
 
 
-def serve() -> None:
-    """Launch every agent service, each with its own interpreter."""
+def serve(reload: bool = False) -> None:
+    """Launch every agent service, each with its own interpreter.
+
+    `reload` adds uvicorn's `--reload` to every agent, so editing an agent's
+    source restarts just that agent. Off by default because the watcher costs
+    a process per agent and picks up half-saved files; worth turning on while
+    actively changing agent code.
+
+    Without it a running agent serves whatever was on disk when it started,
+    indefinitely - the central API (`backend/api.py`) is normally launched with
+    `--reload` and the agents are not, so an edit appears to take effect
+    everywhere except where the work actually happens.
+    """
 
     processes: list[subprocess.Popen] = []
     unisolated: list[str] = []
@@ -436,8 +451,15 @@ def serve() -> None:
 
         # cwd is the repository root so that `-m` puts it on sys.path and the
         # `backend.agents...` package path resolves, whichever venv is used.
+        command = [str(python), "-m", "uvicorn", module, "--port", str(port)]
+        if reload:
+            # Watch only this agent's own folder. Watching the repository root
+            # would make every agent restart on any edit, including to the
+            # other eight.
+            command += ["--reload", "--reload-dir", str(_AGENTS_DIR / folder)]
+
         process = subprocess.Popen(
-            [str(python), "-m", "uvicorn", module, "--port", str(port)],
+            command,
             cwd=str(_REPO_ROOT),
             env=_agent_environment(agent_name),
             stdout=subprocess.PIPE,
@@ -478,12 +500,17 @@ def main() -> None:
         action="store_true",
         help="create a venv per agent and install its requirements, then exit",
     )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="restart an agent when its own source changes (for development)",
+    )
     args = parser.parse_args()
 
     if args.setup:
         setup()
     else:
-        serve()
+        serve(reload=args.reload)
 
 
 if __name__ == "__main__":

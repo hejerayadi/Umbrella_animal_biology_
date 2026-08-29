@@ -86,11 +86,23 @@ class HomologyService:
         """One round of searches, one per taxonomic scope."""
         scopes = self._scopes(profile, limit=limit, exclude=exclude)
         if not scopes:
+            # Two ways to end up with nothing to search, and they are opposite
+            # findings. A target with no lineage could never be scoped at all.
+            # A target whose every scope is in `exclude` has been scoped
+            # thoroughly - each one searched in an earlier round of this same
+            # gap. Reporting the first wording for the second case puts "the
+            # target has no resolved lineage" in the provenance of a run whose
+            # `databases_searched` lists four correctly-scoped taxids, which
+            # reads as a resolver failure rather than an exhausted search.
+            has_lineage = bool(profile.taxonomy_lineage) or profile.tax_id is not None
             return HomologyRound(
                 gap_id=context.gap_id,
                 selection_rationale=(
-                    "No usable taxonomic scope: the target has no resolved lineage, "
-                    "so the search could not be restricted to its relatives."
+                    "Every taxonomic scope for this target has already been "
+                    "searched; there is no wider relative left to try."
+                    if has_lineage
+                    else "No usable taxonomic scope: the target has no resolved "
+                    "lineage, so the search could not be restricted to its relatives."
                 ),
             )
 
