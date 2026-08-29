@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 
 from .agent import RecognitionAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
@@ -82,11 +82,23 @@ _agent = RecognitionAgent()
 
 
 @app.post("/execute", response_model=AgentResult)
-def execute(request: AgentRequest) -> AgentResult:
-    """The agent's single endpoint. Always answers with an `AgentResult`."""
+def execute(
+    request: AgentRequest,
+    x_trace_id: str | None = Header(default=None, alias="X-Trace-Id"),
+) -> AgentResult:
+    """The agent's single endpoint. Always answers with an `AgentResult`.
+
+    `X-Trace-Id` is optional and read-only: the Global Orchestrator sends one
+    on every worker call (see `worker_node.py`), but this agent must behave
+    identically whether it is present, absent, or malformed - including when
+    called directly (smoke tests, `RecognitionAgent()` used standalone). It is
+    never validated, parsed, or trusted for anything beyond being echoed into
+    this agent's own trace event, so an Orchestrator-side format change can
+    never break Recognition.
+    """
 
     try:
-        return _agent.run(request)
+        return _agent.run(request, trace_id=x_trace_id)
     except Exception as exc:  # noqa: BLE001 - the boundary must not leak exceptions
         # This used to interpolate the exception into the response body, so any
         # exception that was not a RecognitionError returned its message - which

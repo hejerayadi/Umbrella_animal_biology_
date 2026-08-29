@@ -38,6 +38,7 @@ ALLOWED_METADATA_KEYS = frozenset({
     "duration_ms",
     "status",
     "decision",
+    "trace_id",
     "bioclip_provider_mode",
     "taxonomy_provider_mode",
     "reasoning_llm_provider_mode",

@@ -87,10 +87,15 @@ class RecognitionAgent:
             reasoning_llm=llm,
         )
 
-    def run(self, request: AgentRequest) -> AgentResult:
-        """One request in, one `AgentResult` out. Always."""
+    def run(self, request: AgentRequest, *, trace_id: str | None = None) -> AgentResult:
+        """One request in, one `AgentResult` out. Always.
+
+        `trace_id` is optional and purely observational - see `api.py`. Every
+        existing call site that does not pass it (smoke tests, direct use)
+        behaves exactly as before.
+        """
         try:
-            return self._workflow.run(request.instruction, request.context)
+            return self._workflow.run(request.instruction, request.context, trace_id=trace_id)
         except RecognitionError as exc:
             # The workflow already converts its own errors; this catches one
             # raised outside a node.
