@@ -3,31 +3,18 @@ Azure AI Foundry Agent for Journal Recommendations
 Stateful agent with memory, multi-tool support, and conversational interface
 """
 
-import os
 import json
 from typing import Any
-from dotenv import load_dotenv
-from openai import OpenAI
+
+# Credentials, the .env lookup and the lazily-built OpenAI client all live in
+# ranking.llm_reranker, so this module has no import-time requirements of its
+# own and can be imported without configuration.
+from .ranking.llm_reranker import get_client, get_deployment, is_configured
 
 # Import your existing pipeline
-from ingestion.retrieval import retrieve_journals
-from ranking.llm_reranker import rerank_journals, apply_preferences
-from ranking.query_interpreter import interpret_query, build_llm_topic
-
-
-load_dotenv()
-
-API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-
-if not API_KEY or not ENDPOINT or not DEPLOYMENT:
-    raise RuntimeError("Missing Azure OpenAI credentials")
-
-client = OpenAI(
-    api_key=API_KEY,
-    base_url=ENDPOINT,
-)
+from .ingestion.retrieval import retrieve_journals
+from .ranking.llm_reranker import rerank_journals, apply_preferences
+from .ranking.query_interpreter import interpret_query, build_llm_topic
 
 # ============================================================================
 # AGENT MEMORY & STATE
@@ -431,8 +418,8 @@ Current context: {memory.get_context()}
         
         try:
             # Call Azure OpenAI with tools
-            response = client.chat.completions.create(
-                model=DEPLOYMENT,
+            response = get_client().chat.completions.create(
+                model=get_deployment(),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     *messages
@@ -482,8 +469,8 @@ Current context: {memory.get_context()}
                 })
                 
                 # Get final response from agent
-                final_response = client.chat.completions.create(
-                    model=DEPLOYMENT,
+                final_response = get_client().chat.completions.create(
+                    model=get_deployment(),
                     messages=[
                         {"role": "system", "content": system_prompt},
                         *messages

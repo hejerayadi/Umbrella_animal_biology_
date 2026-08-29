@@ -1,4 +1,4 @@
-from llm_reranker import rerank_journals
+from .llm_reranker import rerank_journals
 
 
 topic = "machine learning and artificial intelligence"

@@ -4,10 +4,9 @@ from qdrant_client.models import (
     PayloadSchemaType,
 )
 
-from qdrant.client import get_client, COLLECTION_NAME, VECTOR_SIZE
+from .client import get_client, COLLECTION_NAME, VECTOR_SIZE
 
 
-client = get_client()
 
 
 # Qdrant refuses to filter on a payload key that has no index, so any field
@@ -28,7 +27,7 @@ def ensure_payload_indexes():
     for field_name, schema in PAYLOAD_INDEXES:
 
         try:
-            client.create_payload_index(
+            get_client().create_payload_index(
                 collection_name=COLLECTION_NAME,
                 field_name=field_name,
                 field_schema=schema,
@@ -45,7 +44,7 @@ def ensure_payload_indexes():
 
 def create_journal_collection(recreate: bool = False):
 
-    if client.collection_exists(COLLECTION_NAME):
+    if get_client().collection_exists(COLLECTION_NAME):
 
         if not recreate:
             print(
@@ -53,9 +52,9 @@ def create_journal_collection(recreate: bool = False):
             )
             return False
 
-        client.delete_collection(COLLECTION_NAME)
+        get_client().delete_collection(COLLECTION_NAME)
 
-    client.create_collection(
+    get_client().create_collection(
         collection_name=COLLECTION_NAME,
 
         vectors_config=VectorParams(

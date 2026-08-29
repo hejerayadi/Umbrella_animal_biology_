@@ -464,7 +464,30 @@ class WritingSupportAgent:
 
 
 class PublicationSupportAgent:
-    """Recommends journals / venues for a given draft, with the LLM."""
+    """Recommends journals / venues for a draft.
+
+    Two paths, in order:
+
+    1. The Publication Support pipeline in `subagents/publication_support/`:
+       the query is interpreted into a topic plus explicit constraints, BGE
+       embeddings retrieve candidates from the `journals` Qdrant collection
+       (ingested from OpenAlex), a hybrid semantic + topic-hierarchy score
+       ranks them, an LLM re-ranks on topical fit, and the stated preferences
+       are applied deterministically afterwards.
+
+    2. Failing that, the LLM alone.
+
+    The order matters and is not just a performance choice. Path 1 recommends
+    journals it actually retrieved; path 2 recommends journals the model
+    remembers, which on a platform built around never inventing scientific
+    results is the weaker answer. So path 2 is the fallback, it is only taken
+    when path 1 cannot run, and the output says which one produced it via
+    `retrieval_backed`.
+    """
+
+    # How many journals reach the user. The pipeline re-ranks a much larger
+    # candidate pool; this is the size of the final answer.
+    TOP_K = 5
 
     def run(self, request: AgentRequest) -> AgentResult:
         context = request.context or {}
@@ -479,8 +502,90 @@ class PublicationSupportAgent:
         if draft:
             user_message += f"\n\nThe manuscript text under consideration:\n{draft}"
 
+        journals = self._retrieve(request.instruction, draft)
+        if journals:
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                output={
+                    "recommended_journals": _format_journals(journals),
+                    "journals": journals,
+                    "based_on_draft": bool(draft),
+                    "retrieval_backed": True,
+                },
+            )
+
+        recommendations = self._ask_llm(user_message)
+        if not recommendations:
+            return _unavailable("recommended_journals", [])
+
+        return AgentResult(
+            status=AgentStatus.COMPLETED,
+            output={
+                "recommended_journals": recommendations,
+                "journals": [],
+                "based_on_draft": bool(draft),
+                "retrieval_backed": False,
+            },
+        )
+
+    def _retrieve(self, instruction: str, draft: str) -> list[dict]:
+        """Run the retrieval pipeline. Returns [] rather than raising.
+
+        Imported inside the method on purpose. The pipeline pulls
+        sentence-transformers and a Qdrant client, and this module is on the
+        import chain behind `api.py`; an ImportError at module scope would
+        stop the whole agent from starting instead of costing one route its
+        better answer.
+        """
         try:
-            recommendations = call_llm(
+            from ..publication_support.ingestion.retrieval import retrieve_journals
+            from ..publication_support.ranking.llm_reranker import (
+                apply_preferences,
+                rerank_journals,
+            )
+            from ..publication_support.ranking.query_interpreter import (
+                build_llm_topic,
+                interpret_query,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("publication pipeline unavailable: %s", exc)
+            return []
+
+        try:
+            # The draft is the better description of the work when there is
+            # one, but the instruction carries the constraints ("open access",
+            # "not Elsevier"), so the interpreter sees both.
+            raw = f"{instruction}\n\n{draft}".strip() if draft else instruction
+            interpretation = interpret_query(raw)
+
+            ranked = retrieve_journals(
+                query=interpretation["search_query"],
+                open_access_only=bool(
+                    interpretation.get("constraints", {}).get("open_access")
+                ),
+            )
+            if not ranked:
+                return []
+
+            reranked = rerank_journals(
+                topic=build_llm_topic(interpretation),
+                candidates=ranked[:30],
+            )
+            return apply_preferences(
+                reranked or ranked,
+                interpretation.get("constraints", {}),
+                top_k=self.TOP_K,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning(
+                "publication pipeline failed (%s): %s", type(exc).__name__, exc
+            )
+            return []
+
+    @staticmethod
+    def _ask_llm(user_message: str) -> str:
+        try:
+            return call_llm(
                 messages=[
                     {"role": "system", "content": PUBLICATION_SUPPORT_PROMPT},
                     {"role": "user", "content": user_message},
@@ -491,18 +596,31 @@ class PublicationSupportAgent:
             ).strip()
         except Exception as exc:  # noqa: BLE001
             _logger.warning("publication support LLM unavailable: %s", exc)
-            recommendations = ""
+            return ""
 
-        if not recommendations:
-            return _unavailable("recommended_journals", [])
 
-        return AgentResult(
-            status=AgentStatus.COMPLETED,
-            output={
-                "recommended_journals": recommendations,
-                "based_on_draft": bool(draft),
-            },
-        )
+def _format_journals(journals: list[dict]) -> str:
+    """Render the ranked journals as the markdown string the frontend reads.
+
+    `recommended_journals` has to stay a string: the frontend passes it
+    through `asString()` (orchestrator-client.ts). The structured list is
+    returned alongside it under `journals` for callers that want the scores.
+    """
+    lines = []
+    for journal in journals:
+        name = journal.get("name") or "Unknown journal"
+        bits = []
+        if journal.get("publisher"):
+            bits.append(str(journal["publisher"]))
+        if journal.get("is_oa"):
+            bits.append("open access")
+        if journal.get("issn"):
+            bits.append(f"ISSN {journal['issn']}")
+        suffix = f" ({', '.join(bits)})" if bits else ""
+
+        reason = journal.get("reasoning") or journal.get("reason") or ""
+        lines.append(f"- **{name}**{suffix}" + (f" - {reason}" if reason else ""))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

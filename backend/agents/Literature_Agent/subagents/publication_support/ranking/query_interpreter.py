@@ -15,34 +15,52 @@ It is strictly an enhancement layer. Every failure path falls back to the
 raw input, so interpretation can never break retrieval.
 """
 
-import os
 import json
+import os
+from functools import lru_cache
+from pathlib import Path
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
 
-load_dotenv()
+# Absolute path: imported from the orchestrator, whose CWD is the repository
+# root, so a bare load_dotenv() would read backend/.env instead of this one.
+_PKG = Path(__file__).resolve().parents[1]
+load_dotenv(_PKG / ".env", override=False)
+load_dotenv(_PKG.parents[1] / ".env", override=False)
 
 
-API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+def _env(name: str, default: str = "") -> str:
+    return (os.getenv(name) or default).strip().strip('"').strip("'")
 
 
-if not API_KEY:
-    raise RuntimeError("AZURE_OPENAI_API_KEY is missing")
-
-if not ENDPOINT:
-    raise RuntimeError("AZURE_OPENAI_ENDPOINT is missing")
-
-if not DEPLOYMENT:
-    raise RuntimeError("AZURE_OPENAI_DEPLOYMENT is missing")
+def is_configured() -> bool:
+    """Whether an LLM call can be attempted. Never raises."""
+    return all(
+        _env(n)
+        for n in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT")
+    )
 
 
-client = OpenAI(
-    api_key=API_KEY,
-    base_url=ENDPOINT,
-)
+def get_deployment() -> str:
+    return _env("AZURE_OPENAI_DEPLOYMENT")
+
+
+# Built on first use. Raising at import time made this module - and therefore
+# the whole publication_support package - unimportable without credentials,
+# which no caller can catch, so the writing sub-orchestrator could not even
+# fall back. A missing key is now a call-time error the caller degrades from.
+@lru_cache(maxsize=1)
+def get_client() -> OpenAI:
+    missing = [
+        n
+        for n in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT")
+        if not _env(n)
+    ]
+    if missing:
+        raise RuntimeError(f"Missing Azure OpenAI settings in .env: {', '.join(missing)}")
+    return OpenAI(api_key=_env("AZURE_OPENAI_API_KEY"), base_url=_env("AZURE_OPENAI_ENDPOINT"))
 
 
 # Interpreting the same input twice costs a call and returns the same thing,
@@ -215,8 +233,8 @@ def _call_model(raw_input: str) -> str:
     # JSON mode when the deployment supports it; some do not, so a plain
     # call is retried before giving up and falling back to the raw input.
     try:
-        response = client.chat.completions.create(
-            model=DEPLOYMENT,
+        response = get_client().chat.completions.create(
+            model=get_deployment(),
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0,
@@ -224,8 +242,8 @@ def _call_model(raw_input: str) -> str:
         )
 
     except Exception:
-        response = client.chat.completions.create(
-            model=DEPLOYMENT,
+        response = get_client().chat.completions.create(
+            model=get_deployment(),
             messages=messages,
             temperature=0,
             max_tokens=400,

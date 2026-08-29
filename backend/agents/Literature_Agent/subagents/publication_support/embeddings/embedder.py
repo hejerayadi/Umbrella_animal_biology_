@@ -1,7 +1,18 @@
+from functools import lru_cache
+
 from sentence_transformers import SentenceTransformer
 
 
-model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+
+
+# Built on first use, never at import. This module sits on the import chain
+# behind the Literature Agent's writing sub-orchestrator, so constructing the
+# model here would make every `import` of the agent download and load ~130MB
+# of weights - including on the routes that never recommend a journal.
+@lru_cache(maxsize=1)
+def get_model() -> SentenceTransformer:
+    return SentenceTransformer(EMBEDDING_MODEL)
 
 
 def build_journal_text(journal) -> str:
@@ -49,7 +60,7 @@ def embed_journal(journal):
 
     text = build_journal_text(journal)
 
-    vector = model.encode(
+    vector = get_model().encode(
         text,
         normalize_embeddings=True
     )
@@ -69,7 +80,7 @@ def build_query_text(query: str) -> str:
 
 def embed_query(query: str):
 
-    vector = model.encode(
+    vector = get_model().encode(
         build_query_text(query),
         normalize_embeddings=True
     )

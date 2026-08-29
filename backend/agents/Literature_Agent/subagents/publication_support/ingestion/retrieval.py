@@ -1,8 +1,8 @@
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-from embeddings.embedder import embed_query
-from qdrant.qdrant_search import search_qdrant
-from ranking.ranker import (
+from ..embeddings.embedder import embed_query
+from ..qdrant.qdrant_search import search_qdrant
+from ..ranking.ranker import (
     hierarchy_relevance,
     calculate_final_score,
     warm_cache,

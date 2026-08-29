@@ -25,44 +25,119 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
-import uuid
-
-QDRANT_URL = "https://dcb50776-2c13-4eea-8fd4-66743b5c50e5.sa-east-1-0.aws.cloud.qdrant.io"
-QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6M2ZjY2I2YmMtNzliOC00OWUzLWJmOGQtMGM1YWYxMDQxYzU2In0.SzGxMsqtz8Fg1TBYMxNCMKhSmhN_cKD3V-zdKmGD-g8"
-
-qdrant = QdrantClient(
-    url=QDRANT_URL,
-    api_key=QDRANT_API_KEY,
+from qdrant_client.models import (
+    Distance,
+    PayloadSchemaType,
+    PointStruct,
+    VectorParams,
 )
+import uuid
+import os
+from functools import lru_cache
+from pathlib import Path
 
+from dotenv import load_dotenv
 
 # ============================================
-# 1. CONFIGURATION GROQ CLOUD
+# 0. CONFIGURATION (.env)
 # ============================================
+#
+# Every credential and every deployment-specific value is read from the
+# environment. Nothing secret is hardcoded here: this file is committed, the
+# .env next to it is not (see .gitignore).
+#
+# The .env is addressed by absolute path rather than by walking up from the
+# working directory. This subagent can be started from the repository root or
+# from backend/, and a bare load_dotenv() would then pick up backend/.env -
+# which has none of these keys - and the module would silently fall back to
+# unconfigured defaults.
+#
+# Lookup order, first hit wins:
+#   1. the process environment (docker/compose, CI secrets)
+#   2. this subagent's own .env
+#   3. the Literature_Agent .env, for values shared with the other subagents
+#      (QDRANT_URL / QDRANT_API_KEY are already declared there)
 
-GROQ_API_KEY = "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"
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "openai/gpt-oss-20b"
+_HERE = Path(__file__).resolve().parent
+load_dotenv(_HERE / ".env", override=False)
+load_dotenv(_HERE.parents[1] / ".env", override=False)
+
+
+def _env(name: str, default: str = "") -> str:
+    """Read a setting, tolerating the `KEY = "value"` style used in some of
+    the sibling .env files (dotenv keeps the quotes only when they are
+    unbalanced, but stray whitespace still slips through)."""
+    return (os.getenv(name) or default).strip().strip('"').strip("'")
+
+
+# --- Qdrant -----------------------------------------------------------------
+QDRANT_URL = _env("QDRANT_URL")
+QDRANT_API_KEY = _env("QDRANT_API_KEY")
+COLLECTION_NAME = _env("QDRANT_COLLECTION", "lina_researchPaperArticles")
+VECTOR_SIZE = int(_env("QDRANT_VECTOR_SIZE", "384"))
+
+# --- Groq Cloud -------------------------------------------------------------
+GROQ_API_KEY = _env("GROQ_API_KEY")
+GROQ_API_URL = _env("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+GROQ_MODEL = _env("GROQ_MODEL", "openai/gpt-oss-20b")
 
 HEADERS = {
     "Authorization": f"Bearer {GROQ_API_KEY}",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
 }
-COLLECTION_NAME = "lina_researchPaperArticles"
 
-if not qdrant.collection_exists(COLLECTION_NAME):
-    qdrant.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-    )
-# ============================================
-# 2. CONFIGURATION FIRECRAWL
-# ============================================
+# --- Firecrawl --------------------------------------------------------------
+FIRECRAWL_API_KEY = _env("FIRECRAWL_API_KEY")
+FIRECRAWL_BASE_URL = _env("FIRECRAWL_BASE_URL", "https://api.firecrawl.dev/v1")
 
-# 🔑 Clé API Firecrawl
-FIRECRAWL_API_KEY = "fc-ae51ce401ea14c73991ee737412cfb34"
-FIRECRAWL_BASE_URL = "https://api.firecrawl.dev/v1"
+# --- Embeddings -------------------------------------------------------------
+EMBEDDING_MODEL = _env("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+
+# Settings that must be present before the agent can do anything useful.
+REQUIRED_SETTINGS = ("QDRANT_URL", "QDRANT_API_KEY", "GROQ_API_KEY", "FIRECRAWL_API_KEY")
+
+
+def missing_settings() -> List[str]:
+    """Names of the required settings that are not configured."""
+    return [n for n in REQUIRED_SETTINGS if not globals().get(n)]
+
+
+# The client is built on first use, never at import time. Constructing it here
+# would make a missing or wrong QDRANT_URL an ImportError that no caller can
+# catch - the same reasoning as subagents/writing/kb/qdrant_setup.py.
+@lru_cache(maxsize=1)
+def get_qdrant() -> QdrantClient:
+    if not QDRANT_URL:
+        raise RuntimeError(
+            "QDRANT_URL is not set - copy .env.example to .env in "
+            "subagents/retrieval&knowledge processing/ and fill it in."
+        )
+    return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY or None)
+
+
+def setup_collection() -> None:
+    """Create the collection and its payload index if they do not exist yet.
+
+    Called from main(); never at import. It only ever creates - it does not
+    drop an existing collection, so running the agent cannot destroy the
+    indexed corpus.
+    """
+    client = get_qdrant()
+    if not client.collection_exists(COLLECTION_NAME):
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+        )
+        print(f"✅ Collection '{COLLECTION_NAME}' créée (dimension {VECTOR_SIZE})")
+
+    try:
+        client.create_payload_index(
+            collection_name=COLLECTION_NAME,
+            field_name="type",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+    except Exception:
+        pass  # already indexed
 
 # ============================================
 # 3. CONFIGURATION DES APIS
@@ -438,7 +513,7 @@ def chercher_similaire_qdrant(query_embedding: np.ndarray, seuil: float = 0.6, t
             ]
         )
 
-        resultats = qdrant.query_points(
+        resultats = get_qdrant().query_points(
             collection_name=COLLECTION_NAME,
             query=query_embedding.tolist(),
             query_filter=query_filter,
@@ -457,15 +532,20 @@ def chercher_similaire_qdrant(query_embedding: np.ndarray, seuil: float = 0.6, t
 
 from sentence_transformers import SentenceTransformer
 
-# Chargé UNE SEULE FOIS au démarrage du script, pas à chaque appel
+# Chargé UNE SEULE FOIS, à la première utilisation - jamais à l'import.
+# Ce module est sur la chaîne d'import de l'agent Literature : le construire
+# ici téléchargerait ~500 Mo de poids à chaque démarrage du service, y compris
+# sur les routes qui ne font aucune recherche sémantique.
 # Modèle multilingue : comprend le français, l'anglais, etc.
-_MODEL = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+@lru_cache(maxsize=1)
+def get_model() -> SentenceTransformer:
+    return SentenceTransformer(EMBEDDING_MODEL)
 
 class SemanticEmbeddingEngine:
     """Moteur d'embeddings sémantiques (vrais embeddings neuronaux)"""
 
     def __init__(self):
-        self.model = _MODEL
+        self.model = get_model()
         self.embedding_cache = {}
 
     def generate_embeddings(self, text: str) -> np.ndarray:
@@ -529,7 +609,7 @@ class SemanticEmbeddingEngine:
                     }
                 )
 
-                qdrant.upsert(collection_name=COLLECTION_NAME, points=[point])
+                get_qdrant().upsert(collection_name=COLLECTION_NAME, points=[point])
                 stockes.append({"title": titre, "resume": resume, "score": score})
                 print(f"✅ Stocké dans Qdrant (score: {score:.3f})")
             else:
@@ -944,7 +1024,7 @@ def stocker_synthese_qdrant(user_query: str, synthese: str, top_resultats: List[
     )
 
     try:
-        qdrant.upsert(collection_name=COLLECTION_NAME, points=[point])
+        get_qdrant().upsert(collection_name=COLLECTION_NAME, points=[point])
         print(f"✅ Synthèse stockée dans Qdrant avec {len(sources)} sources référencées")
         return point.id
     except Exception as e:
@@ -961,6 +1041,10 @@ def test_apis():
     """Teste les APIs"""
     print("🔍 TEST DES APIS")
     print("="*60)
+
+    manquants = missing_settings()
+    if manquants:
+        print(f"   ⚠️ Variables non configurées dans .env : {', '.join(manquants)}")
 
     # Test Groq
     try:
@@ -1015,7 +1099,7 @@ def ajouter_article_qdrant(titre: str, resume: str, url: str, source: str,
     )
 
     try:
-        qdrant.upsert(collection_name=COLLECTION_NAME, points=[point])
+        get_qdrant().upsert(collection_name=COLLECTION_NAME, points=[point])
         print(f"✅ Article '{titre}' ajouté dans Qdrant")
         return point.id
     except Exception as e:
@@ -1042,6 +1126,7 @@ def main():
     print("="*70)
 
     test_apis()
+    setup_collection()
 
     print("\n" + "="*70)
     print("📝 SAISIE DES REQUÊTES")
@@ -1076,78 +1161,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-from qdrant_client.models import PayloadSchemaType
-
-qdrant.create_payload_index(
-    collection_name=COLLECTION_NAME,
-    field_name="type",
-    field_schema=PayloadSchemaType.KEYWORD
-)
-print("✅ Index créé sur le champ 'type'")
-
-"""ajouter un article dans qdrant"""
-
-searcher = UnifiedSearchWithLLM()
-resume_article = (
-    "Contrairement à la plupart des animaux domestiques retournés à l'état sauvage, la ferallité des chiens "
-    "domestiques est habituellement définie selon leur comportement de déplacement, leur dépendance alimentaire "
-    "et leur socialisation avec l'humain. Les auteurs soutiennent que ces critères — dépendance alimentaire et "
-    "socialisation — ne sont pas nécessaires pour définir la ferallité lorsque les chiens représentent une menace "
-    "pour la faune sauvage, car ces traits ne sont pas exclusifs aux chiens domestiques et compliquent leur "
-    "identification sur le terrain. Comme étude de cas, la législation chilienne ne reconnaît pas l'existence des "
-    "chiens harets et interdit les méthodes létales, ce qui complique la gestion de la prédation sur le bétail "
-    "(chèvres, moutons). Les propriétaires font face à un dilemme : tuer un chien attaquant au risque de poursuites "
-    "s'il est possédé, ou continuer à subir des pertes. Les auteurs proposent de définir les chiens harets uniquement "
-    "sur la base du statut de propriété, du comportement de déplacement et de la localisation, dans une perspective "
-    "de gestion — argumentant que la question de savoir si un chien est réellement 'haret' importe peu pour la prise "
-    "de décision en conservation."
-)
-
-ajouter_article_qdrant(
-    titre="Redefining feral dogs in biodiversity conservation",
-    resume=resume_article,
-    url="https://doi.org/10.1016/j.biocon.2021.109434",
-    source="ScienceDirect / Biological Conservation",
-    query_used="biodiversity of dogs",
-    semantic_engine=searcher.semantic_engine
-)
-
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
-
-QDRANT_URL = "https://dcb50776-2c13-4eea-8fd4-66743b5c50e5.sa-east-1-0.aws.cloud.qdrant.io"
-QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6M2ZjY2I2YmMtNzliOC00OWUzLWJmOGQtMGM1YWYxMDQxYzU2In0.SzGxMsqtz8Fg1TBYMxNCMKhSmhN_cKD3V-zdKmGD-g8"
-COLLECTION_NAME = "lina_researchPaperArticles"
-
-qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-
-# Supprime l'ancienne collection si elle existe (dimension incompatible)
-if qdrant.collection_exists(COLLECTION_NAME):
-    qdrant.delete_collection(COLLECTION_NAME)
-    print(f"🗑️ Ancienne collection '{COLLECTION_NAME}' supprimée")
-
-# Recrée avec la bonne dimension (384 = paraphrase-multilingual-MiniLM-L12-v2)
-qdrant.create_collection(
-    collection_name=COLLECTION_NAME,
-    vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-)
-print(f"✅ Collection '{COLLECTION_NAME}' créée avec dimension 384")
-
-!pip install qdrant-client
-
-pip install qdrant-client
-
-pip show qdrant-client
-
-"""firecrawl web search"""
-
-from firecrawl import Firecrawl
-
-firecrawl = Firecrawl(api_key="fc-ae51ce401ea14c73991ee737412cfb34")
-
-results = firecrawl.search(
-    query="research paper about animal biodiversity",
-    limit=3,
-)
-print(results)

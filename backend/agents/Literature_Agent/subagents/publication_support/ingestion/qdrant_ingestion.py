@@ -1,14 +1,13 @@
 from qdrant_client.models import PointStruct
 
-from embeddings.embedder import embed_journal
-from ingestion.normalizer import normalize_journal
-from qdrant.client import get_client, COLLECTION_NAME
+from ..embeddings.embedder import embed_journal
+from .normalizer import normalize_journal
+from ..qdrant.client import get_client, COLLECTION_NAME
 
 import json
 import time
 
 
-client = get_client()
 
 DATA_PATH = "data/journals.json"
 
@@ -80,7 +79,7 @@ def upsert_batch(batch):
     for attempt in range(1, UPSERT_RETRIES + 1):
 
         try:
-            client.upsert(
+            get_client().upsert(
                 collection_name=COLLECTION_NAME,
                 points=batch,
                 wait=True
