@@ -287,7 +287,7 @@ class RecognitionWorkflow:
 
     # -- entry point --------------------------------------------------------
 
-    def run(self, instruction, context) -> AgentResult:
+    def run(self, instruction, context, *, trace_id: str | None = None) -> AgentResult:
         started = time.perf_counter()
         initial = RecognitionState(instruction=instruction, context=context)
         # Config values the finalize node needs, snapshotted so the state stays
@@ -315,6 +315,10 @@ class RecognitionWorkflow:
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
             "status": result.status.value,
         }
+        if trace_id:
+            # Whatever the Orchestrator sent, verbatim. Never generated,
+            # never parsed - a foreign id we only ever echo back.
+            event["trace_id"] = trace_id
         if result.status is AgentStatus.FAILED and isinstance(result.output, dict):
             event["error_code"] = result.output.get("error_code")
         elif result.status is AgentStatus.COMPLETED and isinstance(result.output, dict):
