@@ -110,7 +110,7 @@ class ReconstructionGraph:
             rationale=plan.rationale,
         )
         return {
-            "plan": tuple(action.value for action in plan.actions),
+            "plan": _with_mandatory_validation(tuple(action.value for action in plan.actions)),
             "observations": (f"plan: {plan.rationale}",),
         }
 
@@ -365,6 +365,35 @@ def _route_after_evaluate(state: dict[str, Any]) -> str:
     if plan and plan[0] != router.FINALIZE_ACTION:
         return router.ACT
     return router.after_evaluate(state)
+
+
+def _with_mandatory_validation(plan: tuple[str, ...]) -> tuple[str, ...]:
+    """Guarantee a candidate is validated before a run can finalise.
+
+    The plan is model-authored, and the planner treats `validate_candidate` as
+    one option among many. Observed on a gap with no spanning homolog: it
+    planned `... evaluate_with_evo2 -> score_candidate -> finalize_result`, and
+    a 90-base Evo 2 fill consisting of nothing but adenine was committed as
+    RESOLVED at 0.60 confidence with `validation.checks == []`.
+    `check_low_complexity` exists for exactly that shape - its
+    `max_homopolymer_fraction` is 0.6, and a run of pure A scores 1.0 - it had
+    simply never been asked to look.
+
+    Whether a proposed fill is admissible is a property of the answer, not a
+    step a planner should be free to drop: this agent's whole premise is that
+    it does not invent sequence. Validation is therefore inserted rather than
+    requested, immediately before finalisation so it sees the scored
+    candidates. When no candidate was produced the action is skipped by the
+    normal prerequisite check, exactly as a planned one would be.
+    """
+    if ToolName.VALIDATE_CANDIDATE.value in plan:
+        return plan
+
+    finalize = ToolName.FINALIZE_RESULT.value
+    if finalize in plan:
+        at = plan.index(finalize)
+        return plan[:at] + (ToolName.VALIDATE_CANDIDATE.value,) + plan[at:]
+    return plan + (ToolName.VALIDATE_CANDIDATE.value,)
 
 
 #: Which output field lands in which state channel. A table rather than a chain

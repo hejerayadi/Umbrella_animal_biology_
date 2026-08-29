@@ -164,7 +164,15 @@ class ReconstructionService:
                         request_id=request_id,
                         deadline=deadline,
                         budget=budget,
-                        accession=record.accession,
+                        # The caller's accession, never `record.accession`.
+                        # For a pasted sequence that field is a label -
+                        # "supplied-sequence", or the assembly id - and
+                        # GetSequenceContextTool checks `accession` before
+                        # `residues`, so passing it makes the tool try to fetch
+                        # the label from NCBI. It fails, and because every later
+                        # action needs the record, the whole gap is skipped
+                        # without a single BLAST being run.
+                        accession=request.sequence_accession,
                         residues=None if request.sequence_accession else record.residues,
                         scientific_name=profile.scientific_name,
                     )
@@ -425,7 +433,19 @@ def _provenance(round_: HomologyRound, budget: BudgetLedger) -> Provenance:
 def _homology_evidence(round_: HomologyRound) -> HomologyEvidence:
     best = round_.best
     if best is None:
-        return HomologyEvidence()
+        # No scope produced a gap-spanning hit. Reporting an empty
+        # HomologyEvidence here says `hits_examined: 0`, which reads as "BLAST
+        # found nothing" - but the search routinely examines hundreds that
+        # simply stop at the gap edges, and the two findings mean different
+        # things. Aggregate what was actually seen across every scope tried.
+        every_hit = [hit for item in round_.outcomes for hit in item.hits]
+        top = max(every_hit, key=lambda hit: hit.identity, default=None)
+        return HomologyEvidence(
+            hits_examined=sum(item.total_hits for item in round_.outcomes),
+            gap_spanning_hits=0,
+            best_identity=top.identity if top else 0.0,
+            closest_organism=top.organism if top else None,
+        )
     top = max(best.hits, key=lambda hit: hit.identity, default=None)
     return HomologyEvidence(
         hits_examined=best.total_hits,

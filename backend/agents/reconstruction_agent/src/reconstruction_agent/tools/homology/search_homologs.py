@@ -156,12 +156,28 @@ class SearchHomologsTool(Tool[SearchHomologsInput, SearchHomologsOutput]):
 
         round_ = outcome.data.round
         best = round_.best
-        homology = None
         if best is not None:
             top = max(best.hits, key=lambda hit: hit.identity, default=None)
             homology = HomologyEvidence(
                 hits_examined=best.total_hits,
                 gap_spanning_hits=best.gap_spanning_hits,
+                best_identity=top.identity if top else 0.0,
+                closest_organism=top.organism if top else None,
+            )
+        else:
+            # No scope produced a gap-spanning hit, so there is no winner to
+            # measure from - but the search still examined hits, and leaving
+            # this None reports `hits_examined: 0`, which reads as "BLAST found
+            # nothing". It found plenty; none of it crossed the gap, and those
+            # are different findings. One says the region has no homologous
+            # sequence on record, the other says it has homologs that stop at
+            # the gap edges. Aggregated across every scope tried.
+            examined = sum(item.total_hits for item in round_.outcomes)
+            every_hit = [hit for item in round_.outcomes for hit in item.hits]
+            top = max(every_hit, key=lambda hit: hit.identity, default=None)
+            homology = HomologyEvidence(
+                hits_examined=examined,
+                gap_spanning_hits=0,
                 best_identity=top.identity if top else 0.0,
                 closest_organism=top.organism if top else None,
             )

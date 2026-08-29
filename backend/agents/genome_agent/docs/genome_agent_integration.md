@@ -177,19 +177,72 @@ and finalizes `prompt_to_target_agent`, then hands off to `explanation_writer`.
 `subagents/gap_finder.py`) locates the assembly's actual gap coordinates and
 resolves its real Nuccore sequence accession:
 
-1. Resolve the assembly accession (e.g. `GCF_000687225.1`) to a Nuccore UID
-   via the same esearch/elink two-hop dance `sequence_window.py` already
-   documents, then esummary that UID to recover the real accession string
-   (e.g. `NW_007907101.1`) — this is `state.sequence_accession`.
-2. Fetch that sequence's NCBI feature table (`efetch rettype=ft`, KB-scale
-   regardless of chromosome size) and parse out `gap`/`assembly_gap`
-   features for start/end/length — this is where `state.target_gaps` comes
-   from; nothing before this wired up actual per-gap coordinates.
-3. For each gap (capped at `DEFAULT_MAX_GAPS = 5`), call
-   `sequence_window.fetch_sequence_window` for `DEFAULT_FLANK_BP = 50` bp on
-   each side, giving each gap its `left_flank`/`right_flank` strings. This is
-   the first real caller of `sequence_window.py`, which until now was a
-   standalone subagent not wired into the graph.
+1. Select the assembly's **largest** genomic record within a size band
+   (`50 kb – 2 Mb`) with one nuccore esearch on `<assembly>[Assembly] AND
+   <min>:<max>[SLEN]`, `sort=SLEN`, then esummary it for the real accession
+   string (e.g. `NW_024426341.1`) — this is `state.sequence_accession`.
+   Searching by `[Assembly]` keeps the record tied to *this* assembly, and
+   sorting by length is what picks the gapped scaffold: gaps are what joins
+   contigs into scaffolds, so the large scaffolds are where the unresolved
+   regions live. The unplaced fragments measure gap-free — for
+   `GCF_017311325.1`, NCBI's *first linked* record is a 1,112 bp fragment
+   with no gaps at all, while its largest scaffold is 1,153,480 bp and holds
+   30 runs of N.
+2. Read that record's residues in `MAX_WINDOW_BP` (200 kb) slices through
+   `sequence_window.fetch_window_by_accession`, capped at 2 Mb, and scan for
+   runs of N — this is where `state.target_gaps` comes from. Coordinates are
+   1-based inclusive with `length == end - start + 1`.
+
+   **Not the feature table.** This step originally parsed `efetch
+   rettype=ft` for `gap`/`assembly_gap` features, which is KB-scale
+   regardless of record size and looked like the cheaper option. It does not
+   work for the RefSeq WGS/CON scaffolds this agent resolves: measured on
+   `NW_024426341.1`, the feature table is 923 lines of `gene`/`exon`/`CDS`
+   with **zero** gap features, while the FASTA for the same record contains
+   30 runs of N totalling 8,184 bases. Those features live in the GenBank
+   flat file of records that store their own sequence; a CON record is a
+   `join()` of WGS contigs and carries neither. The feature-table version
+   returned an empty `target_gaps` for every assembly, every time.
+3. Slice `DEFAULT_FLANK_BP = 50` bases either side of each gap out of the
+   residues already in hand — no extra requests — and return the
+   `DEFAULT_MAX_GAPS = 10` **shortest** gaps, shortest first, with runs
+   below `MIN_GAP_BP = 5` dropped.
+
+   **Why shortest.** The intuitive choice is the longest runs — they are the
+   most of the assembly left unresolved — and it is the wrong one. Measured
+   end to end on `NW_024426341.1`: sending the five longest (537–2,784 bp)
+   returned `INSUFFICIENT_GAP_SPANNING_HOMOLOGS` for every one, because no
+   reference in `core_nt` covers both flanks of a run that size and the
+   region exceeds what Evo 2 will cover. Sending the ten shortest resolved
+   two of them with real fills. The floor of 5 is the Reconstruction Agent's
+   own `DEFAULT_MIN_GAP_LENGTH`; dropping it further only surfaces single
+   uncallable bases, which would crowd out the gaps worth sending.
+
+   Cost: 2 requests to select the record plus one per 200 kb window (6 for a
+   1.15 Mb scaffold), against the ~30 the per-gap flank fetches used to make.
+
+**Known limitation — GenBank-only assemblies.** Nuccore populates its
+`[Assembly]` field for RefSeq assemblies only: `GCF_900497805.2[Assembly]`
+matches 15,415 records, every `GCA_...` accession matches none. Step 1 falls
+back to the assembly's own WGS project (`LVCL01[WGS]`, read from the assembly
+esummary), which is equally specific to it — but for a GenBank-only project
+the only record *indexed* under it is the WGS **master record**
+(`LVCL000000000.1`), a placeholder whose sequence is padding rather than
+assembled bases. Its individual contigs are retrievable by accession but are
+not in the search index.
+
+Scanning a master record yields one enormous run of N — 1.2 Mb for the okapi —
+which is not a gap in anything, and handing it on would send the
+Reconstruction Agent off to BLAST a megabase of Ns. `_is_wgs_master` rejects
+those with a `GapFinderError`, which `find_target_gaps_node` degrades to an
+empty `target_gaps` plus a warning in the handoff context, as it does any
+other gap-finding failure.
+
+So in practice: **RefSeq (`GCF_`) Scaffold/Contig assemblies produce real gap
+coordinates; GenBank-only (`GCA_`) ones escalate without them.** Reaching the
+latter needs a different route to the contigs — the NCBI Datasets API or the
+assembly's FTP sequence report, neither of which is a eutils search — and is
+not attempted here.
 
 A gap-finding failure (e.g. NCBI unreachable) is non-fatal: the reconstruction
 handoff still proceeds with `sequence_accession: None` / `target_gaps: []`

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import os
 import sys
 import time
 import uuid
@@ -64,7 +65,52 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await engine.dispose()
 
 
+def _configure_logging() -> None:
+    """Send the orchestrator's own log lines to the console.
+
+    Nothing here configured logging before, so the root logger stayed at its
+    WARNING default with no handler on the application loggers. uvicorn sets
+    up `uvicorn.*` only, which is why this terminal showed request lines and
+    reload notices and nothing else - every `logger.info` in
+    `backend/orchestrator/` (which agent was picked, what it answered, why an
+    escalation was refused) was formatted and then dropped.
+
+    Those lines are the only view of what the orchestrator is doing between
+    receiving a question and returning an answer, and a run takes minutes.
+
+    `UMBRELLA_LOG_LEVEL` overrides the level; set it to WARNING for a quiet
+    console. Only the `backend` tree is touched, so third-party libraries keep
+    their own defaults rather than flooding the terminal.
+    """
+    level_name = os.getenv("UMBRELLA_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        logging.Formatter("%(levelname)-8s %(name)s: %(message)s")
+    )
+
+    backend_logger = logging.getLogger("backend")
+    # Replace rather than append: --reload re-imports this module in the same
+    # process tree, and appending would print every line twice after a reload,
+    # three times after the next one.
+    backend_logger.handlers.clear()
+    backend_logger.addHandler(handler)
+    backend_logger.setLevel(level)
+    # It has its own handler; letting records also reach the root logger would
+    # duplicate them wherever the root is configured.
+    backend_logger.propagate = False
+
+    # `umbrella.api` is this module's own logger, outside the `backend` tree.
+    api_logger = logging.getLogger("umbrella.api")
+    api_logger.handlers.clear()
+    api_logger.addHandler(handler)
+    api_logger.setLevel(level)
+    api_logger.propagate = False
+
+
 def create_app() -> FastAPI:
+    _configure_logging()
     settings = get_settings()
     application = FastAPI(
         title=settings.app_name,

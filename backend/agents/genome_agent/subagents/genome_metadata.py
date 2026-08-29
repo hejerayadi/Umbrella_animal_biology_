@@ -121,6 +121,17 @@ async def get_genome_metadata(assembly_id: str) -> dict:
 
     assembly_level = assembly_info.get("assemblystatus") or stats.get("assembly-level")
 
+    # A scaffold- or contig-level assembly has not been organised into
+    # chromosomes, so NCBI's chromosome_count of 0 there means "not counted",
+    # not "zero chromosomes" - reported as None so no caller has to explain
+    # away a biologically impossible number. On a chromosome-level assembly a
+    # 0 is kept as-is: there it would be a real (if surprising) data point.
+    #
+    # `fetch_assembly_stats` below applies the same rule; the two functions
+    # return the same field and must agree on what it means.
+    if chromosome_count == 0 and str(assembly_level or "").lower() in ("scaffold", "contig"):
+        chromosome_count = None
+
     return {
         "genome_size_bp": genome_size_bp,
         "chromosome_count": chromosome_count,
