@@ -23,6 +23,7 @@ from typing import Callable, Optional
 import networkx as nx
 import requests
 import torch
+from langsmith import traceable
 
 from ...schema import (
     AgentRequest,
@@ -40,6 +41,7 @@ from ...schema import (
 DEFAULT_GENE_CANDIDATES = ["CYTB", "COX1"]
 
 
+@traceable(name="UniProt sequence fetch", run_type="tool")
 def fetch_uniprot_sequence(species: str, gene_candidates: list[str]) -> str:
     """Fetch a reviewed protein sequence for `species` by organism name.
 
@@ -102,6 +104,7 @@ def _get_model():
     return _MODEL, _BATCH_CONVERTER
 
 
+@traceable(name="ESM-2 embedding", run_type="tool")
 def embed_sequences(sequences: dict[str, str]) -> dict[str, torch.Tensor]:
     """Mean-pooled ESM-2 embedding per species. Raw, uncentered."""
     model, batch_converter = _get_model()
@@ -130,15 +133,25 @@ def compute_similarity_scores(embeddings: dict[str, torch.Tensor]) -> list[Simil
     # ESM-2 embeddings share a dominant direction (anisotropy) that makes
     # every pair look artificially similar otherwise. Centered relative to
     # this request's own species batch, matching scripts/validate_esm2.py.
+    #
+    # Degenerate at exactly 2 species: centering two vectors always makes
+    # them exact opposites of each other (v - mean = (v1-v2)/2 for one,
+    # its negation for the other), forcing cosine similarity to -1.0 no
+    # matter what the sequences actually are. Verified empirically: two
+    # random, totally unrelated vectors centered this way score -1.0 every
+    # time. There's no batch signal to remove with only 2 points anyway --
+    # anisotropy correction needs enough samples to estimate a real batch
+    # direction. So centering only applies at 3+ species; a 2-species
+    # request falls back to raw cosine similarity.
     matrix = torch.stack([embeddings[s] for s in species])
-    centered = matrix - matrix.mean(dim=0)
+    vectors = matrix - matrix.mean(dim=0) if len(species) >= 3 else matrix
 
     edges: list[SimilarityEdge] = []
     for i in range(len(species)):
         for j in range(i + 1, len(species)):
             a, b = species[i], species[j]
             sim = torch.nn.functional.cosine_similarity(
-                centered[i].unsqueeze(0), centered[j].unsqueeze(0)
+                vectors[i].unsqueeze(0), vectors[j].unsqueeze(0)
             ).item()
             edges.append(SimilarityEdge(species_a=a, species_b=b, score=round(sim, 4)))
     return edges
@@ -266,6 +279,7 @@ class MolecularComparisonAgent:
         self._fetch = fetch_fn or fetch_uniprot_sequence
         self._embed = embed_fn or embed_sequences
 
+    @traceable(name="Molecular Comparison Agent", run_type="chain")
     def run(self, request: AgentRequest) -> AgentResult:
         species = self._resolve_species(request)
 
