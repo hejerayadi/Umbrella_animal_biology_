@@ -36,3 +36,9 @@ SCORE_THRESHOLD = 0.65
 # --- Chunking ---
 CHUNK_MAX_CHARS = 800
 CHUNK_OVERLAP = 100
+
+# --- Azure OpenAI / Azure AI Foundry (LLM de l'agent) ---
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT")  # nom du deploiement, pas le nom du modele
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-08-07-preview")
