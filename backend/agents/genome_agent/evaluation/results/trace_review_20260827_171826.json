@@ -1,0 +1,316 @@
+[
+  {
+    "id": "01a04403",
+    "name": "explanation_writer",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "explanation_writer"
+      ]
+    },
+    "hallucination": {
+      "passed": false,
+      "ungrounded": [
+        "2391082183"
+      ],
+      "upstream_nums": [],
+      "note": "1 number(s) in explanation not found upstream"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.002903,
+      "slowest_spans": [
+        [
+          "explanation_writer",
+          0.002903
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "reconstruction_resolver",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "reconstruction_resolver",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "reconstruction_resolver"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.017439,
+      "slowest_spans": [
+        [
+          "reconstruction_resolver",
+          0.017439
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "_route_after_join_parallel",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "_route_after_join_parallel"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.003186,
+      "slowest_spans": [
+        [
+          "_route_after_join_parallel",
+          0.003186
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "join_parallel",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "join_parallel"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.006861,
+      "slowest_spans": [
+        [
+          "join_parallel",
+          0.006861
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "get_genome_metadata",
+    "status": "success",
+    "latency_s": 1.2,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "reconstruction_resolver",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "get_genome_metadata"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 1.22092,
+      "slowest_spans": [
+        [
+          "get_genome_metadata",
+          1.22092
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "get_gene_annotation",
+    "status": "success",
+    "latency_s": 1.9,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "get_gene_annotation"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 1.881259,
+      "slowest_spans": [
+        [
+          "get_gene_annotation",
+          1.881259
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "parallel_kickoff",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "parallel_kickoff"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.001734,
+      "slowest_spans": [
+        [
+          "parallel_kickoff",
+          0.001734
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "_route_after_species_resolver",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "_route_after_species_resolver"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.001311,
+      "slowest_spans": [
+        [
+          "_route_after_species_resolver",
+          0.001311
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "species_resolver",
+    "status": "success",
+    "latency_s": 2.1,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "species_resolver"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 2.136567,
+      "slowest_spans": [
+        [
+          "species_resolver",
+          2.136567
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a04403",
+    "name": "query_router",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "query_router"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.003902,
+      "slowest_spans": [
+        [
+          "query_router",
+          0.003902
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  }
+]

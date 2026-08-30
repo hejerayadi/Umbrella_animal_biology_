@@ -1,0 +1,92 @@
+{
+  "overall": "1/3",
+  "pass_rate": 0.333,
+  "by_category": {
+    "scaffold_escalation": "1/3"
+  },
+  "failure_ranking": [
+    [
+      "scaffold_escalation",
+      2
+    ]
+  ],
+  "details": {
+    "scaffold_escalation": {
+      "pass": 1,
+      "total": 3,
+      "failures": [
+        {
+          "id": "scaffold_amur_tiger",
+          "input": "What is the genome sequence of the Amur tiger?",
+          "failed_metrics": {
+            "task_success": {
+              "passed": false,
+              "score": 0.0,
+              "reason": "status='error_end' (expected 'completed')"
+            },
+            "trajectory": {
+              "passed": false,
+              "score": 0.25,
+              "reason": "missing nodes in trajectory: ['parallel_kickoff', 'get_genome_metadata', 'get_gene_annotation', 'join_parallel', 'reconstruction_resolver', 'explanation_writer']; extra (non-optional) nodes: ['error_end']; actual: ['query_router', 'species_resolver', 'error_end']"
+            },
+            "tool_selection": {
+              "passed": false,
+              "score": 0.33,
+              "reason": "tools not called: ['ncbi_assembly_lookup', 'ncbi_assembly_stats']; tools actually called: ['ncbi_taxonomy_search']"
+            },
+            "escalation": {
+              "passed": false,
+              "score": 0.0,
+              "reason": "expected escalation but: escalation_triggered=False; reconstruction_resolver not in node_sequence"
+            }
+          },
+          "node_sequence": [
+            "query_router",
+            "species_resolver",
+            "error_end"
+          ],
+          "tool_calls": [
+            "ncbi_taxonomy_search"
+          ],
+          "wall_time_s": 5.03,
+          "errors": [
+            "species_resolver raised an exception: 429 Client Error: Too Many Requests for url: https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=assembly&term=txid74533%5BOrganism%3Aexp%5D+AND+latest_refseq%5Bfilter%5D&retmode=json&retmax=1"
+          ]
+        },
+        {
+          "id": "scaffold_snow_leopard",
+          "input": "Give me the complete genome of Panthera uncia",
+          "failed_metrics": {
+            "trajectory": {
+              "passed": false,
+              "score": 0.75,
+              "reason": "missing nodes in trajectory: ['reconstruction_resolver', 'explanation_writer']; extra (non-optional) nodes: []; actual: ['query_router', 'species_resolver', 'parallel_kickoff', 'get_gene_annotation', 'get_genome_metadata', 'join_parallel', 'generate_visualization', 'explanation_writer']"
+            },
+            "escalation": {
+              "passed": false,
+              "score": 0.0,
+              "reason": "expected escalation but: escalation_triggered=False; reconstruction_resolver not in node_sequence"
+            }
+          },
+          "node_sequence": [
+            "query_router",
+            "species_resolver",
+            "parallel_kickoff",
+            "get_gene_annotation",
+            "get_genome_metadata",
+            "join_parallel",
+            "generate_visualization",
+            "explanation_writer"
+          ],
+          "tool_calls": [
+            "ncbi_taxonomy_search",
+            "ncbi_assembly_lookup",
+            "ncbi_assembly_stats"
+          ],
+          "wall_time_s": 6.42,
+          "errors": []
+        }
+      ]
+    }
+  }
+}

@@ -57,15 +57,11 @@ from .workflows.state import GenomeAgentState
 
 
 def _parallel_kickoff_node(state: GenomeAgentState) -> dict[str, Any]:
-    # No-op fan-out node — must still write to at least one channel
-    # (langgraph enforces this), so we echo back an unchanged value.
-    return {"errors": []}
+    return {"errors": [], "node_sequence": ["parallel_kickoff"]}
 
 
 def _join_parallel_node(state: GenomeAgentState) -> dict[str, Any]:
-    # No-op join node — must still write to at least one channel.
-    # `errors` uses operator.add as its reducer, so [] is a true no-op merge.
-    return {"errors": []}
+    return {"errors": [], "node_sequence": ["join_parallel"]}
 
 
 # ------------------------------------------------------------------

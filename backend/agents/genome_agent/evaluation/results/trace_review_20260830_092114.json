@@ -1,0 +1,247 @@
+[
+  {
+    "id": "01a051c1",
+    "name": "tool_failure_species_resolver_network_er",
+    "status": "success",
+    "latency_s": 0.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "tool_failure_species_resolver_network_error",
+        "LangGraph",
+        "error_end",
+        "species_resolver",
+        "_route_after_species_resolver",
+        "query_router"
+      ]
+    },
+    "hallucination": {
+      "passed": null,
+      "note": "no explanation found in this trace"
+    },
+    "latency_dupes": {
+      "total_latency_s": 0.041533,
+      "slowest_spans": [
+        [
+          "tool_failure_species_resolver_network_error",
+          0.041533
+        ],
+        [
+          "LangGraph",
+          0.007088
+        ],
+        [
+          "query_router",
+          0.002031
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a051c1",
+    "name": "tool_failure_gene_annotation_timeout",
+    "status": "success",
+    "latency_s": 3.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "tool_failure_gene_annotation_timeout",
+        "LangGraph",
+        "explanation_writer",
+        "generate_visualization",
+        "_route_after_visualization",
+        "join_parallel",
+        "_route_after_join_parallel",
+        "get_genome_metadata",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "get_gene_annotation",
+        "parallel_kickoff",
+        "species_resolver",
+        "_route_after_species_resolver",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "query_router"
+      ]
+    },
+    "hallucination": {
+      "passed": true,
+      "ungrounded": [],
+      "upstream_nums": [
+        "1",
+        "18",
+        "200",
+        "2426387554"
+      ],
+      "note": "all numbers traceable to upstream data"
+    },
+    "latency_dupes": {
+      "total_latency_s": 3.023099,
+      "slowest_spans": [
+        [
+          "tool_failure_gene_annotation_timeout",
+          3.023099
+        ],
+        [
+          "LangGraph",
+          2.978019
+        ],
+        [
+          "species_resolver",
+          1.972542
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a051c1",
+    "name": "tool_failure_ncbi_timeout",
+    "status": "success",
+    "latency_s": 3.0,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "tool_failure_ncbi_timeout",
+        "LangGraph",
+        "explanation_writer",
+        "generate_visualization",
+        "_route_after_visualization",
+        "join_parallel",
+        "_route_after_join_parallel",
+        "get_genome_metadata",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "get_gene_annotation",
+        "parallel_kickoff",
+        "species_resolver",
+        "_route_after_species_resolver",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "query_router"
+      ]
+    },
+    "hallucination": {
+      "passed": true,
+      "ungrounded": [],
+      "upstream_nums": [
+        "1",
+        "18",
+        "200",
+        "2426387554"
+      ],
+      "note": "all numbers traceable to upstream data"
+    },
+    "latency_dupes": {
+      "total_latency_s": 3.021749,
+      "slowest_spans": [
+        [
+          "tool_failure_ncbi_timeout",
+          3.021749
+        ],
+        [
+          "LangGraph",
+          2.992155
+        ],
+        [
+          "species_resolver",
+          2.075916
+        ]
+      ],
+      "duplicate_ncbi_calls": [],
+      "passed": true,
+      "note": "no duplicate NCBI calls"
+    }
+  },
+  {
+    "id": "01a051c1",
+    "name": "gene_list_scaffold_annotation_explicit",
+    "status": "success",
+    "latency_s": 5.7,
+    "orchestration": {
+      "passed": null,
+      "expected_tail": "explanation_writer",
+      "actual_tail": "not_found",
+      "parallel_serial_bug": false,
+      "all_nodes": [
+        "gene_list_scaffold_annotation_explicit",
+        "LangGraph",
+        "explanation_writer",
+        "reconstruction_resolver",
+        "join_parallel",
+        "_route_after_join_parallel",
+        "get_genome_metadata",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "get_gene_annotation",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "parallel_kickoff",
+        "species_resolver",
+        "_route_after_species_resolver",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "ncbi_eutils_get",
+        "query_router"
+      ]
+    },
+    "hallucination": {
+      "passed": true,
+      "ungrounded": [],
+      "upstream_nums": [
+        "1",
+        "2",
+        "200",
+        "3",
+        "4",
+        "4,5",
+        "5",
+        "6",
+        "9"
+      ],
+      "note": "all numbers traceable to upstream data"
+    },
+    "latency_dupes": {
+      "total_latency_s": 5.724403,
+      "slowest_spans": [
+        [
+          "gene_list_scaffold_annotation_explicit",
+          5.724403
+        ],
+        [
+          "LangGraph",
+          5.640185
+        ],
+        [
+          "species_resolver",
+          3.600406
+        ]
+      ],
+      "duplicate_ncbi_calls": [
+        "ncbi_eutils_get({\"max_retries\": 2, \"params\": {\"db\": \"assembly\", \"id\": \"62771\", \"path\": \"esummary)"
+      ],
+      "passed": false,
+      "note": "1 duplicate NCBI call(s) detected"
+    }
+  }
+]

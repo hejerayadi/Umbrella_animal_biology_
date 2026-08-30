@@ -19,10 +19,15 @@ class GenomeAgentState:
     metadata: dict | None = None
     annotation: dict | None = None
     visualization: dict | None = None
-    reconstruction_need: dict | None = None   # ← NEW
+    reconstruction_need: dict | None = None
     explanation: str | None = None
     errors: Annotated[list[str], operator.add] = field(default_factory=list)
     waiting_stack: list[str] = field(default_factory=list)
     waiting_agent: str | None = None
     _metadata_done: bool = False
     _annotation_done: bool = False
+    # Trajectory tracking — each node appends its own name.
+    # operator.add means LangGraph merges lists across parallel branches.
+    node_sequence: Annotated[list[str], operator.add] = field(default_factory=list)
+    # Tool-call log — each subagent call appends {"tool": ..., "args": ...}
+    tool_calls_log: Annotated[list[dict], operator.add] = field(default_factory=list)

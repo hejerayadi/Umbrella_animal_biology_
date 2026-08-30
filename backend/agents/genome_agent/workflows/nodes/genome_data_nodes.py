@@ -17,6 +17,8 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
     assembly_id = state.assembly_id
     logger.info("[get_genome_metadata] fetching metadata for assembly=%r", assembly_id)
 
+    tool_log = [{"tool": "ncbi_assembly_stats", "args": {"assembly_id": assembly_id}}]
+
     try:
         result = await get_genome_metadata(assembly_id)
     except Exception as exc:
@@ -24,6 +26,8 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
             "errors": [*state.errors, f"get_genome_metadata raised an exception: {exc}"],
             "metadata": None,
             "_metadata_done": True,
+            "node_sequence": ["get_genome_metadata"],
+            "tool_calls_log": tool_log,
         }
 
     if result.get("genome_size_bp") is None:
@@ -34,14 +38,10 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
             ],
             "metadata": None,
             "_metadata_done": True,
+            "node_sequence": ["get_genome_metadata"],
+            "tool_calls_log": tool_log,
         }
 
-    # ── Detect gaps / unresolved regions ──────────────────────────────
-    # This check runs unconditionally — even when needs_metadata is False —
-    # because assembly_level is the only signal that tells us whether the
-    # genome needs reconstruction.  needs_metadata only gates whether the
-    # full metadata dict is surfaced to the user; it must not gate the
-    # safety check that decides which path the graph takes.
     reconstruction_need = None
     level = (result.get("assembly_level") or "").lower()
     if level in _INCOMPLETE_LEVELS:
@@ -58,22 +58,21 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
             assembly_id,
             result["assembly_level"],
         )
-    # ──────────────────────────────────────────────────────────────────
 
-    # Only populate state.metadata when the caller explicitly asked for it.
-    # reconstruction_need is written regardless so the router can always act on it.
     metadata_out = result if state.needs_metadata else None
 
     return {
         "metadata": metadata_out,
         "_metadata_done": True,
         "reconstruction_need": reconstruction_need,
+        "node_sequence": ["get_genome_metadata"],
+        "tool_calls_log": tool_log,
     }
 
 
 async def get_gene_annotation_node(state: GenomeAgentState) -> dict[str, Any]:
     if not state.needs_annotation:
-        return {"_annotation_done": True}
+        return {"_annotation_done": True, "node_sequence": ["get_gene_annotation"]}
 
     assembly_id = state.assembly_id
     user_question = state.user_question
@@ -93,6 +92,7 @@ async def get_gene_annotation_node(state: GenomeAgentState) -> dict[str, Any]:
             ],
             "annotation": None,
             "_annotation_done": True,
+            "node_sequence": ["get_gene_annotation"],
         }
 
     if not result.get("gene_list"):
@@ -103,9 +103,12 @@ async def get_gene_annotation_node(state: GenomeAgentState) -> dict[str, Any]:
             ],
             "annotation": result,
             "_annotation_done": True,
+            "node_sequence": ["get_gene_annotation"],
         }
 
     return {
         "annotation": result,
         "_annotation_done": True,
+        "node_sequence": ["get_gene_annotation"],
+        "tool_calls_log": [{"tool": "ncbi_gene_list", "args": {"assembly_id": assembly_id}}],
     }

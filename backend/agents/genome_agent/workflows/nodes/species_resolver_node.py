@@ -13,6 +13,10 @@ async def species_resolver_node(state: GenomeAgentState) -> dict[str, Any]:
     species_name = state.species_name
     logger.info("[species_resolver] resolving species=%r", species_name)
 
+    # Always log that we attempted NCBI taxonomy search — regardless of
+    # which path (LLM or fallback) runs, both call NCBI taxonomy under the hood.
+    base_tool_log = [{"tool": "ncbi_taxonomy_search", "args": {"query": species_name}}]
+
     species = None
     try:
         species = await resolve_species_llm(species_name)
@@ -28,6 +32,8 @@ async def species_resolver_node(state: GenomeAgentState) -> dict[str, Any]:
             return {
                 "errors": [*state.errors, f"species_resolver raised an exception: {exc}"],
                 "assembly_id": None,
+                "node_sequence": ["species_resolver"],
+                "tool_calls_log": base_tool_log,
             }
 
     assembly_id = species.get("assembly_id")
@@ -40,9 +46,16 @@ async def species_resolver_node(state: GenomeAgentState) -> dict[str, Any]:
                 f"Species '{species_name}' could not be resolved to a genome assembly. "
                 "No further data can be retrieved.",
             ],
+            "node_sequence": ["species_resolver"],
+            "tool_calls_log": base_tool_log,
         }
 
     return {
         "species": species,
         "assembly_id": assembly_id,
+        "node_sequence": ["species_resolver"],
+        "tool_calls_log": [
+            {"tool": "ncbi_taxonomy_search", "args": {"query": species_name}},
+            {"tool": "ncbi_assembly_lookup",  "args": {"assembly_id": assembly_id}},
+        ],
     }

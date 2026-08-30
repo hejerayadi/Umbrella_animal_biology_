@@ -1,0 +1,49 @@
+{
+  "overall": "0/1",
+  "pass_rate": 0.0,
+  "by_category": {
+    "happy_path": "0/1"
+  },
+  "failure_ranking": [
+    [
+      "happy_path",
+      1
+    ]
+  ],
+  "details": {
+    "happy_path": {
+      "pass": 0,
+      "total": 1,
+      "failures": [
+        {
+          "id": "happy_human_genome_size",
+          "input": "What is the genome size of humans?",
+          "failed_metrics": {
+            "trajectory": {
+              "passed": false,
+              "score": 0.57,
+              "reason": "missing nodes in trajectory: ['get_gene_annotation', 'join_parallel', 'explanation_writer']; extra nodes visited: ['generate_visualization']; actual: ['query_router', 'species_resolver', 'parallel_kickoff', 'get_gene_annotation', 'get_genome_metadata', 'join_parallel', 'generate_visualization', 'explanation_writer']"
+            }
+          },
+          "node_sequence": [
+            "query_router",
+            "species_resolver",
+            "parallel_kickoff",
+            "get_gene_annotation",
+            "get_genome_metadata",
+            "join_parallel",
+            "generate_visualization",
+            "explanation_writer"
+          ],
+          "tool_calls": [
+            "ncbi_taxonomy_search",
+            "ncbi_assembly_lookup",
+            "ncbi_assembly_stats"
+          ],
+          "wall_time_s": 3.05,
+          "errors": []
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "overall": "5/5",
+  "pass_rate": 1.0,
+  "by_category": {
+    "happy_path": "5/5"
+  },
+  "failure_ranking": [
+    [
+      "happy_path",
+      0
+    ]
+  ],
+  "details": {
+    "happy_path": {
+      "pass": 5,
+      "total": 5,
+      "failures": []
+    }
+  }
+}

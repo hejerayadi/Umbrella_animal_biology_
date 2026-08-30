@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 
 async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]:
     if state.visualization is not None:
-        return {"errors": []}
+        return {"errors": [], "node_sequence": ["generate_visualization"]}
 
     scope = state.visualization_scope
     if scope == "none":
-        return {"errors": []}
+        return {"errors": [], "node_sequence": ["generate_visualization"]}
 
     genome_size = state.metadata["genome_size_bp"] if state.metadata else None
     gene_table = state.annotation["gene_table"] if state.annotation else None
@@ -40,6 +40,7 @@ async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]
                 f"generate_visualization raised an exception: {exc}",
             ],
             "visualization": None,
+            "node_sequence": ["generate_visualization"],
         }
 
     if result.get("status") == "FAILED":
@@ -49,6 +50,7 @@ async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]
                 *state.errors,
                 f"Visualization failed with status FAILED for scope '{scope}'.",
             ],
+            "node_sequence": ["generate_visualization"],
         }
 
-    return {"visualization": result}
+    return {"visualization": result, "node_sequence": ["generate_visualization"]}

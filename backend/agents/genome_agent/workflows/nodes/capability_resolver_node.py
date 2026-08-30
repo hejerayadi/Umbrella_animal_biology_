@@ -40,6 +40,7 @@ async def capability_resolver_node(state: GenomeAgentState) -> dict[str, Any]:
                 "target_agent": None,
                 "prompt_to_target_agent": None,
             },
+            "node_sequence": ["capability_resolver"],
         }
 
     return {
@@ -49,4 +50,5 @@ async def capability_resolver_node(state: GenomeAgentState) -> dict[str, Any]:
             "target_agent": decision.target_agent,
             "prompt_to_target_agent": decision.handoff_message,
         },
+        "node_sequence": ["capability_resolver"],
     }

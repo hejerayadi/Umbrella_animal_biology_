@@ -1,0 +1,54 @@
+{
+  "overall": "2/3",
+  "pass_rate": 0.667,
+  "by_category": {
+    "scaffold_escalation": "2/3"
+  },
+  "failure_ranking": [
+    [
+      "scaffold_escalation",
+      1
+    ]
+  ],
+  "details": {
+    "scaffold_escalation": {
+      "pass": 2,
+      "total": 3,
+      "failures": [
+        {
+          "id": "scaffold_snow_leopard",
+          "input": "Give me the complete genome of Panthera uncia",
+          "failed_metrics": {
+            "trajectory": {
+              "passed": false,
+              "score": 0.75,
+              "reason": "missing nodes in trajectory: ['reconstruction_resolver', 'explanation_writer']; extra (non-optional) nodes: []; actual: ['query_router', 'species_resolver', 'parallel_kickoff', 'get_gene_annotation', 'get_genome_metadata', 'join_parallel', 'generate_visualization', 'explanation_writer']"
+            },
+            "escalation": {
+              "passed": false,
+              "score": 0.0,
+              "reason": "expected escalation but: escalation_triggered=False; reconstruction_resolver not in node_sequence"
+            }
+          },
+          "node_sequence": [
+            "query_router",
+            "species_resolver",
+            "parallel_kickoff",
+            "get_gene_annotation",
+            "get_genome_metadata",
+            "join_parallel",
+            "generate_visualization",
+            "explanation_writer"
+          ],
+          "tool_calls": [
+            "ncbi_taxonomy_search",
+            "ncbi_assembly_lookup",
+            "ncbi_assembly_stats"
+          ],
+          "wall_time_s": 2.79,
+          "errors": []
+        }
+      ]
+    }
+  }
+}

@@ -31,6 +31,25 @@ logger = logging.getLogger(__name__)
 NCBI_EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 # ---------------------------------------------------------------------------
+# Optional LangSmith @traceable decorator.
+# Imported lazily so the module still loads when langsmith is not installed.
+# The decorator is a no-op when LANGCHAIN_TRACING_V2 is not set, so it is
+# always safe to apply. When tracing IS enabled every ncbi_get() call
+# becomes its own span in LangSmith, nested under the calling LangGraph
+# node — giving exact latency, params sent, and any errors.
+# ---------------------------------------------------------------------------
+try:
+    from langsmith import traceable as _traceable
+except ImportError:  # pragma: no cover
+    def _traceable(fn=None, *, run_type="tool", name=None, **_kw):  # type: ignore[misc]
+        """Fallback no-op when langsmith is not installed."""
+        if fn is not None:
+            return fn
+        def _decorator(f):
+            return f
+        return _decorator
+
+# ---------------------------------------------------------------------------
 # Shared pacing gate (mirrors the approach in workflows/llm.py's NVIDIA
 # client pacing): at most one in-flight eutils request at a time, with a
 # minimum gap enforced between the start of one call and the next.
@@ -63,6 +82,7 @@ def _pace() -> None:
         _last_call_started_at = time.monotonic()
 
 
+@_traceable(run_type="tool", name="ncbi_eutils_get")
 def ncbi_get(
     params: dict,
     *,
