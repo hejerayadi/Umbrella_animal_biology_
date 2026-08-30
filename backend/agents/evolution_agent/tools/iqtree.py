@@ -28,6 +28,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from langsmith import traceable
+
 from .binaries import (
     IQTREE_CANDIDATES,
     IQTREE_ENV_VAR,
@@ -52,6 +54,7 @@ class IQTreeError(Exception):
     """Raised when the IQ-TREE service fails or returns invalid data."""
 
 
+@traceable(name="IQ-TREE build", run_type="tool")
 def build_tree(
     alignment: str | dict[str, str],
     model: str = "MFP",
@@ -93,6 +96,7 @@ def build_tree(
     return _run_local_iqtree(alignment_text, model, bootstrap, timeout, binary)
 
 
+@traceable(name="IQ-TREE local binary run", run_type="tool")
 def _run_local_iqtree(
     alignment_text: str,
     model: str,

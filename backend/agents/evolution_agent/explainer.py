@@ -25,6 +25,8 @@ import json
 import logging
 import re
 
+from langsmith import traceable
+
 _logger = logging.getLogger(__name__)
 
 # Fields the orchestrator is allowed to hand over. Anything else is a bug.
@@ -80,6 +82,7 @@ Hard rules:
 """
 
 
+@traceable(name="Explainer (LLM #2)", run_type="chain")
 async def explain(
     *,
     instruction: str,

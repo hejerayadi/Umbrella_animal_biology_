@@ -6,6 +6,8 @@ import logging
 from dataclasses import replace
 from typing import Any
 
+from langsmith import traceable
+
 from .planner import plan
 from .orchestrator import EvolutionOrchestrator
 from .schema import (
@@ -261,6 +263,7 @@ class OrchestratorEvolutionAgent:
     ) -> None:
         self._orchestrator = orchestrator or EvolutionOrchestrator()
 
+    @traceable(name="Evolution Agent request", run_type="chain")
     async def run(self, request: AgentRequest) -> AgentResult:
         context = request.context or {}
 

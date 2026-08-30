@@ -137,7 +137,14 @@ class EvolutionOrchestrator:
 
     async def run(self, request: AgentRequest) -> AgentResult:
         state = EvolutionState(request=request)
-        final = await self._graph.ainvoke(state)
+        # run_name/tags give the LangGraph trace a readable root in
+        # LangSmith instead of the default "LangGraph" label; every node
+        # (plan, species_resolver, dispatch, assemble, explain, ...) traces
+        # automatically as a child span once LANGCHAIN_TRACING_V2 is set.
+        final = await self._graph.ainvoke(
+            state,
+            config={"run_name": "EvolutionOrchestrator graph", "tags": ["evolution-agent"]},
+        )
         if isinstance(final, dict):
             return final["result"]
         return final.result  # pragma: no cover
