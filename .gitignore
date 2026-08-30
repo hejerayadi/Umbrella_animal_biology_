@@ -1,8 +1,43 @@
-.env
+.venv/
+.pytest_cache/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments and package caches
 .venv/
 venv/
-data/*.json
-data/*.jsonl
-!data/pubmedqa_sample.json
+env/
+ENV/
+.uv-cache/
+
+# Node / frontend outputs
+node_modules/
+dist/
+dist-ssr/
+.output/
+.tanstack/
+.nitro/
+.vinxi/
+
+# Build and runtime artifacts
+build/
+*.log
+*.tmp
+*.sqlite
+*.sqlite3
+*.db
+
+# Biodiversity Agent: generated folium maps (regenerated per request)
+backend/agents/biodiversity_agent/outputs/
+
+.env
+
+# macOS
+.DS_Store
