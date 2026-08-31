@@ -10,7 +10,10 @@ from ..state import GenomeAgentState
 logger = logging.getLogger(__name__)
 
 # Assembly levels that indicate gaps / unresolved regions requiring reconstruction.
-_INCOMPLETE_LEVELS = {"scaffold", "contig"}
+# Stored as substrings so that composite NCBI values like "Contig:7" or
+# "Scaffold" (capital S) still match — checked with a case-insensitive
+# substring test, not exact set membership.
+_INCOMPLETE_LEVELS = ("scaffold", "contig")
 
 
 async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
@@ -44,7 +47,9 @@ async def get_genome_metadata_node(state: GenomeAgentState) -> dict[str, Any]:
 
     reconstruction_need = None
     level = (result.get("assembly_level") or "").lower()
-    if level in _INCOMPLETE_LEVELS:
+    # Use substring matching so values like "Scaffold", "Contig:7", or
+    # "scaffold level" all trigger the reconstruction flag correctly.
+    if any(incomplete in level for incomplete in _INCOMPLETE_LEVELS):
         reconstruction_need = {
             "status": "NEEDS_AGENT",
             "target_agent": None,

@@ -1,0 +1,20 @@
+{
+  "overall": "4/4",
+  "pass_rate": 1.0,
+  "by_category": {
+    "no_false_escalation": "4/4"
+  },
+  "failure_ranking": [
+    [
+      "no_false_escalation",
+      0
+    ]
+  ],
+  "details": {
+    "no_false_escalation": {
+      "pass": 4,
+      "total": 4,
+      "failures": []
+    }
+  }
+}

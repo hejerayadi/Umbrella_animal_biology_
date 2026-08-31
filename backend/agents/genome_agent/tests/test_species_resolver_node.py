@@ -22,20 +22,13 @@ async def test_species_resolver_node_zero_candidates_is_fatal():
     assembly_id=None, not silently continue."""
     state = GenomeAgentState(user_question="genome of the xyzzy123", species_name="definitely not a real species xyzzy123")
 
-    with patch(
-<<<<<<< HEAD
-        "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
-        return_value=None,
-    ):
+    # Patch the names as they appear in the module where they are used.
+    # The module is loaded as backend.agents.genome_agent.* (relative imports
+    # + pytest.ini pythonpath = .), so the patch path must match that.
+    _NODE_MOD = "backend.agents.genome_agent.workflows.nodes.species_resolver_node"
+    with patch(f"{_NODE_MOD}.resolve_species_llm", return_value=None):
         with patch(
-            "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species",
-=======
-        "genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
-        return_value=None,
-    ):
-        with patch(
-            "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
->>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
+            f"{_NODE_MOD}.resolve_species",
             return_value={"assembly_id": None, "scientific_name": None, "common_name": None, "confidence": 0.0},
         ):
             result = await species_resolver_node(state)
@@ -52,20 +45,10 @@ async def test_species_resolver_node_exception_handling():
     referencing the raised exception."""
     state = GenomeAgentState(user_question="genome of the tiger", species_name="tiger")
 
-    with patch(
-<<<<<<< HEAD
-        "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
-        return_value=None,
-    ):
+    _NODE_MOD = "backend.agents.genome_agent.workflows.nodes.species_resolver_node"
+    with patch(f"{_NODE_MOD}.resolve_species_llm", return_value=None):
         with patch(
-            "backend.agents.genome_agent.workflows.nodes.species_resolver_node.resolve_species",
-=======
-        "genome_agent.workflows.nodes.species_resolver_node.resolve_species_llm",
-        return_value=None,
-    ):
-        with patch(
-            "genome_agent.workflows.nodes.species_resolver_node.resolve_species",
->>>>>>> 32a59df77abf3d4edd3681152e77e1e812f192d1
+            f"{_NODE_MOD}.resolve_species",
             side_effect=Exception("Simulated NCBI failure"),
         ):
             result = await species_resolver_node(state)

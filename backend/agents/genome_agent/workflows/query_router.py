@@ -81,7 +81,20 @@ def route_query_fallback(user_question: str) -> QueryRouterDecision:
     )
     needs_annotation = any(
         k in question_lower
-        for k in ["gene", "annotation", "annotate", "feature", "protein"]
+        for k in [
+            # Explicit genomics vocabulary
+            "gene", "genes", "annotation", "annotate", "feature", "protein",
+            # Phenotype / trait vocabulary — questions like "Which genes are
+            # responsible for coat color?" or "What genes control fur thickness?"
+            # don't contain the word "gene" when phrased as pure trait questions,
+            # so we need to catch the trait nouns themselves.
+            "trait", "traits", "phenotype", "phenotypic",
+            "color", "colour", "coat", "fur", "skin", "pigment", "pigmentation",
+            "enzyme", "receptor", "hormone", "insulin", "hemoglobin", "haemoglobin",
+            "express", "expression", "mutation", "variant", "allele",
+            "responsible for", "control", "controls", "regulate", "regulates",
+            "encodes", "encode", "involved in",
+        ]
     )
     vis_scope = "none"
     if "protein structure" in question_lower or "3d" in question_lower:

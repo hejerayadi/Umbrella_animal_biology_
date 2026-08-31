@@ -771,29 +771,64 @@ async def resolve_species(species_name: str) -> dict:
     Input: species_name (str)
     Output: dict matching SpeciesResolverOutput
             (assembly_id, scientific_name, common_name, confidence, reasoning)
+
+    For ambiguous common names (e.g. "panda", "elephant", "bear") the taxonomy
+    search may return several candidates.  The old code only tried candidates[0]
+    and returned assembly_id=None the moment that first lookup came back empty —
+    exactly the bug that caused ambiguous_panda / ambiguous_elephant /
+    ambiguous_bear to all hit error_end in the deterministic fallback.
+
+    The fix: iterate *all* returned taxonomy candidates in order and return the
+    first one that yields a GCF_ (RefSeq) assembly, or failing that the first
+    GCA_ assembly.  Only return assembly_id=None if every candidate's assembly
+    lookup is empty.
     """
     key = species_name.strip()
 
     candidates = await _search_taxonomy_core(key)
     if candidates:
-        tax_id = candidates[0].get("tax_id", "")
-        scientific_name = candidates[0].get("scientific_name", "")
-        common_name = candidates[0].get("common_name", "")
-        assemblies = await _search_assembly_by_taxid_core(tax_id)
-        if assemblies:
+        # Prefer RefSeq (GCF_) over GenBank (GCA_).  Keep the first GCA_ hit as
+        # a fallback in case no candidate has a GCF_ assembly.
+        gcf_result: dict | None = None
+        gca_result: dict | None = None
+
+        for candidate in candidates:
+            tax_id = candidate.get("tax_id", "")
+            scientific_name = candidate.get("scientific_name", "")
+            common_name = candidate.get("common_name", "")
+
+            assemblies = await _search_assembly_by_taxid_core(tax_id)
+            if not assemblies:
+                continue
+
             assemblies.sort(key=lambda x: (not x["assembly_id"].startswith("GCF_"), x["assembly_id"]))
             chosen = assemblies[0]
-            return {
+            result = {
                 "assembly_id": chosen["assembly_id"],
                 "scientific_name": scientific_name or chosen.get("scientific_name", ""),
                 "common_name": common_name or chosen.get("common_name", ""),
                 "confidence": 0.5,
                 "reasoning": "Deterministic NCBI fallback used (no LLM)",
             }
+
+            if chosen["assembly_id"].startswith("GCF_"):
+                gcf_result = result
+                break  # Can't do better than a RefSeq hit — stop here.
+            elif gca_result is None:
+                gca_result = result
+            # Continue looking for a GCF_ assembly in later candidates.
+
+        if gcf_result is not None:
+            return gcf_result
+        if gca_result is not None:
+            return gca_result
+
+        # Every candidate had an empty assembly lookup.
+        first = candidates[0]
         return {
             "assembly_id": None,
-            "scientific_name": scientific_name,
-            "common_name": common_name,
+            "scientific_name": first.get("scientific_name", ""),
+            "common_name": first.get("common_name", ""),
             "confidence": 0.0,
         }
 
