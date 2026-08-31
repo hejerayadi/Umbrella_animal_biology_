@@ -1,0 +1,721 @@
+[
+  {
+    "case_id": "mc_three_species",
+    "prompt": "How similar are human, chimp and mouse at the molecular level?",
+    "raw_response": {
+      "status": "completed",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "status": "completed",
+        "decision": "analysis_complete",
+        "explanation": "Analysed 3 species. Homo sapiens and pan troglodytes are the most closely related (similarity 0.53). The 3 species are forming 2 evolutionary groups. Overall confidence: 85%.",
+        "score_is_mock": true,
+        "species_list": [
+          "Homo sapiens",
+          "Pan troglodytes",
+          "Mus musculus"
+        ],
+        "overall_confidence": 0.8511,
+        "similarity_scores": [
+          {
+            "species_a": "homo sapiens",
+            "species_b": "pan troglodytes",
+            "score": 0.5325
+          },
+          {
+            "species_a": "homo sapiens",
+            "species_b": "mus musculus",
+            "score": -0.8295
+          },
+          {
+            "species_a": "pan troglodytes",
+            "species_b": "mus musculus",
+            "score": -0.9144
+          }
+        ],
+        "species_groups": [
+          {
+            "group_id": 0,
+            "species": [
+              "homo sapiens",
+              "pan troglodytes"
+            ],
+            "mean_score": 0.5325
+          },
+          {
+            "group_id": 1,
+            "species": [
+              "mus musculus"
+            ],
+            "mean_score": 1.0
+          }
+        ],
+        "similarity_network": {
+          "directed": false,
+          "multigraph": false,
+          "graph": {},
+          "nodes": [
+            {
+              "id": "homo sapiens"
+            },
+            {
+              "id": "pan troglodytes"
+            },
+            {
+              "id": "mus musculus"
+            }
+          ],
+          "edges": [
+            {
+              "score": 0.5325,
+              "source": "homo sapiens",
+              "target": "pan troglodytes"
+            },
+            {
+              "score": -0.8295,
+              "source": "homo sapiens",
+              "target": "mus musculus"
+            },
+            {
+              "score": -0.9144,
+              "source": "pan troglodytes",
+              "target": "mus musculus"
+            }
+          ]
+        },
+        "source_agents": [
+          "Evolution Agent Orchestrator",
+          "Molecular Comparison Agent"
+        ],
+        "interpretation": "Homo sapiens and Pan troglodytes cluster together (group 0) with a pairwise similarity score of 0.5325, while Mus musculus is placed in its own group (group 1) with group mean_score 1.0. The pairwise scores show positive similarity between human and chimp (0.5325) and negative scores for human\u2013mouse (\u22120.8295) and chimp\u2013mouse (\u22120.9144), indicating the mouse is less similar to the two primates by this molecular metric. There are 3 network nodes, no warnings were reported, and the similarity providers are not mocked.",
+        "warnings": [],
+        "llm_calls": 2
+      },
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "pan troglodytes",
+          "score": 0.5325
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": -0.8295
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "mus musculus",
+          "score": -0.9144
+        }
+      ],
+      "alignment_url": null,
+      "confidence": 0.8511,
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent"
+      ],
+      "interpretation": "Homo sapiens and Pan troglodytes cluster together (group 0) with a pairwise similarity score of 0.5325, while Mus musculus is placed in its own group (group 1) with group mean_score 1.0. The pairwise scores show positive similarity between human and chimp (0.5325) and negative scores for human\u2013mouse (\u22120.8295) and chimp\u2013mouse (\u22120.9144), indicating the mouse is less similar to the two primates by this molecular metric. There are 3 network nodes, no warnings were reported, and the similarity providers are not mocked.",
+      "warnings": [],
+      "llm_calls": 2
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='molecular_comparison' actual='molecular_comparison'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='completed' actual='completed'; species expected=['Homo sapiens', 'Mus musculus', 'Pan troglodytes'] actual=['Homo sapiens', 'Mus musculus', 'Pan troglodytes']",
+      "score": null
+    },
+    "correctness": {
+      "passed": true,
+      "detail": "closest pair expected={'homo sapiens', 'pan troglodytes'} actual={'homo sapiens', 'pan troglodytes'} score=0.5325",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "The response meaningfully addresses the question by noting humans and chimps are closest and grouping mouse separately, but it fabricates an unexplained similarity value (0.53) and an unsupported confidence score (85%) without evidence, so the numerical claims are not grounded in the data.",
+      "score": 4.0
+    },
+    "consistency": {
+      "passed": true,
+      "detail": "features=['molecular_comparison', 'molecular_comparison', 'molecular_comparison'] species_sets=[['Homo sapiens', 'Mus musculus', 'Pan troglodytes'], ['Homo sapiens', 'Mus musculus', 'Pan troglodytes'], ['Homo sapiens', 'Mus musculus', 'Pan troglodytes']]",
+      "score": null
+    },
+    "notes": "Baseline case. Human-chimp must be the closest pair regardless of run."
+  },
+  {
+    "case_id": "mc_two_species",
+    "prompt": "Compare the molecular similarity of human and chicken.",
+    "raw_response": {
+      "status": "completed",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "status": "completed",
+        "decision": "analysis_complete",
+        "explanation": "Analysed 2 species. Homo sapiens and gallus gallus are the most closely related (similarity 1.00). The 2 species are forming 1 evolutionary group. Overall confidence: not available (no group separation to measure).",
+        "score_is_mock": true,
+        "species_list": [
+          "Homo sapiens",
+          "Gallus gallus"
+        ],
+        "overall_confidence": null,
+        "similarity_scores": [
+          {
+            "species_a": "homo sapiens",
+            "species_b": "gallus gallus",
+            "score": 0.9952
+          }
+        ],
+        "species_groups": [
+          {
+            "group_id": 0,
+            "species": [
+              "homo sapiens",
+              "gallus gallus"
+            ],
+            "mean_score": 0.9952
+          }
+        ],
+        "similarity_network": {
+          "directed": false,
+          "multigraph": false,
+          "graph": {},
+          "nodes": [
+            {
+              "id": "homo sapiens"
+            },
+            {
+              "id": "gallus gallus"
+            }
+          ],
+          "edges": [
+            {
+              "score": 0.9952,
+              "source": "homo sapiens",
+              "target": "gallus gallus"
+            }
+          ]
+        },
+        "source_agents": [
+          "Evolution Agent Orchestrator",
+          "Molecular Comparison Agent"
+        ],
+        "interpretation": "The analysis places Homo sapiens and Gallus gallus together in a single molecular-similarity cluster (group 0), meaning the two species form the only group identified here. The reported mean pairwise similarity for that group is 0.9952 across the two network nodes, indicating very high molecular similarity in this dataset. There were no warnings and providers are not mocked, and my interpretation is limited to the values shown.",
+        "warnings": [],
+        "llm_calls": 2
+      },
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "gallus gallus",
+          "score": 0.9952
+        }
+      ],
+      "alignment_url": null,
+      "confidence": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent"
+      ],
+      "interpretation": "The analysis places Homo sapiens and Gallus gallus together in a single molecular-similarity cluster (group 0), meaning the two species form the only group identified here. The reported mean pairwise similarity for that group is 0.9952 across the two network nodes, indicating very high molecular similarity in this dataset. There were no warnings and providers are not mocked, and my interpretation is limited to the values shown.",
+      "warnings": [],
+      "llm_calls": 2
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='molecular_comparison' actual='molecular_comparison'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='completed' actual='completed'; species expected=['Gallus gallus', 'Homo sapiens'] actual=['Gallus gallus', 'Homo sapiens']",
+      "score": null
+    },
+    "correctness": {
+      "passed": null,
+      "detail": "no deterministic correctness check defined for this case",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "The response does answer the user's request by giving a similarity comparison between human and chicken, but it makes implausible and unsupported claims (an exact similarity of 1.00 and that the two species form a single evolutionary group) that are not justified by typical molecular data and therefore are unfaithful to the evidence.",
+      "score": 4.0
+    },
+    "consistency": null,
+    "notes": ""
+  },
+  {
+    "case_id": "phylo_five_species",
+    "prompt": "Build a phylogenetic tree for human, chimp, mouse, chicken and zebrafish.",
+    "raw_response": {
+      "status": "completed",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "status": "completed",
+        "decision": "analysis_complete",
+        "explanation": "Phylogenetic tree built for 5 species using mtVer+R2 model with 88% overall confidence.",
+        "score_is_mock": true,
+        "species_list": [
+          "Homo sapiens",
+          "Pan troglodytes",
+          "Mus musculus",
+          "Gallus gallus",
+          "Danio rerio"
+        ],
+        "overall_confidence": 0.885,
+        "newick_tree": "('Homo sapiens':0.0000028803,'Pan troglodytes':0.0147980835,('Mus musculus':0.0000026239,('Gallus gallus':0.0088492870,'Danio rerio':0.1974455856)77:0.2645847776)100:1.3630499520);",
+        "model": "mtVer+R2",
+        "bootstrap_support": {
+          "node_0": 77,
+          "node_1": 100
+        },
+        "confidence_values": {
+          "node_0": 0.77,
+          "node_1": 1.0
+        },
+        "tree_url": null,
+        "source_agents": [
+          "Evolution Agent Orchestrator",
+          "Phylogenetic Tree Agent"
+        ],
+        "interpretation": "The tree places Homo sapiens and Pan troglodytes as two separate branches directly off the root, while Mus musculus is nested with a clade that groups Gallus gallus and Danio rerio. The Gallus\u2013Danio node has bootstrap support 77 (confidence 0.77) and the node uniting Mus with that pair has bootstrap support 100 (confidence 1.0), so the Mus+(Gallus+Danio) grouping is very strongly supported and the Gallus\u2013Danio split is moderately supported; no bootstrap is reported for the positions of Homo and Pan. The inference used model mtVer+R2 and reports overall_confidence 0.885, there are no warnings, and the phylogeny provider is not mocked.",
+        "warnings": [],
+        "llm_calls": 2
+      },
+      "newick_tree": "('Homo sapiens':0.0000028803,'Pan troglodytes':0.0147980835,('Mus musculus':0.0000026239,('Gallus gallus':0.0088492870,'Danio rerio':0.1974455856)77:0.2645847776)100:1.3630499520);",
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "confidence": 0.885,
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Phylogenetic Tree Agent"
+      ],
+      "interpretation": "The tree places Homo sapiens and Pan troglodytes as two separate branches directly off the root, while Mus musculus is nested with a clade that groups Gallus gallus and Danio rerio. The Gallus\u2013Danio node has bootstrap support 77 (confidence 0.77) and the node uniting Mus with that pair has bootstrap support 100 (confidence 1.0), so the Mus+(Gallus+Danio) grouping is very strongly supported and the Gallus\u2013Danio split is moderately supported; no bootstrap is reported for the positions of Homo and Pan. The inference used model mtVer+R2 and reports overall_confidence 0.885, there are no warnings, and the phylogeny provider is not mocked.",
+      "warnings": [],
+      "llm_calls": 2
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='phylogenetic_tree' actual='phylogenetic_tree'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='completed' actual='completed'; species expected=['Danio rerio', 'Gallus gallus', 'Homo sapiens', 'Mus musculus', 'Pan troglodytes'] actual=['Danio rerio', 'Gallus gallus', 'Homo sapiens', 'Mus musculus', 'Pan troglodytes']",
+      "score": null
+    },
+    "correctness": {
+      "passed": true,
+      "detail": "tree contains all expected species as leaves; newick balanced=True",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "The reply vaguely states a model and an overall confidence but does not provide the requested tree topology, method, sequences, or support values, and the specific model/confidence appear to be asserted without supporting data or methodology.",
+      "score": 2.0
+    },
+    "consistency": null,
+    "notes": "5 species so UFBoot actually runs (see worker: needs >=4 to bootstrap in practice)."
+  },
+  {
+    "case_id": "phylo_too_few_species",
+    "prompt": "Build a phylogenetic tree for human and chimp.",
+    "raw_response": {
+      "status": "continue",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "decision": "clarification_required",
+        "clarification_question": "Phylogenetic tree requires at least 3 species. Would you like to add more, or switch to a similarity comparison?",
+        "source": "llm",
+        "llm_calls": 1
+      },
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "confidence": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator"
+      ],
+      "interpretation": null,
+      "warnings": [],
+      "llm_calls": 1
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='clarification_required' actual='clarification_required'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='continue' actual='continue'",
+      "score": null
+    },
+    "correctness": {
+      "passed": null,
+      "detail": "not applicable (non-completed status)",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "skipped (no LLM configured)",
+      "score": null
+    },
+    "consistency": null,
+    "notes": "Deterministic Planner guard: phylogenetic_tree needs >=3 species (planner.py _apply_guards). Tests that the guard fires regardless of what the LLM itself proposes."
+  },
+  {
+    "case_id": "full_analysis_explicit_both",
+    "prompt": "Give me both a similarity network and a phylogenetic tree for human, chimp and mouse.",
+    "raw_response": {
+      "status": "completed",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "status": "completed",
+        "decision": "analysis_complete",
+        "explanation": "Analysed 3 species. Homo sapiens and pan troglodytes are the most closely related (similarity 0.53). forming 2 evolutionary groups. Phylogenetic tree built using mtMAM model. Overall confidence: 85%.",
+        "score_is_mock": true,
+        "species_list": [
+          "Homo sapiens",
+          "Pan troglodytes",
+          "Mus musculus"
+        ],
+        "overall_confidence": 0.8511,
+        "similarity_scores": [
+          {
+            "species_a": "homo sapiens",
+            "species_b": "pan troglodytes",
+            "score": 0.5325
+          },
+          {
+            "species_a": "homo sapiens",
+            "species_b": "mus musculus",
+            "score": -0.8295
+          },
+          {
+            "species_a": "pan troglodytes",
+            "species_b": "mus musculus",
+            "score": -0.9144
+          }
+        ],
+        "species_groups": [
+          {
+            "group_id": 0,
+            "species": [
+              "homo sapiens",
+              "pan troglodytes"
+            ],
+            "mean_score": 0.5325
+          },
+          {
+            "group_id": 1,
+            "species": [
+              "mus musculus"
+            ],
+            "mean_score": 1.0
+          }
+        ],
+        "similarity_network": {
+          "directed": false,
+          "multigraph": false,
+          "graph": {},
+          "nodes": [
+            {
+              "id": "homo sapiens"
+            },
+            {
+              "id": "pan troglodytes"
+            },
+            {
+              "id": "mus musculus"
+            }
+          ],
+          "edges": [
+            {
+              "score": 0.5325,
+              "source": "homo sapiens",
+              "target": "pan troglodytes"
+            },
+            {
+              "score": -0.8295,
+              "source": "homo sapiens",
+              "target": "mus musculus"
+            },
+            {
+              "score": -0.9144,
+              "source": "pan troglodytes",
+              "target": "mus musculus"
+            }
+          ]
+        },
+        "newick_tree": "('Homo sapiens':0.0000019625,'Pan troglodytes':0.0178874652,'Mus musculus':0.2409514745);",
+        "model": "mtMAM",
+        "bootstrap_support": {},
+        "confidence_values": {},
+        "tree_url": null,
+        "source_agents": [
+          "Evolution Agent Orchestrator",
+          "Molecular Comparison Agent",
+          "Phylogenetic Tree Agent"
+        ],
+        "interpretation": "The similarity network has three nodes: Homo sapiens and Pan troglodytes form group 0 (mean_score 0.5325) and cluster together, while Mus musculus is a separate singleton group (group 1, mean_score 1.0); pairwise similarity scores are Homo sapiens\u2013Pan troglodytes 0.5325, Homo sapiens\u2013Mus musculus \u22120.8295, Pan troglodytes\u2013Mus musculus \u22120.9144. The Newick phylogeny is a three-way split with all three species attached directly to the root, with branch lengths 'Homo sapiens':0.0000019625, 'Pan troglodytes':0.0178874652, 'Mus musculus':0.2409514745. No bootstrap or other confidence values are provided (bootstrap_support and confidence_values are empty, overall_confidence is null) and \"ufboot_not_run\" was warned; providers_are_mocked are false.",
+        "warnings": [
+          "ufboot_not_run"
+        ],
+        "llm_calls": 2
+      },
+      "newick_tree": "('Homo sapiens':0.0000019625,'Pan troglodytes':0.0178874652,'Mus musculus':0.2409514745);",
+      "tree_url": null,
+      "similarity_scores": [
+        {
+          "species_a": "homo sapiens",
+          "species_b": "pan troglodytes",
+          "score": 0.5325
+        },
+        {
+          "species_a": "homo sapiens",
+          "species_b": "mus musculus",
+          "score": -0.8295
+        },
+        {
+          "species_a": "pan troglodytes",
+          "species_b": "mus musculus",
+          "score": -0.9144
+        }
+      ],
+      "alignment_url": null,
+      "confidence": 0.8511,
+      "source_agents": [
+        "Evolution Agent Orchestrator",
+        "Molecular Comparison Agent",
+        "Phylogenetic Tree Agent"
+      ],
+      "interpretation": "The similarity network has three nodes: Homo sapiens and Pan troglodytes form group 0 (mean_score 0.5325) and cluster together, while Mus musculus is a separate singleton group (group 1, mean_score 1.0); pairwise similarity scores are Homo sapiens\u2013Pan troglodytes 0.5325, Homo sapiens\u2013Mus musculus \u22120.8295, Pan troglodytes\u2013Mus musculus \u22120.9144. The Newick phylogeny is a three-way split with all three species attached directly to the root, with branch lengths 'Homo sapiens':0.0000019625, 'Pan troglodytes':0.0178874652, 'Mus musculus':0.2409514745. No bootstrap or other confidence values are provided (bootstrap_support and confidence_values are empty, overall_confidence is null) and \"ufboot_not_run\" was warned; providers_are_mocked are false.",
+      "warnings": [
+        "ufboot_not_run"
+      ],
+      "llm_calls": 2
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='full_analysis' actual='full_analysis'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='completed' actual='completed'; species expected=['Homo sapiens', 'Mus musculus', 'Pan troglodytes'] actual=['Homo sapiens', 'Mus musculus', 'Pan troglodytes']",
+      "score": null
+    },
+    "correctness": {
+      "passed": true,
+      "detail": "tree contains all expected species as leaves; newick balanced=True",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "The reply partially addresses the request by naming the closest pair and stating a similarity score and that a tree was built, but it fails to provide the actual similarity network or tree and includes specific figures and a model name with no supporting data or justification.",
+      "score": 2.0
+    },
+    "consistency": null,
+    "notes": "Must explicitly ask for both outputs to get full_analysis."
+  },
+  {
+    "case_id": "full_analysis_implicit_should_clarify",
+    "prompt": "Tell me everything you can about human, chimp and mouse evolution.",
+    "raw_response": {
+      "status": "continue",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "decision": "clarification_required",
+        "clarification_question": "Do you want a phylogenetic tree, molecular/sequence similarity comparisons (e.g., networks and clustering), or both?",
+        "source": "llm",
+        "llm_calls": 1
+      },
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "confidence": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator"
+      ],
+      "interpretation": null,
+      "warnings": [],
+      "llm_calls": 1
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='clarification_required' actual='clarification_required'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='continue' actual='continue'",
+      "score": null
+    },
+    "correctness": {
+      "passed": null,
+      "detail": "not applicable (non-completed status)",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "skipped (no LLM configured)",
+      "score": null
+    },
+    "consistency": null,
+    "notes": "Does NOT explicitly request both a network and a tree. The planner must ask for clarification rather than guessing full_analysis -- this is a prompt-adherence test, genuinely uncertain until run."
+  },
+  {
+    "case_id": "vague_no_species",
+    "prompt": "Tell me about evolution.",
+    "raw_response": {
+      "status": "continue",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "decision": "clarification_required",
+        "clarification_question": "Which species would you like to analyse?",
+        "source": "llm",
+        "llm_calls": 1
+      },
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "confidence": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator"
+      ],
+      "interpretation": null,
+      "warnings": [],
+      "llm_calls": 1
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='clarification_required' actual='clarification_required'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='continue' actual='continue'",
+      "score": null
+    },
+    "correctness": {
+      "passed": null,
+      "detail": "not applicable (non-completed status)",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "skipped (no LLM configured)",
+      "score": null
+    },
+    "consistency": null,
+    "notes": ""
+  },
+  {
+    "case_id": "off_topic",
+    "prompt": "What's the weather like today?",
+    "raw_response": {
+      "status": "continue",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": {
+        "decision": "clarification_required",
+        "clarification_question": "Which species would you like to analyse?",
+        "source": "llm",
+        "llm_calls": 1
+      },
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "confidence": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator"
+      ],
+      "interpretation": null,
+      "warnings": [],
+      "llm_calls": 1
+    },
+    "tool_selection": {
+      "passed": true,
+      "detail": "expected='clarification_required' actual='clarification_required'",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='continue' actual='continue'",
+      "score": null
+    },
+    "correctness": {
+      "passed": null,
+      "detail": "not applicable (non-completed status)",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "skipped (no LLM configured)",
+      "score": null
+    },
+    "consistency": null,
+    "notes": "Off-topic request must not be misrouted into an evolutionary analysis."
+  },
+  {
+    "case_id": "unresolvable_species",
+    "prompt": "Compare the molecular similarity of human and dog.",
+    "raw_response": {
+      "status": "failed",
+      "target_agent": null,
+      "prompt_to_target_agent": null,
+      "output": "Could not resolve species to scientific names: 'Canis lupus familiaris'. Please use scientific names (e.g. 'Homo sapiens') or common names from the supported catalogue.",
+      "newick_tree": null,
+      "tree_url": null,
+      "similarity_scores": null,
+      "alignment_url": null,
+      "confidence": null,
+      "source_agents": [
+        "Evolution Agent Orchestrator"
+      ],
+      "interpretation": null,
+      "warnings": [],
+      "llm_calls": 1
+    },
+    "tool_selection": {
+      "passed": null,
+      "detail": "not applicable \u2014 request failed before feature is recoverable from response shape",
+      "score": null
+    },
+    "task_completion": {
+      "passed": true,
+      "detail": "status expected='failed' actual='failed'",
+      "score": null
+    },
+    "correctness": {
+      "passed": null,
+      "detail": "not applicable (non-completed status)",
+      "score": null
+    },
+    "relevance": {
+      "passed": null,
+      "detail": "skipped (no LLM configured)",
+      "score": null
+    },
+    "consistency": null,
+    "notes": "'dog' is outside the offline species catalogue -- must fail cleanly with a clear message, not crash or hallucinate a result."
+  }
+]

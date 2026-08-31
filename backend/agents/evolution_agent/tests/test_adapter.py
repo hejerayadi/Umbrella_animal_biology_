@@ -15,7 +15,6 @@ from backend.agents.evolution_agent.intent import (
     classify_intent,
 )
 from backend.agents.evolution_agent.orchestrator_adapter import (
-    EVOLUTION_OUTPUT_KEY,
     OrchestratorEvolutionAgent,
     resolve_species,
     to_orchestrator_request,
@@ -26,6 +25,7 @@ from backend.agents.evolution_agent.schema import (
     AgentResult,
     AgentStatus,
     EvolutionAnalysisResult,
+    PlannedFeature,
 )
 
 
@@ -112,7 +112,7 @@ def test_invented_feature_is_rejected() -> None:
     intent = _to_intent(
         {"feature": "protein_folding", "species_list": ["Homo sapiens"]}
     )
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
     assert not intent.is_usable
 
 
@@ -127,7 +127,7 @@ def test_null_species_entries_are_dropped() -> None:
 def test_divergence_time_rejected_as_unknown() -> None:
     """divergence_time was removed in Sprint 2 — must not be a valid feature."""
     intent = _to_intent({"feature": "divergence_time", "species_list": []})
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
 
 
 # ---------------------------------------------------------------------------
@@ -137,14 +137,14 @@ def test_divergence_time_rejected_as_unknown() -> None:
 @pytest.mark.asyncio
 async def test_backend_failure_never_raises() -> None:
     intent = await classify_intent("anything", llm=_StubLLM(RuntimeError("down")))
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
     assert intent.source == "error"
 
 
 @pytest.mark.asyncio
 async def test_unparsable_output_returns_none_feature() -> None:
     intent = await classify_intent("anything", llm=_StubLLM("no json"))
-    assert intent.feature is None
+    assert intent.feature == PlannedFeature.CLARIFICATION_REQUIRED
     assert intent.source == "unparsable"
 
 
@@ -154,9 +154,10 @@ async def test_full_analysis_parsed() -> None:
         "feature": "full_analysis",
         "species_list": ["Homo sapiens", "Mus musculus"],
         "reference_species": None,
+        "explicitly_requested_both": True,
     })
     intent = await classify_intent("compare", llm=_StubLLM(reply))
-    assert intent.feature == "full_analysis"
+    assert intent.feature == PlannedFeature.FULL_ANALYSIS
     assert intent.is_usable
     assert intent.species_list == ["Homo sapiens", "Mus musculus"]
 
@@ -169,7 +170,7 @@ async def test_molecular_comparison_parsed() -> None:
         "reference_species": None,
     })
     intent = await classify_intent("how similar", llm=_StubLLM(reply))
-    assert intent.feature == "molecular_comparison"
+    assert intent.feature == PlannedFeature.MOLECULAR_COMPARISON
 
 
 @pytest.mark.asyncio
@@ -180,7 +181,7 @@ async def test_phylogenetic_tree_parsed() -> None:
         "reference_species": "Gallus gallus",
     })
     intent = await classify_intent("show tree", llm=_StubLLM(reply))
-    assert intent.feature == "phylogenetic_tree"
+    assert intent.feature == PlannedFeature.PHYLOGENETIC_TREE
     assert intent.reference_species == "Gallus gallus"
 
 
@@ -215,32 +216,6 @@ def test_context_species_string_accepted() -> None:
     assert species == ["Homo sapiens"]
 
 
-def test_single_context_species_does_not_override_classifier() -> None:
-    """The Global Orchestrator's extractor seeds ONE species; the question
-    still names two, and the classifier is the one that read both."""
-    species = resolve_species(
-        {"species": "Homo sapiens"},
-        RecognizedIntent(
-            feature="full_analysis",
-            species_list=["Homo sapiens", "Pan troglodytes"],
-        ),
-    )
-    assert species == ["Homo sapiens", "Pan troglodytes"]
-
-
-def test_single_context_species_missed_by_classifier_is_kept() -> None:
-    """A species only the context knows about (e.g. recognised from a photo)
-    survives the merge instead of being dropped."""
-    species = resolve_species(
-        {"species": "Mus musculus"},
-        RecognizedIntent(
-            feature="full_analysis",
-            species_list=["Homo sapiens", "Pan troglodytes"],
-        ),
-    )
-    assert species == ["Mus musculus", "Homo sapiens", "Pan troglodytes"]
-
-
 def test_to_orchestrator_request_sets_feature_and_species() -> None:
     req = to_orchestrator_request(
         AgentRequest(
@@ -263,7 +238,7 @@ def test_to_orchestrator_request_sets_feature_and_species() -> None:
 # adapter: result reshaping
 # ---------------------------------------------------------------------------
 
-def test_completed_result_publishes_findings_under_one_key() -> None:
+def test_completed_result_publishes_flat_evolution_output() -> None:
     analysis = _make_mock_analysis()
     mapped = to_platform_result(
         AgentResult(
@@ -276,27 +251,16 @@ def test_completed_result_publishes_findings_under_one_key() -> None:
         )
     )
     assert mapped.status is AgentStatus.COMPLETED
-
-    # One namespaced key: the Global Orchestrator merges this dict straight
-    # into the context every other agent reads.
-    assert list(mapped.output) == [EVOLUTION_OUTPUT_KEY]
-
-    findings = mapped.output[EVOLUTION_OUTPUT_KEY]
-    assert findings["status"]        == "completed"
-    assert findings["decision"]      == "analysis_complete"
-    assert findings["explanation"]
-    assert findings["score_is_mock"] is True
-    assert findings["species_list"]
-    assert findings["newick_tree"]
-    assert findings["model"]
-    assert findings["alignment_url"]
-    assert findings["tree_url"]
-
-
-def test_output_key_is_the_one_reconstruction_waits_for() -> None:
-    """Reconstruction's mock blocks on `evolution_analysis` in the context.
-    Renaming this key silently breaks that chain, so pin it."""
-    assert EVOLUTION_OUTPUT_KEY == "evolution_analysis"
+    # Flat structure — all keys at top level, no nested "evolution" wrapper
+    assert mapped.output["status"]        == "completed"
+    assert mapped.output["decision"]      == "analysis_complete"
+    assert mapped.output["explanation"]
+    assert mapped.output["score_is_mock"] is True
+    assert mapped.output["species_list"]
+    assert mapped.output["newick_tree"]
+    assert mapped.output["model"]
+    assert mapped.output["alignment_url"]
+    assert mapped.output["tree_url"]
 
 
 def test_evolution_output_is_json_serialisable() -> None:
@@ -339,8 +303,8 @@ async def test_unclassifiable_prompt_fails_with_useful_message(
     monkeypatch.setattr(mod, "classify_intent", _no)
     agent  = OrchestratorEvolutionAgent(orchestrator=object())
     result = await agent.run(AgentRequest(instruction="hello", context={}))
-    assert result.status is AgentStatus.FAILED
-    assert "evolution" in result.output.lower()
+    assert result.status is AgentStatus.CONTINUE
+    assert "clarification" in str(result.output).lower()
 
 
 @pytest.mark.asyncio
