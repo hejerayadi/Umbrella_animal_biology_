@@ -41,6 +41,51 @@ class EvolutionaryFeature(str, Enum):
     PHYLOGENETIC_TREE    = "phylogenetic_tree"
 
 
+class PlannedFeature(str, Enum):
+    """Planner decision — what the agent should execute.
+
+    This is the planner's contract (4 values).
+    EvolutionaryFeature is the workers' contract (2 values).
+    They are intentionally separate.
+    """
+    MOLECULAR_COMPARISON  = "molecular_comparison"
+    PHYLOGENETIC_TREE     = "phylogenetic_tree"
+    FULL_ANALYSIS         = "full_analysis"
+    CLARIFICATION_REQUIRED = "clarification_required"
+
+
+@dataclass(frozen=True)
+class PlannerDecision:
+    """Output of the Planner LLM call.
+
+    ``feature`` accepts both ``PlannedFeature`` enum values and plain strings.
+    Strings are normalised to ``PlannedFeature`` on construction.
+    """
+    feature: PlannedFeature | str = PlannedFeature.CLARIFICATION_REQUIRED
+    species_list: list[str]            = field(default_factory=list)
+    reference_species: str | None      = None
+    clarification_question: str | None = None
+    explicitly_requested_both: bool    = False
+    source: str                        = "llm"
+
+    def __post_init__(self) -> None:
+        if isinstance(self.feature, PlannedFeature):
+            pass
+        elif self.feature is None or self.feature == "":
+            object.__setattr__(self, "feature", PlannedFeature.CLARIFICATION_REQUIRED)
+        elif isinstance(self.feature, str):
+            try:
+                object.__setattr__(self, "feature", PlannedFeature(self.feature))
+            except ValueError:
+                object.__setattr__(self, "feature", PlannedFeature.CLARIFICATION_REQUIRED)
+        else:
+            object.__setattr__(self, "feature", PlannedFeature.CLARIFICATION_REQUIRED)
+
+    @property
+    def is_usable(self) -> bool:
+        return self.feature != PlannedFeature.CLARIFICATION_REQUIRED
+
+
 # ---------------------------------------------------------------------------
 # PUBLIC CONTRACT — exactly as defined in the presentation
 # ---------------------------------------------------------------------------
@@ -143,6 +188,16 @@ class AgentResult:
     confidence:    float | None  = None
     source_agents: list[str]     = field(default_factory=list)
 
+    # Explainer (LLM #2). Kept strictly apart from the structured payload:
+    # ``interpretation`` is prose only and never carries scores, trees or
+    # support values. ``None`` means no trustworthy interpretation was
+    # produced — see the ``interpretation_unavailable`` warning.
+    interpretation: str | None = None
+    warnings:       list[str]  = field(default_factory=list)
+
+    # Observability: how many LLM calls this request consumed (max 2).
+    llm_calls: int = 0
+
 
 # ---------------------------------------------------------------------------
 # INTERNAL PIPELINE TYPES
@@ -166,38 +221,81 @@ class SpeciesGroup:
 class MolecularComparisonResult:
     """Output of Subagent 1 (Molecular Comparison).
 
-    Tools mocked in Sprint 2: NCBI, UniProt, MAFFT, ESM-C, NetworkX.
+    Real pipeline (Sprint 3+): NCBI GenBank / UniProt (raw sequence
+    retrieval), ESM-2 (esm2_t12_35M_UR50D) protein embeddings, NetworkX
+    (similarity graph construction).
+
+    No alignment step runs here. MAFFT is exclusive to Subagent 2
+    (Phylogenetic Reconstruction) — alignment gap characters would
+    corrupt ESM-2 embeddings. Both sub-agents receive the same raw,
+    unaligned sequences as parallel siblings, reconverging only at the
+    evidence grounding layer.
+
+    Fields
+    ------
+    similarity_network
+        Output of ``nx.node_link_data(graph, edges="edges")`` — a dict
+        with "nodes" (list of {"id": species}) and "edges" (list of
+        {"source", "target", "score"}). Serialized directly from the
+        NetworkX graph so schema and implementation never drift apart.
     """
 
     species_list:       list[str]
-    alignment:          str
-    alignment_url:      str
     similarity_scores:  list[SimilarityEdge]
     species_groups:     list[SpeciesGroup]
-    similarity_network: dict[str, list[dict[str, Any]]]
-
+    similarity_network: dict[str, Any]
+    confidence:         float | None = None
 
 @dataclass
 class PhylogeneticResult:
     """Output of Subagent 2 (Phylogenetic Reconstruction).
 
-    Tools mocked in Sprint 2: IQ-TREE, ModelFinder, UFBoot.
+    Fields
+    ------
+    newick_tree
+        Newick string. Leaf labels are the full scientific names, quoted
+        when they contain a space (``'Homo sapiens'``).
+    tree_url
+        URL of a rendered tree, or ``None``. It is only set when a real
+        artefact is served — no placeholder URL is ever fabricated.
+    model
+        Substitution model actually reported by ModelFinder.
+    bootstrap_support / confidence_values
+        Keyed by INTERNAL NODE (``node_0``, ``node_1``, …), never by
+        species: UFBoot measures branch support, which is a property of a
+        split, not of a single leaf. Both are empty when UFBoot did not
+        run.
+    overall_confidence
+        Mean of the real UFBoot supports, or ``None`` when there are none.
+        Never a default value.
+    aligned_fasta
+        The MAFFT alignment that produced the tree, with full scientific
+        names restored. ``None`` when the worker did not keep it. Named
+        distinctly from MolecularComparisonResult.alignment so the two
+        sub-agent contracts stay disjoint.
+    warnings
+        Machine-readable flags, e.g. ``ufboot_not_run``.
     """
 
     newick_tree:        str
-    tree_url:           str
+    tree_url:           str | None
     model:              str
     bootstrap_support:  dict[str, int]
     confidence_values:  dict[str, float]
-    overall_confidence: float
+    overall_confidence: float | None
+    aligned_fasta:      str | None  = None
+    warnings:           list[str]   = field(default_factory=list)
 
 
 @dataclass
 class EvolutionAnalysisResult:
-    """Final assembled result — input to the adapter's to_platform_result()."""
+    """Final assembled result — input to the adapter's to_platform_result().
+
+    In feature-dependent runs only one of molecular/phylogenetic is populated.
+    """
 
     species_list:       list[str]
-    molecular:          MolecularComparisonResult
-    phylogenetic:       PhylogeneticResult
-    overall_confidence: float
+    molecular:          MolecularComparisonResult | None = None
+    phylogenetic:       PhylogeneticResult | None = None
+    overall_confidence: float = 0.0
     source_agents:      list[str] = field(default_factory=list)

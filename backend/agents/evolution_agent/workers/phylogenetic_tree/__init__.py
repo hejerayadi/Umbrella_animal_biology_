@@ -1,3 +1,3 @@
-from .mock import PhylogeneticTreeMock
+from .worker import PhylogeneticTreeWorker
 
-__all__ = ["PhylogeneticTreeMock"]
+__all__ = ["PhylogeneticTreeWorker"]

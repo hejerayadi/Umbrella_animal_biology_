@@ -6,31 +6,28 @@ Follows the exact same pattern as multimodal_recognition_agent:
   - output is a rich dict with all domain fields
   - Never raises — exceptions become FAILED AgentResult
 
-Everything this agent produces is published under ONE key, the way every
-other Umbrella worker publishes its findings: the Global Orchestrator merges
-`output` straight into the context shared by all nine agents, so a flat
-payload would put names like `status` and `model` into that shared namespace.
-`evolution_analysis` is also the key the Reconstruction agent waits for.
-
+The output dict shape mirrors what the recognition agent returns:
   {
-    "evolution_analysis": {
-      "status":             "completed",
-      "decision":           "analysis_complete",
-      "explanation":        "Analysed 3 species...",
-      "score_is_mock":      true,
-      "species_list":       [...],
-      "overall_confidence": 0.93,
-      "similarity_scores":  [...],
-      "species_groups":     [...],
-      "similarity_network": {...},
-      "newick_tree":        "(...);",
-      "model":              "LG+G4",
-      "bootstrap_support":  {...},
-      "confidence_values":  {...},
-      "alignment_url":      "https://...",
-      "tree_url":           "https://...",
-      "source_agents":      [...]
-    }
+    "evolution": {
+      "decision": "analysis_complete",
+      "text_alignment": "neutral",
+      "score_is_mock": true,
+      "explanation": "Analysed 3 species...",
+      "clarification_question": null
+    },
+    "species_list":       [...],
+    "closest_species":    [...],
+    "species_groups":     [[...]],
+    "similarity_network": {...},
+    "similarity_scores":  [...],
+    "evolutionary_tree":  "(...);",
+    "model":              "LG+G4",
+    "bootstrap_support":  {...},
+    "confidence_values":  {...},
+    "overall_confidence": 0.93,
+    "alignment_url":      "https://...",
+    "tree_url":           "https://...",
+    "source_agents":      [...]
   }
 
 Which implementation answers is chosen by EVOLUTION_AGENT_IMPL:
@@ -45,14 +42,21 @@ from __future__ import annotations
 
 import inspect
 import logging
-import os
 
 from fastapi import FastAPI
 
-from .mock import EvolutionMock
+from .framework.llm_client import load_env
+from .orchestrator_adapter import OrchestratorEvolutionAgent
 from .schema import AgentRequest, AgentResult, AgentStatus
 
 _logger = logging.getLogger(__name__)
+
+# Load .env unconditionally at startup. The Planner (LLM #1) also loads it,
+# but only lazily inside its own function — a request that skips the
+# Planner (an explicit "feature" in the payload) would otherwise never
+# trigger it, leaving MAFFT_BINARY / IQTREE_BINARY / LLM credentials unset
+# even when backend/agents/evolution_agent/.env defines them.
+load_env()
 
 app = FastAPI(
     title="Evolution Agent",
@@ -60,7 +64,7 @@ app = FastAPI(
         "Analyses evolutionary relationships between species.\n\n"
         "Pipeline: **Molecular Comparison** (MAFFT + ESM-C) "
         "→ **Phylogenetic Reconstruction** (IQ-TREE + UFBoot).\n\n"
-        "All tools are mocked in Sprint 2 (`score_is_mock: true`)."
+        "Uses MAFFT and the configured IQ-TREE service for reconstruction."
     ),
     version="2.0.0",
 )
@@ -71,29 +75,8 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 
 def _build_agent():
-    impl = os.getenv("EVOLUTION_AGENT_IMPL", "mock").strip().lower()
-
-    if impl != "orchestrator":
-        print(
-            f"[Evolution] serving MOCK (EVOLUTION_AGENT_IMPL={impl!r}). "
-            "Set EVOLUTION_AGENT_IMPL=orchestrator for the real orchestrator.",
-            flush=True,
-        )
-        return EvolutionMock()
-
-    try:
-        from .orchestrator_adapter import OrchestratorEvolutionAgent
-        agent = OrchestratorEvolutionAgent()
-        print("[Evolution] serving the LangGraph ORCHESTRATOR", flush=True)
-        return agent
-    except Exception as exc:  # noqa: BLE001
-        print(
-            f"[Evolution] orchestrator failed to build "
-            f"({type(exc).__name__}: {exc}); falling back to MOCK.",
-            flush=True,
-        )
-        _logger.warning("orchestrator build failed", exc_info=True)
-        return EvolutionMock()
+    print("[Evolution] serving the LangGraph ORCHESTRATOR", flush=True)
+    return OrchestratorEvolutionAgent()
 
 
 _agent = _build_agent()
