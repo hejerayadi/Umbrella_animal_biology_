@@ -52,14 +52,15 @@ from dotenv import load_dotenv
 # which has none of these keys - and the module would silently fall back to
 # unconfigured defaults.
 #
+# There is one .env for the whole agent, at the Literature_Agent root. This
+# subagent used to carry its own alongside it, which is how it ended up with a
+# different QDRANT_API_KEY than the rest of the agent for the same cluster.
+#
 # Lookup order, first hit wins:
 #   1. the process environment (docker/compose, CI secrets)
-#   2. this subagent's own .env
-#   3. the Literature_Agent .env, for values shared with the other subagents
-#      (QDRANT_URL / QDRANT_API_KEY are already declared there)
+#   2. the Literature_Agent .env
 
 _HERE = Path(__file__).resolve().parent
-load_dotenv(_HERE / ".env", override=False)
 load_dotenv(_HERE.parents[1] / ".env", override=False)
 
 
@@ -109,8 +110,9 @@ def missing_settings() -> List[str]:
 def get_qdrant() -> QdrantClient:
     if not QDRANT_URL:
         raise RuntimeError(
-            "QDRANT_URL is not set - copy .env.example to .env in "
-            "subagents/retrieval&knowledge processing/ and fill it in."
+            "QDRANT_URL is not set - copy .env.example to .env in the "
+            "Literature_Agent root and fill it in. This subagent has no .env "
+            "of its own; the agent keeps a single settings file."
         )
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY or None)
 

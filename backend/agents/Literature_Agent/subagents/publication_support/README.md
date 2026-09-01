@@ -52,15 +52,21 @@ this package at all.
 
 ## Configuration
 
-Copy `.env.example` to `.env` here. Anything missing falls back to the
-`Literature_Agent/.env` two levels up.
+Every setting lives in the single `Literature_Agent/.env`, two levels up —
+copy `.env.example` to `.env` there. This folder no longer keeps a `.env` of
+its own.
 
 | Setting | Purpose |
 |---|---|
 | `QDRANT_URL` | Cluster URL. `CLUSTER_ENDPOINT` is still accepted as an alias. |
 | `QDRANT_API_KEY` | |
 | `QDRANT_JOURNALS_COLLECTION` | Defaults to `journals`. |
-| `AZURE_OPENAI_ENDPOINT` / `_API_KEY` / `_DEPLOYMENT` | Query interpretation and LLM re-ranking. |
+| `AZURE_LITERATURE_PUBLICATION_ENDPOINT` / `_API_KEY` / `_DEPLOYMENT` | Query interpretation and LLM re-ranking. Falls back to `AZURE_LITERATURE_*`, then `AZURE_OPENAI_*` — see `azure_config.py`. |
+
+Use a plain chat deployment, not a reasoning one: `rerank_journals` and
+`interpret_query` send `temperature` and `max_tokens`, which a gpt-5-class
+deployment rejects. That is why this subagent has its own role block rather
+than sharing `AZURE_OPENAI_*` with knowledge discovery.
 
 Nothing is built at import time — the Qdrant client, the embedding model and
 the OpenAI client are all constructed on first use. A missing setting is a

@@ -342,6 +342,20 @@ export interface SimilarityScore {
   score: number;
 }
 
+/**
+ * The similarity graph the Molecular Comparison sub-agent actually built.
+ *
+ * The agent returns this as `similarity_network` (NetworkX node-link form) in
+ * addition to the flat `similarity_scores` list. It is the authoritative
+ * membership list: a species with no comparable sequence appears as a node
+ * with no edges, which the flat score list cannot express at all.
+ */
+export interface SimilarityNetwork {
+  /** Every species in the graph, including any with no edges. */
+  species: string[];
+  edges: SimilarityScore[];
+}
+
 /** A cluster of species the comparison put together. */
 export interface SpeciesGroup {
   groupId: number;
@@ -360,6 +374,12 @@ export interface EvolutionSpec {
   /** Mean UFBoot support in [0, 1], or null when UFBoot did not run. */
   overallConfidence: number | null;
   similarityScores: SimilarityScore[];
+  /**
+   * The agent's own graph, when it sent one. Null falls back to a graph
+   * derived from `similarityScores`, which is the same edges without the
+   * isolated nodes.
+   */
+  similarityNetwork: SimilarityNetwork | null;
   speciesGroups: SpeciesGroup[];
   /** The Explainer's prose (LLM #2), when it produced a trustworthy one. */
   interpretation: string | null;

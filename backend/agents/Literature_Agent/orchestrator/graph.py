@@ -11,6 +11,8 @@ discovery, so that the draft can cite the papers that were actually found.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from langgraph.graph import END, StateGraph
 
@@ -21,7 +23,10 @@ from ..subagents.writing import ScientificWritingOrchestrator
 from .router import decide_after_discovery, decide_next_after_routing
 from .state import OrchestratorState, initial_state
 
-load_dotenv()
+# The agent's single .env, addressed explicitly. A bare load_dotenv() walks up
+# from the working directory, which is the repository root when the service is
+# started the documented way - and backend/.env holds none of these keys.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 
 def aggregate_results(state: OrchestratorState) -> dict:

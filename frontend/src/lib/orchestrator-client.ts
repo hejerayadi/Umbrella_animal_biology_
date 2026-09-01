@@ -1,5 +1,6 @@
 import type {
   EvolutionSpec,
+  SimilarityNetwork,
   SimilarityScore,
   SpeciesGroup,
   AgentActivity,
@@ -758,6 +759,56 @@ export function reconstructionFrom(
 }
 
 /**
+ * Reads the Molecular Comparison sub-agent's graph out of `similarity_network`.
+ *
+ * The agent builds this with NetworkX and ships `node_link_data`, so the shape
+ * is `{nodes: [{id}], edges: [{source, target, score}]}`. Older NetworkX
+ * spells the edge list `links`, and the agent's own public output contract
+ * documents the field as a JSON *string*, so both are accepted rather than
+ * silently yielding an empty graph.
+ *
+ * Returns null when there is nothing usable; the panel then falls back to
+ * building a graph out of the flat `similarity_scores` list.
+ */
+function similarityNetworkFrom(raw: unknown): SimilarityNetwork | null {
+  let value = raw;
+
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!isRecord(value)) return null;
+
+  const rawNodes = Array.isArray(value.nodes) ? value.nodes : [];
+  const species = rawNodes
+    .map((node) => (isRecord(node) ? asString(node.id) : asString(node)))
+    .filter((name): name is string => Boolean(name));
+
+  const rawEdges = Array.isArray(value.edges)
+    ? value.edges
+    : Array.isArray(value.links)
+      ? value.links
+      : [];
+
+  const edges: SimilarityScore[] = rawEdges
+    .filter(isRecord)
+    .map((edge) => ({
+      speciesA: asString(edge.source) ?? "",
+      speciesB: asString(edge.target) ?? "",
+      score: asNumber(edge.score) ?? 0,
+    }))
+    .filter((edge) => edge.speciesA && edge.speciesB);
+
+  if (species.length === 0 && edges.length === 0) return null;
+
+  return { species, edges };
+}
+
+/**
  * Reads the Evolution Agent's result out of a chat response's context.
  *
  * The Evolution Agent's output dict is merged flat into the shared context by
@@ -803,6 +854,7 @@ export function evolutionFrom(context: Record<string, unknown>): EvolutionSpec |
     // rather than "not measured".
     overallConfidence: asNumber(context.overall_confidence),
     similarityScores,
+    similarityNetwork: similarityNetworkFrom(context.similarity_network),
     speciesGroups,
     interpretation: asString(context.interpretation),
     warnings: asStringList(context.warnings),
