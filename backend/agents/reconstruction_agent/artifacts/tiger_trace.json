@@ -1,0 +1,378 @@
+{
+  "species": "Panthera tigris",
+  "1_assembly_received": {
+    "species": "Panthera tigris",
+    "assembly_accession": "GCF_018350195.1",
+    "assembly_level": null,
+    "record_census": {
+      "bands": {
+        "all": 93,
+        "ge_50kb_le_2Mb (selection band)": 54,
+        "gt_2Mb (over ceiling)": 38,
+        "lt_50kb (under floor)": 1
+      },
+      "top_5_in_band": [
+        {
+          "accession": "NW_024962182.1",
+          "length": 768043,
+          "title": "Panthera tigris isolate Pti1 chromosome F3 unlocalized genom"
+        },
+        {
+          "accession": "NW_024962167.1",
+          "length": 394258,
+          "title": "Panthera tigris isolate Pti1 chromosome D3 unlocalized genom"
+        },
+        {
+          "accession": "NW_024962142.1",
+          "length": 320000,
+          "title": "Panthera tigris isolate Pti1 chromosome A1 unlocalized genom"
+        },
+        {
+          "accession": "NW_024962143.1",
+          "length": 282857,
+          "title": "Panthera tigris isolate Pti1 chromosome A1 unlocalized genom"
+        },
+        {
+          "accession": "NW_024962183.1",
+          "length": 265560,
+          "title": "Panthera tigris isolate Pti1 chromosome F3 unlocalized genom"
+        }
+      ]
+    }
+  },
+  "5_genome_to_reconstruction_payload": {
+    "status": "completed",
+    "target_agent": null,
+    "prompt_to_target_agent": null,
+    "continuation_reason": null,
+    "retryable": null,
+    "context": {
+      "genome": "Genome of Panthera tigris (tiger), assembly GCF_018350195.1, 2.41 Gb, 19 chromosomes (source: NCBI)",
+      "assembly_id": "GCF_018350195.1",
+      "species_record": {
+        "assembly_id": "GCF_018350195.1",
+        "scientific_name": "Panthera tigris (tiger)",
+        "common_name": "Panthera tigris (tiger)",
+        "confidence": 0.5,
+        "reasoning": "Deterministic NCBI fallback used (no LLM)"
+      },
+      "genome_metadata": {
+        "genome_size_bp": 2408695688,
+        "chromosome_count": 19,
+        "karyotype": null,
+        "assembly_level": "Chromosome"
+      },
+      "gene_list": [
+        "ND3",
+        "ATP8",
+        "ND2",
+        "COX3",
+        "CYTB",
+        "ND1",
+        "ND4",
+        "ND6",
+        "ND4L",
+        "ND5",
+        "IGF1",
+        "LHB",
+        "OAZ1",
+        "APOA2",
+        "CGA",
+        "APOC1",
+        "KISS1",
+        "BCHE",
+        "FSHR",
+        "CYP2D6",
+        "OAZ3",
+        "AZIN1",
+        "AZIN2",
+        "TSPO",
+        "LIPT1",
+        "PAPSS1",
+        "KDELR3",
+        "GANAB",
+        "WASL",
+        "PIK3CB",
+        "POLR3A",
+        "GUF1",
+        "SLC9D1",
+        "QARS1",
+        "GALM",
+        "SRPRA",
+        "PDSS1",
+        "NNT",
+        "PAPOLA",
+        "PARD3B",
+        "TALDO1",
+        "FOXRED1",
+        "CCNA2",
+        "CRLS1",
+        "ATIC",
+        "FDX2",
+        "RIOK2",
+        "TRAP1",
+        "NARS2",
+        "MYORG"
+      ],
+      "gene_table": [
+        {
+          "gene_name": "ND3",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 3"
+        },
+        {
+          "gene_name": "ATP8",
+          "location": "MT",
+          "function": "ATP synthase F0 subunit 8"
+        },
+        {
+          "gene_name": "ND2",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 2"
+        },
+        {
+          "gene_name": "COX3",
+          "location": "MT",
+          "function": "cytochrome c oxidase subunit III"
+        },
+        {
+          "gene_name": "CYTB",
+          "location": "MT",
+          "function": "cytochrome b"
+        },
+        {
+          "gene_name": "ND1",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 1"
+        },
+        {
+          "gene_name": "ND4",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 4"
+        },
+        {
+          "gene_name": "ND6",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 6"
+        },
+        {
+          "gene_name": "ND4L",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 4L"
+        },
+        {
+          "gene_name": "ND5",
+          "location": "MT",
+          "function": "NADH dehydrogenase subunit 5"
+        },
+        {
+          "gene_name": "IGF1",
+          "location": "B4",
+          "function": "insulin like growth factor 1"
+        },
+        {
+          "gene_name": "LHB",
+          "location": "E2",
+          "function": "luteinizing hormone subunit beta"
+        },
+        {
+          "gene_name": "OAZ1",
+          "location": "A2",
+          "function": "ornithine decarboxylase antizyme 1"
+        },
+        {
+          "gene_name": "APOA2",
+          "location": "F3",
+          "function": "apolipoprotein A2"
+        },
+        {
+          "gene_name": "CGA",
+          "location": "B2",
+          "function": "glycoprotein hormones, alpha polypeptide"
+        },
+        {
+          "gene_name": "APOC1",
+          "location": "E2",
+          "function": "apolipoprotein C1"
+        },
+        {
+          "gene_name": "KISS1",
+          "location": "F3",
+          "function": "KiSS-1 metastasis suppressor"
+        },
+        {
+          "gene_name": "BCHE",
+          "location": "C2",
+          "function": "butyrylcholinesterase"
+        },
+        {
+          "gene_name": "FSHR",
+          "location": "A3",
+          "function": "follicle stimulating hormone receptor"
+        },
+        {
+          "gene_name": "CYP2D6",
+          "location": "B4",
+          "function": "cytochrome P450 family 2 subfamily D member 6"
+        },
+        {
+          "gene_name": "OAZ3",
+          "location": "C1",
+          "function": "ornithine decarboxylase antizyme 3"
+        },
+        {
+          "gene_name": "AZIN1",
+          "location": "F2",
+          "function": "antizyme inhibitor 1"
+        },
+        {
+          "gene_name": "AZIN2",
+          "location": "C1",
+          "function": "antizyme inhibitor 2"
+        },
+        {
+          "gene_name": "TSPO",
+          "location": "B4",
+          "function": "translocator protein"
+        },
+        {
+          "gene_name": "LIPT1",
+          "location": "A3",
+          "function": "lipoyltransferase 1"
+        },
+        {
+          "gene_name": "PAPSS1",
+          "location": "B1",
+          "function": "3'-phosphoadenosine 5'-phosphosulfate synthase 1"
+        },
+        {
+          "gene_name": "KDELR3",
+          "location": "B4",
+          "function": "KDEL endoplasmic reticulum protein retention receptor 3"
+        },
+        {
+          "gene_name": "GANAB",
+          "location": "D1",
+          "function": "glucosidase II alpha subunit"
+        },
+        {
+          "gene_name": "WASL",
+          "location": "A2",
+          "function": "WASP like actin nucleation promoting factor"
+        },
+        {
+          "gene_name": "PIK3CB",
+          "location": "C2",
+          "function": "phosphatidylinositol-4,5-bisphosphate 3-kinase catalytic subunit beta"
+        },
+        {
+          "gene_name": "POLR3A",
+          "location": "D2",
+          "function": "RNA polymerase III subunit A"
+        },
+        {
+          "gene_name": "GUF1",
+          "location": "B1",
+          "function": "GTP binding elongation factor GUF1"
+        },
+        {
+          "gene_name": "SLC9D1",
+          "location": "A1",
+          "function": "solute carrier family 9 member D1"
+        },
+        {
+          "gene_name": "QARS1",
+          "location": "A2",
+          "function": "glutaminyl-tRNA synthetase 1"
+        },
+        {
+          "gene_name": "GALM",
+          "location": "A3",
+          "function": "galactose mutarotase"
+        },
+        {
+          "gene_name": "SRPRA",
+          "location": "D1",
+          "function": "SRP receptor subunit alpha"
+        },
+        {
+          "gene_name": "PDSS1",
+          "location": "B4",
+          "function": "decaprenyl diphosphate synthase subunit 1"
+        },
+        {
+          "gene_name": "NNT",
+          "location": "A1",
+          "function": "nicotinamide nucleotide transhydrogenase"
+        },
+        {
+          "gene_name": "PAPOLA",
+          "location": "B3",
+          "function": "poly(A) polymerase alpha"
+        },
+        {
+          "gene_name": "PARD3B",
+          "location": "C1",
+          "function": "par-3 family cell polarity regulator beta"
+        },
+        {
+          "gene_name": "TALDO1",
+          "location": "D1",
+          "function": "transaldolase 1"
+        },
+        {
+          "gene_name": "FOXRED1",
+          "location": "D1",
+          "function": "FAD dependent oxidoreductase domain containing 1"
+        },
+        {
+          "gene_name": "CCNA2",
+          "location": "B1",
+          "function": "cyclin A2"
+        },
+        {
+          "gene_name": "CRLS1",
+          "location": "A3",
+          "function": "cardiolipin synthase 1"
+        },
+        {
+          "gene_name": "ATIC",
+          "location": "C1",
+          "function": "5-aminoimidazole-4-carboxamide ribonucleotide formyltransferase/IMP cyclohydrolase"
+        },
+        {
+          "gene_name": "FDX2",
+          "location": "A2",
+          "function": "ferredoxin 2"
+        },
+        {
+          "gene_name": "RIOK2",
+          "location": "A1",
+          "function": "RIO kinase 2"
+        },
+        {
+          "gene_name": "TRAP1",
+          "location": "E3",
+          "function": "TNF receptor associated protein 1"
+        },
+        {
+          "gene_name": "NARS2",
+          "location": "D1",
+          "function": "asparaginyl-tRNA synthetase 2, mitochondrial"
+        },
+        {
+          "gene_name": "MYORG",
+          "location": "D4",
+          "function": "myogenesis regulating glycosidase"
+        }
+      ],
+      "explanation": "Species: Panthera tigris (tiger) (Panthera tigris (tiger)), assembly GCF_018350195.1\nGenome metadata: genome size 2408695688 bp, 19 chromosomes, karyotype None\nGene annotation: genes: ND3, ATP8, ND2, COX3, CYTB, ND1, ND4, ND6, ND4L, ND5, IGF1, LHB, OAZ1, APOA2, CGA, APOC1, KISS1, BCHE, FSHR, CYP2D6, OAZ3, AZIN1, AZIN2, TSPO, LIPT1, PAPSS1, KDELR3, GANAB, WASL, PIK3CB, POLR3A, GUF1, SLC9D1, QARS1, GALM, SRPRA, PDSS1, NNT, PAPOLA, PARD3B, TALDO1, FOXRED1, CCNA2, CRLS1, ATIC, FDX2, RIOK2, TRAP1, NARS2, MYORG\nVisualization: status: COMPLETED",
+      "visualization": {
+        "status": "COMPLETED",
+        "format": "svg",
+        "available": true,
+        "chart_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 800 1600\">\n<rect x=\"0\" y=\"0\" width=\"800\" height=\"1600\" fill=\"#f9f9f9\"/>\n<text x=\"20\" y=\"25\" font-size=\"16\" font-weight=\"bold\" fill=\"#333\">Chromosome Map</text>\n<rect x=\"20\" y=\"45\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"58\" font-size=\"12\" fill=\"white\">ND3</text>\n<text x=\"180\" y=\"58\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"75\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"88\" font-size=\"12\" fill=\"white\">ATP8</text>\n<text x=\"180\" y=\"88\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"105\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"118\" font-size=\"12\" fill=\"white\">ND2</text>\n<text x=\"180\" y=\"118\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"135\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"148\" font-size=\"12\" fill=\"white\">COX3</text>\n<text x=\"180\" y=\"148\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"165\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"178\" font-size=\"12\" fill=\"white\">CYTB</text>\n<text x=\"180\" y=\"178\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"195\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"208\" font-size=\"12\" fill=\"white\">ND1</text>\n<text x=\"180\" y=\"208\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"225\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"238\" font-size=\"12\" fill=\"white\">ND4</text>\n<text x=\"180\" y=\"238\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"255\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"268\" font-size=\"12\" fill=\"white\">ND6</text>\n<text x=\"180\" y=\"268\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"285\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"298\" font-size=\"12\" fill=\"white\">ND4L</text>\n<text x=\"180\" y=\"298\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"315\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"328\" font-size=\"12\" fill=\"white\">ND5</text>\n<text x=\"180\" y=\"328\" font-size=\"11\" fill=\"#666\">MT</text>\n<rect x=\"20\" y=\"345\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"358\" font-size=\"12\" fill=\"white\">IGF1</text>\n<text x=\"180\" y=\"358\" font-size=\"11\" fill=\"#666\">B4</text>\n<rect x=\"20\" y=\"375\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"388\" font-size=\"12\" fill=\"white\">LHB</text>\n<text x=\"180\" y=\"388\" font-size=\"11\" fill=\"#666\">E2</text>\n<rect x=\"20\" y=\"405\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"418\" font-size=\"12\" fill=\"white\">OAZ1</text>\n<text x=\"180\" y=\"418\" font-size=\"11\" fill=\"#666\">A2</text>\n<rect x=\"20\" y=\"435\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"448\" font-size=\"12\" fill=\"white\">APOA2</text>\n<text x=\"180\" y=\"448\" font-size=\"11\" fill=\"#666\">F3</text>\n<rect x=\"20\" y=\"465\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"478\" font-size=\"12\" fill=\"white\">CGA</text>\n<text x=\"180\" y=\"478\" font-size=\"11\" fill=\"#666\">B2</text>\n<rect x=\"20\" y=\"495\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"508\" font-size=\"12\" fill=\"white\">APOC1</text>\n<text x=\"180\" y=\"508\" font-size=\"11\" fill=\"#666\">E2</text>\n<rect x=\"20\" y=\"525\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"538\" font-size=\"12\" fill=\"white\">KISS1</text>\n<text x=\"180\" y=\"538\" font-size=\"11\" fill=\"#666\">F3</text>\n<rect x=\"20\" y=\"555\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"568\" font-size=\"12\" fill=\"white\">BCHE</text>\n<text x=\"180\" y=\"568\" font-size=\"11\" fill=\"#666\">C2</text>\n<rect x=\"20\" y=\"585\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"598\" font-size=\"12\" fill=\"white\">FSHR</text>\n<text x=\"180\" y=\"598\" font-size=\"11\" fill=\"#666\">A3</text>\n<rect x=\"20\" y=\"615\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"628\" font-size=\"12\" fill=\"white\">CYP2D6</text>\n<text x=\"180\" y=\"628\" font-size=\"11\" fill=\"#666\">B4</text>\n<rect x=\"20\" y=\"645\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"658\" font-size=\"12\" fill=\"white\">OAZ3</text>\n<text x=\"180\" y=\"658\" font-size=\"11\" fill=\"#666\">C1</text>\n<rect x=\"20\" y=\"675\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"688\" font-size=\"12\" fill=\"white\">AZIN1</text>\n<text x=\"180\" y=\"688\" font-size=\"11\" fill=\"#666\">F2</text>\n<rect x=\"20\" y=\"705\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"718\" font-size=\"12\" fill=\"white\">AZIN2</text>\n<text x=\"180\" y=\"718\" font-size=\"11\" fill=\"#666\">C1</text>\n<rect x=\"20\" y=\"735\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"748\" font-size=\"12\" fill=\"white\">TSPO</text>\n<text x=\"180\" y=\"748\" font-size=\"11\" fill=\"#666\">B4</text>\n<rect x=\"20\" y=\"765\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"778\" font-size=\"12\" fill=\"white\">LIPT1</text>\n<text x=\"180\" y=\"778\" font-size=\"11\" fill=\"#666\">A3</text>\n<rect x=\"20\" y=\"795\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"808\" font-size=\"12\" fill=\"white\">PAPSS1</text>\n<text x=\"180\" y=\"808\" font-size=\"11\" fill=\"#666\">B1</text>\n<rect x=\"20\" y=\"825\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"838\" font-size=\"12\" fill=\"white\">KDELR3</text>\n<text x=\"180\" y=\"838\" font-size=\"11\" fill=\"#666\">B4</text>\n<rect x=\"20\" y=\"855\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"868\" font-size=\"12\" fill=\"white\">GANAB</text>\n<text x=\"180\" y=\"868\" font-size=\"11\" fill=\"#666\">D1</text>\n<rect x=\"20\" y=\"885\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"898\" font-size=\"12\" fill=\"white\">WASL</text>\n<text x=\"180\" y=\"898\" font-size=\"11\" fill=\"#666\">A2</text>\n<rect x=\"20\" y=\"915\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"928\" font-size=\"12\" fill=\"white\">PIK3CB</text>\n<text x=\"180\" y=\"928\" font-size=\"11\" fill=\"#666\">C2</text>\n<rect x=\"20\" y=\"945\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"958\" font-size=\"12\" fill=\"white\">POLR3A</text>\n<text x=\"180\" y=\"958\" font-size=\"11\" fill=\"#666\">D2</text>\n<rect x=\"20\" y=\"975\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"988\" font-size=\"12\" fill=\"white\">GUF1</text>\n<text x=\"180\" y=\"988\" font-size=\"11\" fill=\"#666\">B1</text>\n<rect x=\"20\" y=\"1005\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1018\" font-size=\"12\" fill=\"white\">SLC9D1</text>\n<text x=\"180\" y=\"1018\" font-size=\"11\" fill=\"#666\">A1</text>\n<rect x=\"20\" y=\"1035\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1048\" font-size=\"12\" fill=\"white\">QARS1</text>\n<text x=\"180\" y=\"1048\" font-size=\"11\" fill=\"#666\">A2</text>\n<rect x=\"20\" y=\"1065\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1078\" font-size=\"12\" fill=\"white\">GALM</text>\n<text x=\"180\" y=\"1078\" font-size=\"11\" fill=\"#666\">A3</text>\n<rect x=\"20\" y=\"1095\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1108\" font-size=\"12\" fill=\"white\">SRPRA</text>\n<text x=\"180\" y=\"1108\" font-size=\"11\" fill=\"#666\">D1</text>\n<rect x=\"20\" y=\"1125\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1138\" font-size=\"12\" fill=\"white\">PDSS1</text>\n<text x=\"180\" y=\"1138\" font-size=\"11\" fill=\"#666\">B4</text>\n<rect x=\"20\" y=\"1155\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1168\" font-size=\"12\" fill=\"white\">NNT</text>\n<text x=\"180\" y=\"1168\" font-size=\"11\" fill=\"#666\">A1</text>\n<rect x=\"20\" y=\"1185\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1198\" font-size=\"12\" fill=\"white\">PAPOLA</text>\n<text x=\"180\" y=\"1198\" font-size=\"11\" fill=\"#666\">B3</text>\n<rect x=\"20\" y=\"1215\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1228\" font-size=\"12\" fill=\"white\">PARD3B</text>\n<text x=\"180\" y=\"1228\" font-size=\"11\" fill=\"#666\">C1</text>\n<rect x=\"20\" y=\"1245\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1258\" font-size=\"12\" fill=\"white\">TALDO1</text>\n<text x=\"180\" y=\"1258\" font-size=\"11\" fill=\"#666\">D1</text>\n<rect x=\"20\" y=\"1275\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1288\" font-size=\"12\" fill=\"white\">FOXRED1</text>\n<text x=\"180\" y=\"1288\" font-size=\"11\" fill=\"#666\">D1</text>\n<rect x=\"20\" y=\"1305\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1318\" font-size=\"12\" fill=\"white\">CCNA2</text>\n<text x=\"180\" y=\"1318\" font-size=\"11\" fill=\"#666\">B1</text>\n<rect x=\"20\" y=\"1335\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1348\" font-size=\"12\" fill=\"white\">CRLS1</text>\n<text x=\"180\" y=\"1348\" font-size=\"11\" fill=\"#666\">A3</text>\n<rect x=\"20\" y=\"1365\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1378\" font-size=\"12\" fill=\"white\">ATIC</text>\n<text x=\"180\" y=\"1378\" font-size=\"11\" fill=\"#666\">C1</text>\n<rect x=\"20\" y=\"1395\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1408\" font-size=\"12\" fill=\"white\">FDX2</text>\n<text x=\"180\" y=\"1408\" font-size=\"11\" fill=\"#666\">A2</text>\n<rect x=\"20\" y=\"1425\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1438\" font-size=\"12\" fill=\"white\">RIOK2</text>\n<text x=\"180\" y=\"1438\" font-size=\"11\" fill=\"#666\">A1</text>\n<rect x=\"20\" y=\"1455\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1468\" font-size=\"12\" fill=\"white\">TRAP1</text>\n<text x=\"180\" y=\"1468\" font-size=\"11\" fill=\"#666\">E3</text>\n<rect x=\"20\" y=\"1485\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1498\" font-size=\"12\" fill=\"white\">NARS2</text>\n<text x=\"180\" y=\"1498\" font-size=\"11\" fill=\"#666\">D1</text>\n<rect x=\"20\" y=\"1515\" width=\"150\" height=\"20\" fill=\"#4b7ba5\" rx=\"3\"/>\n<text x=\"30\" y=\"1528\" font-size=\"12\" fill=\"white\">MYORG</text>\n<text x=\"180\" y=\"1528\" font-size=\"11\" fill=\"#666\">D4</text>\n</svg>"
+      }
+    }
+  }
+}

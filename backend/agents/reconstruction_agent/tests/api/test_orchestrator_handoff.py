@@ -58,7 +58,7 @@ GENOME_AGENT_INSTRUCTION = "Reconstruct the selected unresolved regions."
 #: on anything else.
 AGENT_STATUSES = {"completed", "needs_agent", "continue", "failed"}
 
-CARD_OUTPUT_KEYS = {"reconstruction", "reconstruction_summary", "reconstruction_sequence"}
+CARD_OUTPUT_KEYS = {"reconstruction", "reconstruction_summary", "reconstruction_best_fill"}
 
 
 class _StubService:

@@ -317,6 +317,94 @@ export interface Message {
    * rather than being fetched.
    */
   writingDraft?: WritingDraftSpec;
+  /**
+   * The Reconstruction Agent's result. Travels with the message like
+   * `genomeChart`: a handful of gaps with short fills, measured in kilobytes.
+   */
+  reconstruction?: ReconstructionSpec;
+}
+
+/** One score behind a candidate's confidence, as the agent reported it. */
+export interface ReconstructionScore {
+  label: string;
+  /** Null when the signal was not consulted at all - see `evo2`. */
+  value: number | null;
+}
+
+/** One unresolved region, and what became of it. */
+export interface ReconstructedGap {
+  gapId: string;
+  /** 1-based inclusive, as the Genome Agent reports coordinates. */
+  start: number | null;
+  end: number | null;
+  lengthBp: number | null;
+  /** "resolved", "skipped", "unresolved"... straight from the agent. */
+  status: string;
+  resolved: boolean;
+  /**
+   * Why it was not filled - "deadline_exceeded",
+   * "insufficient_gap_spanning_homologs". Present only when unresolved, and
+   * shown as the reason rather than as a failure: refusing to invent bases is
+   * the correct outcome when nothing spans the gap.
+   */
+  unresolvedReason: string | null;
+  explanation: string | null;
+
+  /** The accepted fill. Null unless `resolved`. */
+  fill: string | null;
+  fillLengthBp: number | null;
+  confidence: number | null;
+  confidenceLevel: string | null;
+  /**
+   * Whether a genome model wrote these bases rather than a sequenced relative.
+   * The single most consequential fact about a fill, and the panel gives it
+   * its own colour rather than a footnote.
+   */
+  isModelGenerated: boolean;
+  supportingOrganisms: string[];
+  supportingHits: string[];
+  scores: ReconstructionScore[];
+
+  /**
+   * Resolved sequence either side of the gap, from the Genome Agent's handoff.
+   * Absent when the reconstruction response is read without that context - the
+   * agent's own per-gap output carries coordinates but not flanks.
+   */
+  leftFlank: string | null;
+  rightFlank: string | null;
+}
+
+/**
+ * How the gaps that were worked on were chosen, when the Genome Agent said.
+ *
+ * Without this a list of ten gaps reads as "this assembly has ten gaps". It
+ * had thirty on one record of several thousand.
+ */
+export interface ReconstructionSelection {
+  gapsFound: number | null;
+  gapsOverFloor: number | null;
+  gapsSelected: number | null;
+  recordsInAssembly: number | null;
+  recordsOverCeiling: number | null;
+  minGapBp: number | null;
+  assemblyGapBasesBp: number | null;
+  assemblyGapFraction: number | null;
+}
+
+/** The Reconstruction Agent's result, shaped for display. */
+export interface ReconstructionSpec {
+  /** "completed", "partially_completed", "failed". */
+  status: string;
+  summary: string | null;
+  scientificName: string | null;
+  assemblyId: string | null;
+  sequenceAccession: string | null;
+  requestedGaps: number;
+  resolvedGaps: number;
+  unresolvedGaps: number;
+  gaps: ReconstructedGap[];
+  selection: ReconstructionSelection | null;
+  warnings: string[];
 }
 
 export type AgentStatus = "pending" | "running" | "complete" | "failed";

@@ -22,6 +22,6 @@
   "output": {
     "reconstruction": "dict",
     "reconstruction_summary": "string",
-    "reconstruction_sequence": "string"
+    "reconstruction_best_fill": "dict"
   }
 }

@@ -1,0 +1,85 @@
+{
+  "status": "needs_agent",
+  "target_agent": "Reconstruction Agent",
+  "prompt_to_target_agent": "Reconstruct the selected unresolved regions.",
+  "continuation_reason": null,
+  "retryable": null,
+  "context": {
+    "scientific_name": "Ursus maritimus (polar bear)",
+    "assembly_id": "GCF_017311325.1",
+    "sequence_accession": "NW_024426341.1",
+    "assembly_level": "Scaffold",
+    "target_gaps": [
+      {
+        "start": 337487,
+        "end": 337491,
+        "length": 5,
+        "left_flank": "TTGTGTATAGAGTTGCAATCAAATTTGTATATTGACTTTATATCCTGCTG",
+        "right_flank": "GAATTCATTAGTTATAACAGATTTTTTCTTTTAAACAATTCATTGAATTA"
+      },
+      {
+        "start": 1051062,
+        "end": 1051066,
+        "length": 5,
+        "left_flank": "ACAAACAGTGAACCATCTGAGAAGTAAATAAAATAATTCCATCTACACGA",
+        "right_flank": "CAATAGAATAACAATATCACTTCACACCATTCAGAATGGCTAGTATAAAA"
+      },
+      {
+        "start": 42803,
+        "end": 42809,
+        "length": 7,
+        "left_flank": "TATCAGAAGGTTGCAGGTGCAATGAAGACAAAGCCGGTATAAAGGAAAGA",
+        "right_flank": "GGATAGGGTGTTATTTTTTACCGGTTGCTCAGGTAGACAACACATTTACA"
+      },
+      {
+        "start": 396349,
+        "end": 396355,
+        "length": 7,
+        "left_flank": "CTGATCTGTTATTTCCTTTCTTTTACTCATGTTGTGTTTTGTTTGTTCTA",
+        "right_flank": "GGGAAAGAGTGCTTTGAATATAAAATCAATACCTGGTAGTGAATTAGAAC"
+      },
+      {
+        "start": 134876,
+        "end": 134884,
+        "length": 9,
+        "left_flank": "TTCTTCTATTTAAAAATTAAATGAACTTGGGTGAATTCTTTAAATTTCAT",
+        "right_flank": "CCTACATCCATAATTAACACTTGCTTTCCTTCCTTGTGAGGAGAGCCCGT"
+      },
+      {
+        "start": 364807,
+        "end": 364815,
+        "length": 9,
+        "left_flank": "AAGGGCACGGTTGTTCCTTTTGAGCTCCCAAGTCTGGCTGGGGGCTCATG",
+        "right_flank": "CTCTTTCCTCCTGTCCTGCCTGGGAACAGAGCTCTCGGTCTTCATCATCA"
+      },
+      {
+        "start": 250004,
+        "end": 250013,
+        "length": 10,
+        "left_flank": "GATGTACTGTATGTGACTAACATAATATAATAAAAAATCATTAAAAAAAA",
+        "right_flank": "AGAAAAACATGCAGCCAAGGATCCTTTATCCAGCAAGGCTGTCATTCAGA"
+      },
+      {
+        "start": 392152,
+        "end": 392161,
+        "length": 10,
+        "left_flank": "CCCTGGAACTTCATCCTGACTTCTATTTTGAAAACTTCAGGCAGATTCTG",
+        "right_flank": "AAAAAAAAAAAAAATGCATGTATCATTGCATTTGGTAGATGGTAAATTTT"
+      },
+      {
+        "start": 691218,
+        "end": 691227,
+        "length": 10,
+        "left_flank": "GCAGAGGCAGAAAAATCTGGGGGGAGAGGGAGTGCAGAGTTTCAGAGAGA",
+        "right_flank": "TCATTTAGAAAAGTTCTTTTAGCAAATAATCTTTCAACATCCCCCATTTT"
+      },
+      {
+        "start": 723107,
+        "end": 723116,
+        "length": 10,
+        "left_flank": "GTCTCATTATATATGGGTATTTATATTTATTTATTTATTTATTTATTTAT",
+        "right_flank": "ACTCATGATTATTCCTTCAGGAAGACTAGGGAAATTTTACTTGGCATGAC"
+      }
+    ]
+  }
+}

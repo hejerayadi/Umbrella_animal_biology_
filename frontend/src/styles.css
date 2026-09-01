@@ -112,6 +112,21 @@
   );
   --shadow-elevated: 0 24px 60px -30px color-mix(in oklab, var(--primary) 35%, transparent);
   --shadow-soft: 0 1px 2px oklch(0 0 0 / 6%), 0 8px 24px -18px oklch(0 0 0 / 30%);
+
+  /* Sequence rendering. The app's primary is a warm red, so these sit on
+     hues far from it: bases must not read as brand colour, and the three
+     roles below must never be confused with one another.
+
+     `fill` is sequence that was reconstructed from homology - real bases
+     observed in a real relative. `model` is sequence a genome model wrote,
+     which is a different kind of claim entirely and is given its own hue
+     rather than a shade of the same one. `gap` is what is still missing. */
+  --seq-fill: oklch(0.52 0.13 165);
+  --seq-fill-soft: oklch(0.945 0.035 165);
+  --seq-model: oklch(0.52 0.16 300);
+  --seq-model-soft: oklch(0.945 0.045 300);
+  --seq-gap: oklch(0.58 0.13 85);
+  --seq-gap-soft: oklch(0.95 0.05 85);
 }
 
 .dark {
@@ -149,6 +164,16 @@
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: oklch(0.585 0.205 26.5);
   --shadow-soft: 0 1px 2px oklch(0 0 0 / 40%), 0 8px 24px -18px oklch(0 0 0 / 80%);
+
+  /* Lifted, not inverted: on the dark ground the same hues need more
+     lightness to stay legible at monospace sizes, and the soft variants
+     become tints of the card rather than of the page. */
+  --seq-fill: oklch(0.74 0.15 165);
+  --seq-fill-soft: oklch(0.28 0.05 165);
+  --seq-model: oklch(0.74 0.16 300);
+  --seq-model-soft: oklch(0.28 0.05 300);
+  --seq-gap: oklch(0.78 0.14 85);
+  --seq-gap-soft: oklch(0.29 0.05 85);
 }
 
 @layer base {

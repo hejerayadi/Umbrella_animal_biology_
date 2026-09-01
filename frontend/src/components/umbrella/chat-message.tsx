@@ -5,6 +5,7 @@ import { GenomeChart } from "@/components/umbrella/genome-chart";
 import { Markdown } from "@/components/umbrella/markdown";
 import { UmbrellaMark } from "@/components/umbrella/logo";
 import { ProteinViewer } from "@/components/umbrella/protein-viewer";
+import { ReconstructionPanel } from "@/components/umbrella/reconstruction-panel";
 import { RecognitionPanel } from "@/components/umbrella/recognition-panel";
 import { UserAvatar } from "@/components/umbrella/user-avatar";
 import { WritingPanel } from "@/components/umbrella/writing-panel";
@@ -131,6 +132,12 @@ export function ChatMessage({
             {message.writingDraft && done && <WritingPanel spec={message.writingDraft} />}
             {message.biodiversityMap && done && (
               <BiodiversityMap spec={message.biodiversityMap} />
+            )}
+            {/* Held back like the panels above. This one also animates its
+                progress bar on mount, and starting that while the text is
+                still typing would run it against a moving layout. */}
+            {message.reconstruction && done && (
+              <ReconstructionPanel spec={message.reconstruction} />
             )}
           </div>
         )}

@@ -78,3 +78,34 @@ AGENT_CARDS: dict[str, AgentCard] = {
 AGENT_ENDPOINTS: dict[str, str] = {
     agent_name: _endpoint(agent_name, port) for agent_name, port in _AGENT_PORTS.items()
 }
+
+
+def _build_name_lookup() -> dict[str, str]:
+    """Every spelling of an agent that this catalog is willing to answer to.
+
+    There are two in circulation and they are not the same string. This module
+    keys agents by short alias (`"Reconstruction"`, from `_AGENT_FOLDERS`),
+    while each agent's own `card.json` calls itself by its long name
+    (`"Reconstruction Agent"`) - and a worker that resolves a handoff against
+    its own local copy of the cards naturally emits the long one. Aliases are
+    registered first so a card's `name` can never displace a real key.
+    """
+    lookup = {name.casefold(): name for name in AGENT_CARDS}
+    for name, card in AGENT_CARDS.items():
+        lookup.setdefault(card.name.casefold(), name)
+    return lookup
+
+
+_AGENT_NAME_LOOKUP: dict[str, str] = _build_name_lookup()
+
+
+def resolve_agent_name(name: str | None) -> str | None:
+    """The canonical key for `name`, or None if no agent goes by it.
+
+    Used wherever one agent names another: matching on the key alone throws
+    away a correct answer written in the other spelling, which is not a
+    disagreement about who should run, only about what to call them.
+    """
+    if not name:
+        return None
+    return _AGENT_NAME_LOOKUP.get(name.strip().casefold())

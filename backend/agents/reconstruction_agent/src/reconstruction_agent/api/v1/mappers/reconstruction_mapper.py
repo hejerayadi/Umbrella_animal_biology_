@@ -21,9 +21,18 @@ from reconstruction_agent.domain.models.result import GapReconstruction, Reconst
 def to_agent_output(result: ReconstructionResult) -> dict[str, Any]:
     """The `output` dict merged into the shared orchestrator context.
 
-    `reconstruction_sequence` is the single most useful field for a downstream
-    agent, so the best resolved fill is surfaced at the top level rather than
-    left buried in the per-gap detail.
+    The highest-confidence resolved fill is surfaced at the top level rather
+    than left buried in the per-gap detail, because it is the single most
+    useful field for a downstream agent.
+
+    It is called `reconstruction_best_fill`, and carries its own coordinates,
+    because the previous name - `reconstruction_sequence`, a bare string - read
+    as "the reconstructed sequence" and was nothing of the kind. Measured on
+    the polar bear scaffold NW_024426341.1 it held `"ACCTTAC"`: seven bases,
+    the one accepted fill, offered under a name that invited a consumer to
+    treat it as the repaired 1,153,480 bp record. The bases are the same; what
+    changed is that the payload now says what they are and where they go, so
+    the mistake is no longer available to make.
     """
     resolved = [item for item in result.reconstructions if item.is_resolved]
     best = max(resolved, key=lambda item: item.confidence or 0.0, default=None)
@@ -31,7 +40,29 @@ def to_agent_output(result: ReconstructionResult) -> dict[str, Any]:
     return {
         "reconstruction": to_data(result),
         "reconstruction_summary": _summary(result),
-        "reconstruction_sequence": best.sequence if best else None,
+        "reconstruction_best_fill": _best_fill(best),
+    }
+
+
+def _best_fill(item: GapReconstruction | None) -> dict[str, Any] | None:
+    """The winning fill, with the gap it closes and how much of it that is.
+
+    `covers_bp` against `sequence_length_bp` is the part a caller most needs
+    and cannot derive: it is the difference between "the record is repaired"
+    and "seven of its bases are".
+    """
+    if item is None or item.sequence is None:
+        return None
+    return {
+        "sequence": item.sequence,
+        "length_bp": len(item.sequence),
+        "gap_id": item.gap_id,
+        "start": item.gap.start,
+        "end": item.gap.end,
+        "confidence": round(item.confidence, 4) if item.confidence is not None else None,
+        "is_model_generated": (
+            item.selected_candidate.is_model_generated if item.selected_candidate else None
+        ),
     }
 
 

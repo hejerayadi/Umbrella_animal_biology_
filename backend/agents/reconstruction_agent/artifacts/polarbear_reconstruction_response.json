@@ -1,0 +1,692 @@
+{
+  "status": "completed",
+  "output": {
+    "reconstruction": {
+      "request_id": "rec_fb5b3380a4574e25",
+      "status": "PARTIALLY_COMPLETED",
+      "scientific_name": "Ursus maritimus (polar bear)",
+      "tax_id": 29073,
+      "molecule_type": "GENOMIC_DNA",
+      "assembly_id": "GCF_017311325.1",
+      "sequence_accession": "NW_024426341.1",
+      "summary": {
+        "requested_gaps": 10,
+        "resolved_gaps": 1,
+        "unresolved_gaps": 9
+      },
+      "reconstructions": [
+        {
+          "gap_id": "gap_3",
+          "start": 42802,
+          "end": 42809,
+          "length": 7,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "DEADLINE_EXCEEDED",
+          "explanation": "The run deadline was reached before this region could be examined.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_5",
+          "start": 134875,
+          "end": 134884,
+          "length": 9,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "DEADLINE_EXCEEDED",
+          "explanation": "The run deadline was reached before this region could be examined.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_7",
+          "start": 250003,
+          "end": 250013,
+          "length": 10,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "DEADLINE_EXCEEDED",
+          "explanation": "The run deadline was reached before this region could be examined.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_1",
+          "start": 337486,
+          "end": 337491,
+          "length": 5,
+          "status": "RESOLVED",
+          "selected_candidate": {
+            "candidate_id": "gap_1_cand_3",
+            "origin": "HOMOLOGY",
+            "is_model_generated": false,
+            "sequence": "ACCTTAC",
+            "length": 7,
+            "confidence": 0.3542,
+            "confidence_level": "LOW",
+            "supporting_hits": [
+              "XM_057312204",
+              "XM_057312203"
+            ],
+            "supporting_organisms": [
+              "Ursus arctos"
+            ],
+            "scores": {
+              "homology": 0.1855,
+              "alignment": 0.16666666666666666,
+              "conservation": 0.7023809523809524,
+              "evolutionary": 0.9629629629629629,
+              "evo2": 0.143923,
+              "validation": 0.8930857142857143
+            },
+            "rationale": "confidence 0.35 from homology 0.19, alignment 0.17, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.14, validation 0.89"
+          },
+          "alternatives": [
+            {
+              "candidate_id": "gap_1_cand_1",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AACATGCAGATTTAATGC",
+              "length": 18,
+              "confidence": 0.3307,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XM_026508475",
+                "XM_057303354",
+                "XM_057303356"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.2336,
+                "alignment": 0.25,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.0,
+                "validation": 0.7921333333333334
+              },
+              "rationale": "confidence 0.33 from homology 0.23, alignment 0.25, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.00, validation 0.79"
+            },
+            {
+              "candidate_id": "gap_1_cand_2",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AACTTTAG",
+              "length": 8,
+              "confidence": 0.32,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XR_008958775"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.16379999999999997,
+                "alignment": 0.08333333333333333,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.123695,
+                "validation": 0.8712
+              },
+              "rationale": "confidence 0.32 from homology 0.16, alignment 0.08, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.12, validation 0.87"
+            },
+            {
+              "candidate_id": "gap_1_cand_4",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AATCTACAGATTCAATAC",
+              "length": 18,
+              "confidence": 0.3099,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XM_026517502",
+                "XR_008961213"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.19039999999999996,
+                "alignment": 0.16666666666666666,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.053017,
+                "validation": 0.7967555555555557
+              },
+              "rationale": "confidence 0.31 from homology 0.19, alignment 0.17, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.05, validation 0.80"
+            },
+            {
+              "candidate_id": "gap_1_cand_8",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AACCTGAC",
+              "length": 8,
+              "confidence": 0.2963,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XM_057312225"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.1584,
+                "alignment": 0.08333333333333333,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.0,
+                "validation": 0.8388
+              },
+              "rationale": "confidence 0.30 from homology 0.16, alignment 0.08, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.00, validation 0.84"
+            },
+            {
+              "candidate_id": "gap_1_cand_5",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AATCTACAGATTTATGC",
+              "length": 17,
+              "confidence": 0.2873,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XR_008956323"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.159,
+                "alignment": 0.08333333333333333,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.056307,
+                "validation": 0.7999764705882353
+              },
+              "rationale": "confidence 0.29 from homology 0.16, alignment 0.08, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.06, validation 0.80"
+            },
+            {
+              "candidate_id": "gap_1_cand_6",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AGCTTTATTA",
+              "length": 10,
+              "confidence": 0.2825,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XM_057313632"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.1542,
+                "alignment": 0.08333333333333333,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.096555,
+                "validation": 0.7812
+              },
+              "rationale": "confidence 0.28 from homology 0.15, alignment 0.08, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.10, validation 0.78"
+            },
+            {
+              "candidate_id": "gap_1_cand_7",
+              "origin": "HOMOLOGY",
+              "is_model_generated": false,
+              "sequence": "AATCTGTGGGTTCAATGC",
+              "length": 18,
+              "confidence": 0.2788,
+              "confidence_level": "LOW",
+              "supporting_hits": [
+                "XM_026484361"
+              ],
+              "supporting_organisms": [
+                "Ursus arctos"
+              ],
+              "scores": {
+                "homology": 0.17039999999999997,
+                "alignment": 0.08333333333333333,
+                "conservation": 0.7023809523809524,
+                "evolutionary": 0.9629629629629629,
+                "evo2": 0.053017,
+                "validation": 0.7699111111111112
+              },
+              "rationale": "confidence 0.28 from homology 0.17, alignment 0.08, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.05, validation 0.77"
+            },
+            {
+              "candidate_id": "gap_1_evo2",
+              "origin": "MODEL",
+              "is_model_generated": true,
+              "sequence": "CTTTA",
+              "length": 5,
+              "confidence": 0.0808,
+              "confidence_level": "LOW",
+              "supporting_hits": [],
+              "supporting_organisms": [],
+              "scores": {
+                "homology": 0.0,
+                "alignment": 0.0,
+                "conservation": 0.0,
+                "evolutionary": 0.0,
+                "evo2": 0.823045289516449,
+                "validation": 0.9812
+              },
+              "rationale": "confidence 0.08 from homology 0.00, alignment 0.00, conservation 0.00, relatedness 0.00, Evo 2 agreement 0.82, validation 0.98"
+            }
+          ],
+          "unresolved_reason": null,
+          "explanation": "confidence 0.35 from homology 0.19, alignment 0.17, conservation 0.70, relatedness 0.96, Evo 2 agreement 0.14, validation 0.89",
+          "evidence": {
+            "homology": {
+              "hits_examined": 50,
+              "gap_spanning_hits": 19,
+              "best_identity": 0.7902621722846442,
+              "closest_organism": "Ursus arctos"
+            },
+            "alignment": {
+              "references_aligned": 12,
+              "references_spanning_gap": 12,
+              "conservation": 0.7023809523809524,
+              "competing_fills": 8
+            },
+            "evo2": {
+              "consulted": true,
+              "agreement": 0.143923,
+              "mean_model_confidence": 0.823045289516449,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [
+                "alphabet",
+                "non_empty",
+                "length",
+                "gc_consistency",
+                "low_complexity"
+              ],
+              "failures": [
+                "length"
+              ]
+            }
+          },
+          "provenance": {
+            "providers": [
+              "NCBI",
+              "NCBI Taxonomy",
+              "NCBI BLAST",
+              "EMBL-EBI MAFFT",
+              "NVIDIA Evo 2"
+            ],
+            "databases_searched": [
+              "core_nt@txid9632"
+            ],
+            "database_rationale": "core_nt@txid9632: scoped to Ursidae (family, txid9632) | core_nt@txid33554: scoped to Carnivora (order, txid33554) | core_nt@txid40674: scoped to Mammalia (class, txid40674)",
+            "tool_calls": 13
+          },
+          "warnings": [
+            "The fill is 7 bases and the gap is 5. Assembly gap lengths are estimates and a real indel changes them, so this is not necessarily wrong - but substituting it will shift every downstream coordinate in the record.",
+            "Advisory check length did not pass: length 7 differs from the 5-base gap by 40%"
+          ]
+        },
+        {
+          "gap_id": "gap_6",
+          "start": 364806,
+          "end": 364815,
+          "length": 9,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "DEADLINE_EXCEEDED",
+          "explanation": "The run deadline was reached before this region could be examined.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_8",
+          "start": 392151,
+          "end": 392161,
+          "length": 10,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "DEADLINE_EXCEEDED",
+          "explanation": "The run deadline was reached before this region could be examined.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_4",
+          "start": 396348,
+          "end": 396355,
+          "length": 7,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "DEADLINE_EXCEEDED",
+          "explanation": "The run deadline was reached before this region could be examined.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_9",
+          "start": 691217,
+          "end": 691227,
+          "length": 10,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "NOT_ATTEMPTED",
+          "explanation": "This run committed to the regions it could finish within its budget; this one was not attempted.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_10",
+          "start": 723106,
+          "end": 723116,
+          "length": 10,
+          "status": "SKIPPED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "NOT_ATTEMPTED",
+          "explanation": "This run committed to the regions it could finish within its budget; this one was not attempted.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 0,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.0,
+              "closest_organism": null
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [],
+            "databases_searched": [],
+            "database_rationale": "",
+            "tool_calls": 0
+          },
+          "warnings": []
+        },
+        {
+          "gap_id": "gap_2",
+          "start": 1051061,
+          "end": 1051066,
+          "length": 5,
+          "status": "UNRESOLVED",
+          "selected_candidate": null,
+          "alternatives": [],
+          "unresolved_reason": "INSUFFICIENT_GAP_SPANNING_HOMOLOGS",
+          "explanation": "No candidate sequence could be assembled from the evidence gathered.",
+          "evidence": {
+            "homology": {
+              "hits_examined": 150,
+              "gap_spanning_hits": 0,
+              "best_identity": 0.8253012048192772,
+              "closest_organism": "Mirounga angustirostris"
+            },
+            "alignment": {
+              "references_aligned": 0,
+              "references_spanning_gap": 0,
+              "conservation": 0.0,
+              "competing_fills": 0
+            },
+            "evo2": {
+              "consulted": false,
+              "agreement": null,
+              "mean_model_confidence": null,
+              "unavailable_reason": null
+            },
+            "validation": {
+              "checks": [],
+              "failures": []
+            }
+          },
+          "provenance": {
+            "providers": [
+              "NCBI",
+              "NCBI Taxonomy",
+              "NCBI BLAST"
+            ],
+            "databases_searched": [
+              "core_nt@txid9632",
+              "core_nt@txid33554",
+              "core_nt@txid40674"
+            ],
+            "database_rationale": "core_nt@txid9632: scoped to Ursidae (family, txid9632) | core_nt@txid33554: scoped to Carnivora (order, txid33554) | core_nt@txid40674: scoped to Mammalia (class, txid40674)",
+            "tool_calls": 20
+          },
+          "warnings": []
+        }
+      ],
+      "warnings": []
+    },
+    "reconstruction_summary": "Reconstructed 1 of 10 unresolved regions in Ursus maritimus (polar bear). Unresolved regions were left in place (DEADLINE_EXCEEDED, INSUFFICIENT_GAP_SPANNING_HOMOLOGS, NOT_ATTEMPTED).",
+    "reconstruction_sequence": "ACCTTAC"
+  },
+  "target_agent": null,
+  "prompt_to_target_agent": null,
+  "continuation_reason": null,
+  "retryable": false,
+  "error": null
+}

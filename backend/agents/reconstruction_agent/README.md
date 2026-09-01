@@ -59,12 +59,22 @@ unreachable", which would hide a well-described error behind a transport one.
 {"status": "completed", "output": {
   "reconstruction": { /* full detail */ },
   "reconstruction_summary": "Reconstructed 1 of 1 unresolved regions in Ursus maritimus.",
-  "reconstruction_sequence": "AAGCTATCGGG..."
+  "reconstruction_best_fill": {
+    "sequence": "AAGCTATCGGG...", "length_bp": 11,
+    "gap_id": "gap-1", "start": 337487, "end": 337491,
+    "confidence": 0.82, "is_model_generated": false
+  }
 }}
 ```
 
 Those three `output` keys are declared in `card.json` and read by other agents
 from the shared context. Renaming one breaks them silently.
+
+`reconstruction_best_fill` is one gap's fill, not the repaired record - it
+carries `start`/`end`/`length_bp` so that cannot be misread. It was called
+`reconstruction_sequence` and was a bare string, which could and did read as
+the whole reconstructed sequence when it was seven bases of a 1.15 Mb
+scaffold.
 
 **`/api/v1/...`** - everyone else. `{data, meta, error}` on every response, and
 HTTP status codes used properly (404 not found, 422 bad domain values, 502
