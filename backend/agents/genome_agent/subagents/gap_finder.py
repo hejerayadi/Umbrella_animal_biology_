@@ -47,6 +47,15 @@ gap-free.
 The upper bound matters because the Reconstruction Agent fetches the whole
 record before it can work: a chromosome-scale scaffold made the request hang
 until the HTTP timeout. The lower bound skips the unplaced fragments.
+
+What this module reports about its own filtering
+------------------------------------------------
+Scanning one record of thousands, screening at a length floor and capping the
+result are three separate reductions, and `target_gaps` shows none of them.
+`find_target_gaps` therefore returns the counts at each stage plus a
+`selection_policy` describing the thresholds, so a consumer can tell "this
+assembly has ten gaps" from "here are ten of thirty, from one record of
+3,899". The filtering is unchanged; only its visibility is.
 """
 
 from __future__ import annotations
@@ -86,8 +95,27 @@ DEFAULT_FLANK_BP = 50
 MIN_GAP_BP = 5
 
 # The size band a scanned record has to fall in (see module docstring).
+#
+# The ceiling is a downstream constraint, not a biological one: the
+# Reconstruction Agent fetches the whole record before it can work, and a
+# chromosome-scale record made that request hang until the HTTP timeout. It is
+# also the most consequential filter in this module - it excludes the largest
+# records, which are the likeliest to carry gaps. Since it cannot be lifted
+# without breaking the consumer, it is *reported* instead: `_record_census`
+# counts how many records it puts out of reach and `selection_policy` carries
+# the band, so a consumer that can handle a bigger record can see that one
+# exists rather than being told this assembly has ten gaps.
 _SCAFFOLD_MIN_BP = 50_000
 _SCAFFOLD_MAX_BP = 2_000_000
+
+# Whether to spend two extra count-only NCBI requests measuring how much of
+# the assembly this module did not look at (`_record_census`). It is the only
+# way the payload can say "one record of 3,899" rather than implying the
+# assembly has as many gaps as were sent, but it is not free, and every call
+# here shares one process-wide pacing gate with the window reads. Turn it off
+# where the round-trips matter more than the provenance: `selection_policy`
+# then reports those two counts as None, which already means "not measured".
+REPORT_RECORD_CENSUS = True
 
 _N_RUN_RE = re.compile(r"N+")
 
@@ -197,6 +225,56 @@ async def _wgs_term(assembly_id: str) -> str | None:
     record = (response.json().get("result") or {}).get(uid) or {}
     prefix = (record.get("wgs") or "").strip()
     return f"{prefix}[WGS]" if prefix else None
+
+
+async def _record_census(assembly_id: str) -> dict[str, int | None]:
+    """How many records this assembly has, and how many the ceiling hides.
+
+    Only one record is ever scanned (see `_select_target_record`), so without
+    these two numbers `target_gaps` looks like the assembly's gaps rather than
+    one record's. Reported so the consumer can see the shape of what it did
+    not get.
+
+    Two count-only searches, skipped entirely when `REPORT_RECORD_CENSUS` is
+    off, and best-effort either way: any failure reports None for both rather
+    than costing the caller its gaps. `[Assembly]` is the only
+    term used here - a GenBank-only assembly reached through the `[WGS]`
+    fallback returns an unmeasured census rather than paying for a second
+    `_wgs_term` round-trip, and None means "not measured", never "zero".
+    """
+    async def _count(term: str) -> int | None:
+        response = await asyncio.to_thread(
+            ncbi_get,
+            {
+                "path": "esearch.fcgi",
+                "db": "nuccore",
+                "term": term,
+                "retmax": "0",
+                "retmode": "json",
+            },
+        )
+        raw = response.json().get("esearchresult", {}).get("count")
+        return int(raw) if raw is not None else None
+
+    unmeasured: dict[str, int | None] = {
+        "records_in_assembly": None,
+        "records_over_size_ceiling": None,
+    }
+    if not REPORT_RECORD_CENSUS:
+        return unmeasured
+
+    try:
+        total = await _count(f"{assembly_id}[Assembly]")
+        if not total:
+            return unmeasured
+        over = await _count(
+            f"{assembly_id}[Assembly] AND {_SCAFFOLD_MAX_BP + 1}:1000000000[SLEN]"
+        )
+    except Exception as exc:  # noqa: BLE001 - a census is never worth failing over
+        logger.warning("[find_target_gaps] record census failed for %r: %s", assembly_id, exc)
+        return unmeasured
+
+    return {"records_in_assembly": total, "records_over_size_ceiling": over}
 
 
 async def _select_target_record(assembly_id: str) -> tuple[str, int]:
@@ -313,6 +391,14 @@ async def find_target_gaps(
             ],
         }
 
+    Alongside the gaps, the return reports what was filtered out to produce
+    them: `gaps_found`, `gaps_over_floor`, `gaps_selected` and a
+    `selection_policy` describing every threshold applied. Without these the
+    consumer cannot tell a filtered sample from an exhaustive list - ten gaps
+    out of thirty, in one record out of thousands, is indistinguishable from
+    an assembly that has exactly ten. Every number below is a policy decision
+    made here, not a property of the genome.
+
     Gaps come back **shortest first**, which is also the order `max_gaps`
     truncates against.
 
@@ -332,6 +418,7 @@ async def find_target_gaps(
     an empty `target_gaps` list.
     """
     accession, length = await _select_target_record(assembly_id)
+    census = await _record_census(assembly_id)
     logger.info(
         "[find_target_gaps] scanning %s (%s bp) for assembly=%r",
         accession,
@@ -340,29 +427,54 @@ async def find_target_gaps(
     )
 
     sequence = await _fetch_record_sequence(accession, length)
-    gaps = _find_n_runs(sequence)
+
+    # Counted before the floor is applied as well as after, so the payload can
+    # say how much the floor itself removed rather than only what survived it.
+    found = _find_n_runs(sequence, min_length=1)
+    gaps = [gap for gap in found if gap["length"] >= MIN_GAP_BP]
     gaps.sort(key=lambda gap: gap["length"])
     selected = gaps[:max_gaps]
 
+    policy = {
+        "order": "shortest_first",
+        "min_gap_bp": MIN_GAP_BP,
+        "max_gaps": max_gaps,
+        "flank_bp": flank_bp,
+        "record_size_band_bp": [_SCAFFOLD_MIN_BP, _SCAFFOLD_MAX_BP],
+        "records_scanned": 1,
+        "record_length_bp": length or None,
+        "bases_scanned": len(sequence),
+        **census,
+    }
+    result = {
+        "sequence_accession": accession,
+        "target_gaps": [_attach_flanks(gap, sequence, flank_bp) for gap in selected],
+        "gaps_found": len(found),
+        "gaps_over_floor": len(gaps),
+        "gaps_selected": len(selected),
+        "selection_policy": policy,
+    }
+
     if not selected:
         logger.info(
-            "[find_target_gaps] no runs of N found in %s (%d bases scanned)",
+            "[find_target_gaps] no runs of N at or above %d bp in %s "
+            "(%d shorter runs, %d bases scanned)",
+            MIN_GAP_BP,
             accession,
+            len(found),
             len(sequence),
         )
-        return {"sequence_accession": accession, "target_gaps": []}
+        return result
 
     logger.info(
-        "[find_target_gaps] %d of %d gaps in %s (shortest %d bp)",
+        "[find_target_gaps] %d of %d gaps in %s (%d found, shortest %d bp)",
         len(selected),
         len(gaps),
         accession,
+        len(found),
         selected[0]["length"],
     )
-    return {
-        "sequence_accession": accession,
-        "target_gaps": [_attach_flanks(gap, sequence, flank_bp) for gap in selected],
-    }
+    return result
 
 
 if __name__ == "__main__":

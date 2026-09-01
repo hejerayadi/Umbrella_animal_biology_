@@ -12,6 +12,10 @@ import type {
   RecognitionCandidate,
   RecognitionProvenance,
   RecognitionResult,
+  ReconstructedGap,
+  ReconstructionScore,
+  ReconstructionSelection,
+  ReconstructionSpec,
   WritingDraftSpec,
 } from "./umbrella-types";
 import { apiRequest, apiUrl } from "./api-client";
@@ -581,5 +585,171 @@ export function writingDraftFrom(
     referencesArePlaceholder: writing.references_are_placeholder === true,
     styleCorrected: writing.style_corrected === true,
     notice: asString(writing.notice) ?? asString(root.notice),
+  };
+}
+
+/**
+ * The context keys the Reconstruction Agent and the Genome Agent publish, per
+ * their card.json files. Both are merged into the shared context by the
+ * orchestrator, which is what lets one panel show a fill *and* the flanks it
+ * sits between - the reconstruction response carries gap coordinates but not
+ * flanking sequence, and a fill shown without its flanks is seven letters with
+ * nothing to place them against.
+ */
+const RECONSTRUCTION_KEY = "reconstruction";
+const TARGET_GAPS_KEY = "target_gaps";
+
+/**
+ * The evidence scores, keyed exactly as `CandidateScores` serialises them.
+ *
+ * These are the model's field names, not descriptions of them - the agent
+ * sends `homology`, not `homology_score`. Getting one wrong costs nothing
+ * loudly: `asNumber` returns null for a key that is not there, the score is
+ * dropped, and a panel that should show six bars shows none with no error
+ * anywhere. Ordered as a reader works through the argument: what was found,
+ * how well it aligned, how conserved it is, how close the donor, what the
+ * model thought, and whether it survived validation.
+ */
+const SCORE_LABELS: Array<[string, string]> = [
+  ["homology", "homology"],
+  ["alignment", "alignment"],
+  ["conservation", "conservation"],
+  ["evolutionary", "evolutionary"],
+  ["evo2", "Evo 2"],
+  ["validation", "validation"],
+];
+
+function scoresFrom(value: unknown): ReconstructionScore[] {
+  if (!isRecord(value)) return [];
+  const out: ReconstructionScore[] = [];
+  for (const [key, label] of SCORE_LABELS) {
+    if (!(key in value)) continue;
+    // `evo2` is null whenever Evo 2 was not consulted, which is the normal
+    // case - it breaks ties rather than scoring every candidate. The domain
+    // is explicit that null and 0.0 mean different things, so the null is
+    // carried through and labelled rather than collapsed into a zero bar or
+    // dropped as though the signal had never existed.
+    out.push({ label, value: asNumber(value[key]) });
+  }
+  return out;
+}
+
+/**
+ * Flanking sequence for each gap, keyed by start coordinate.
+ *
+ * The two agents number gaps independently, so `gap_id` cannot be the join
+ * key. Coordinates can be, but not exactly: the Genome Agent reports 1-based
+ * inclusive starts and the Reconstruction Agent's `Gap` is 0-based, so the
+ * same gap can arrive one apart. Both are indexed and looked up in turn rather
+ * than assuming which convention survived the handoff.
+ */
+function flanksByStart(value: unknown): Map<number, { left: string; right: string }> {
+  const out = new Map<number, { left: string; right: string }>();
+  if (!Array.isArray(value)) return out;
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const start = asNumber(entry.start);
+    if (start === null) continue;
+    out.set(start, {
+      left: asString(entry.left_flank) ?? "",
+      right: asString(entry.right_flank) ?? "",
+    });
+  }
+  return out;
+}
+
+function gapFrom(
+  raw: Record<string, unknown>,
+  flanks: Map<number, { left: string; right: string }>,
+): ReconstructedGap {
+  const candidate = isRecord(raw.selected_candidate) ? raw.selected_candidate : null;
+  const status = (asString(raw.status) ?? "unknown").toLowerCase();
+  const start = asNumber(raw.start);
+
+  // See `flanksByStart`: try the coordinate as given, then one either side.
+  const flank =
+    start === null
+      ? undefined
+      : (flanks.get(start) ?? flanks.get(start + 1) ?? flanks.get(start - 1));
+
+  return {
+    gapId: asString(raw.gap_id) ?? "gap",
+    start,
+    end: asNumber(raw.end),
+    lengthBp: asNumber(raw.length),
+    status,
+    resolved: status === "resolved" && candidate !== null,
+    unresolvedReason: asString(raw.unresolved_reason),
+    explanation: asString(raw.explanation),
+    fill: candidate ? asString(candidate.sequence) : null,
+    fillLengthBp: candidate ? asNumber(candidate.length) : null,
+    confidence: candidate ? asNumber(candidate.confidence) : null,
+    confidenceLevel: candidate ? asString(candidate.confidence_level) : null,
+    isModelGenerated: candidate?.is_model_generated === true,
+    supportingOrganisms: candidate ? asStringList(candidate.supporting_organisms) : [],
+    supportingHits: candidate ? asStringList(candidate.supporting_hits) : [],
+    scores: candidate ? scoresFrom(candidate.scores) : [],
+    leftFlank: flank?.left ?? null,
+    rightFlank: flank?.right ?? null,
+  };
+}
+
+function selectionFrom(context: Record<string, unknown>): ReconstructionSelection | null {
+  const policy = isRecord(context.selection_policy) ? context.selection_policy : {};
+  const selection: ReconstructionSelection = {
+    gapsFound: asNumber(context.gaps_found),
+    gapsOverFloor: asNumber(context.gaps_over_floor),
+    gapsSelected: asNumber(context.gaps_selected),
+    recordsInAssembly: asNumber(policy.records_in_assembly),
+    recordsOverCeiling: asNumber(policy.records_over_size_ceiling),
+    minGapBp: asNumber(policy.min_gap_bp),
+    assemblyGapBasesBp: asNumber(context.assembly_gap_bases_bp),
+    assemblyGapFraction: asNumber(context.assembly_gap_fraction),
+  };
+  // Older Genome Agent builds send none of this. An all-empty object would
+  // render as a row of dashes claiming to explain the selection.
+  const hasAny = Object.values(selection).some((v) => v !== null);
+  return hasAny ? selection : null;
+}
+
+/**
+ * Reads the Reconstruction Agent's result out of a chat response's context.
+ *
+ * Returns undefined unless there are gaps to show. The key is present on paths
+ * that produced nothing - a run that found no unresolved regions completes with
+ * an empty `reconstructions` list - and a panel headed "Reconstruction" with no
+ * gaps in it says less than the written answer already did.
+ */
+export function reconstructionFrom(
+  context: Record<string, unknown>,
+): ReconstructionSpec | undefined {
+  const root = context[RECONSTRUCTION_KEY];
+  if (!isRecord(root)) return undefined;
+
+  const rawGaps = Array.isArray(root.reconstructions) ? root.reconstructions : [];
+  if (rawGaps.length === 0) return undefined;
+
+  const flanks = flanksByStart(context[TARGET_GAPS_KEY]);
+  const gaps = rawGaps
+    .filter(isRecord)
+    .map((raw) => gapFrom(raw as Record<string, unknown>, flanks));
+
+  const summary = isRecord(root.summary) ? root.summary : {};
+
+  return {
+    status: (asString(root.status) ?? "unknown").toLowerCase(),
+    summary: asString(context.reconstruction_summary),
+    scientificName: asString(root.scientific_name),
+    assemblyId: asString(root.assembly_id),
+    sequenceAccession: asString(root.sequence_accession),
+    requestedGaps: asNumber(summary.requested_gaps) ?? gaps.length,
+    resolvedGaps: asNumber(summary.resolved_gaps) ?? gaps.filter((g) => g.resolved).length,
+    unresolvedGaps:
+      asNumber(summary.unresolved_gaps) ?? gaps.filter((g) => !g.resolved).length,
+    // Resolved first: one filled gap among nine skipped is the finding, and it
+    // should not be buried under the nine.
+    gaps: [...gaps].sort((a, b) => Number(b.resolved) - Number(a.resolved)),
+    selection: selectionFrom(context),
+    warnings: asStringList(root.warnings),
   };
 }

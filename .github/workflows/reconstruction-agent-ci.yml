@@ -110,7 +110,7 @@ jobs:
           assert set(card["output"]) == {
               "reconstruction",
               "reconstruction_summary",
-              "reconstruction_sequence",
+              "reconstruction_best_fill",
           }, "card.json output keys are a cross-agent contract and changed"
           print("card.json OK:", card["name"])
           PY

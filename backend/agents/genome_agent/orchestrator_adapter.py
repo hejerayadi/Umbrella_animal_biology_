@@ -187,6 +187,18 @@ def _unresolved_message(state: GenomeAgentState) -> str:
     )
 
 
+def _is_reconstruction_target(target: str | None) -> bool:
+    """Whether `target` names the Reconstruction Agent, however it is spelled.
+
+    This agent resolves handoffs against its own `agent_cards/`, which calls
+    that agent "Reconstruction Agent", while the platform registry keys it as
+    "Reconstruction". An exact match on one spelling would silently fail the
+    loop guard below the moment the other one arrived, turning a finished
+    reconstruction into a second identical handoff.
+    """
+    return (target or "").strip().casefold() in {"reconstruction", "reconstruction agent"}
+
+
 def _completed_output(state: GenomeAgentState) -> dict[str, Any]:
     """The answer this agent publishes to the platform on a normal run.
 
@@ -278,6 +290,37 @@ def to_result(state: GenomeAgentState) -> AgentResult:
             "assembly_level": assembly_level,
             "target_gaps": state.target_gaps or [],
         }
+
+        # What `target_gaps` is a sample *of*. The gap finder scans one record
+        # of the assembly, drops runs under its length floor and caps what is
+        # left, so a bare list of ten reads as "this assembly has ten gaps"
+        # when it may be ten of thirty in one record of several thousand. A
+        # consumer that knows the difference can say so to its own user; one
+        # that does not is at least no longer being told something false by
+        # omission.
+        selection = state.gap_selection or {}
+        if selection.get("gaps_selected") is not None:
+            context["gaps_found"] = selection.get("gaps_found")
+            context["gaps_over_floor"] = selection.get("gaps_over_floor")
+            context["gaps_selected"] = selection.get("gaps_selected")
+            context["selection_policy"] = selection.get("selection_policy")
+
+        # The evidence behind the escalation, when the assembly reported it.
+        #
+        # Both numbers, because the count alone does not explain the decision:
+        # the trigger is the *fraction* (`_MIN_GAP_FRACTION` in
+        # workflows/nodes/genome_data_nodes.py), and 10,100 unresolved bases
+        # means something entirely different in a 2.4 Gb assembly than in a
+        # 100 Mb one. Sending the count and withholding the ratio it was judged
+        # by would leave the consumer unable to tell a fragmented assembly from
+        # a finished one - the same silence this payload's gap counts exist to
+        # end.
+        gap_bases = need.get("gap_bases_bp")
+        if gap_bases is not None:
+            context["assembly_gap_bases_bp"] = gap_bases
+        gap_fraction = need.get("gap_fraction")
+        if gap_fraction is not None:
+            context["assembly_gap_fraction"] = round(gap_fraction, 6)
         if state.errors:
             # e.g. find_target_gaps_node failed - surfaced as a warning
             # rather than dropping the escalation, matching this module's
@@ -352,11 +395,11 @@ class OrchestratorGenomeAgent:
         context = request.context or {}
         already_reconstructed = any(
             key in context
-            for key in ("reconstruction", "reconstruction_summary", "reconstruction_sequence")
+            for key in ("reconstruction", "reconstruction_summary", "reconstruction_best_fill")
         )
         if (
             result.status is AgentStatus.NEEDS_AGENT
-            and result.target_agent == "Reconstruction Agent"
+            and _is_reconstruction_target(result.target_agent)
             and already_reconstructed
         ):
             _logger.info(

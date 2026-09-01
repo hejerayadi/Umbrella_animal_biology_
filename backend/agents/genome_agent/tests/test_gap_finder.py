@@ -186,6 +186,15 @@ def _patched(sequence: str, accession: str = "NW_TEST.1", length: int | None = N
             new=AsyncMock(return_value=(accession, length if length is not None else len(sequence))),
         ),
         patch.object(gap_finder, "fetch_window_by_accession", new=_fake_window),
+        # The census is a third NCBI boundary, patched here for the same reason
+        # as the other two: nothing in this file may reach the network.
+        patch.object(
+            gap_finder,
+            "_record_census",
+            new=AsyncMock(
+                return_value={"records_in_assembly": 3899, "records_over_size_ceiling": 37}
+            ),
+        ),
     )
 
 
@@ -202,17 +211,20 @@ class TestFindTargetGaps:
     def test_empty_gaps_is_not_an_error(self):
         from genome_agent.subagents import gap_finder
 
-        select, window = _patched("ACGT" * 100, accession="NW_000000001.1")
-        with select, window:
+        select, window, census = _patched("ACGT" * 100, accession="NW_000000001.1")
+        with select, window, census:
             result = asyncio.run(gap_finder.find_target_gaps("GCF_x.1"))
 
-        assert result == {"sequence_accession": "NW_000000001.1", "target_gaps": []}
+        assert result["sequence_accession"] == "NW_000000001.1"
+        assert result["target_gaps"] == []
+        assert result["gaps_found"] == 0
+        assert result["gaps_selected"] == 0
 
     def test_gaps_are_enriched_with_flanks(self):
         from genome_agent.subagents import gap_finder
 
-        select, window = _patched(_SEQ, accession="NW_007907101.1")
-        with select, window:
+        select, window, census = _patched(_SEQ, accession="NW_007907101.1")
+        with select, window, census:
             result = asyncio.run(gap_finder.find_target_gaps("GCF_x.1", flank_bp=8))
 
         assert result["sequence_accession"] == "NW_007907101.1"
@@ -225,8 +237,8 @@ class TestFindTargetGaps:
         from genome_agent.subagents import gap_finder
 
         sequence = "".join("ACGT" * 5 + "N" * (20 + i) for i in range(9))
-        select, window = _patched(sequence)
-        with select, window:
+        select, window, census = _patched(sequence)
+        with select, window, census:
             result = asyncio.run(gap_finder.find_target_gaps("GCF_x.1", max_gaps=3))
 
         assert len(result["target_gaps"]) == 3
@@ -237,8 +249,8 @@ class TestFindTargetGaps:
         from genome_agent.subagents import gap_finder
 
         sequence = "ACGT" * 5 + "N" * 20 + "ACGT" * 5 + "N" * 900 + "ACGT" * 5 + "N" * 40
-        select, window = _patched(sequence)
-        with select, window:
+        select, window, census = _patched(sequence)
+        with select, window, census:
             result = asyncio.run(gap_finder.find_target_gaps("GCF_x.1", max_gaps=2))
 
         assert [gap["length"] for gap in result["target_gaps"]] == [20, 40]
@@ -252,8 +264,8 @@ class TestFindTargetGaps:
         # Two windows' worth, with the run of N sitting in the second.
         head = "ACGT" * (gap_finder.MAX_WINDOW_BP // 4)
         sequence = head + "ACGT" * 25 + "N" * 60 + "ACGT" * 25
-        select, window = _patched(sequence)
-        with select, window:
+        select, window, census = _patched(sequence)
+        with select, window, census:
             result = asyncio.run(gap_finder.find_target_gaps("GCF_x.1"))
 
         (gap,) = result["target_gaps"]

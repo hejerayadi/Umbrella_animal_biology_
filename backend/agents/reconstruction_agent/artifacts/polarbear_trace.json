@@ -1,0 +1,472 @@
+{
+  "species": "Ursus maritimus",
+  "1_assembly_received": {
+    "species": "Ursus maritimus",
+    "assembly_accession": "GCF_017311325.1",
+    "assembly_level": "Scaffold",
+    "record_census": {
+      "bands": {
+        "all": 3899,
+        "ge_50kb_le_2Mb (selection band)": 113,
+        "gt_2Mb (over ceiling)": 37,
+        "lt_50kb (under floor)": 3749
+      },
+      "top_5_in_band": [
+        {
+          "accession": "NW_024426341.1",
+          "length": 1153480,
+          "title": "Ursus maritimus isolate PB19 unplaced genomic scaffold, ASM1"
+        },
+        {
+          "accession": "NW_024426452.1",
+          "length": 714003,
+          "title": "Ursus maritimus isolate PB19 unplaced genomic scaffold, ASM1"
+        },
+        {
+          "accession": "NW_024423324.1",
+          "length": 390908,
+          "title": "Ursus maritimus isolate PB19 chromosome Y unlocalized genomi"
+        },
+        {
+          "accession": "NW_024426541.1",
+          "length": 377795,
+          "title": "Ursus maritimus isolate PB19 unplaced genomic scaffold, ASM1"
+        },
+        {
+          "accession": "NW_024423335.1",
+          "length": 316986,
+          "title": "Ursus maritimus isolate PB19 chromosome Y unlocalized genomi"
+        }
+      ]
+    }
+  },
+  "2_selected_record": {
+    "selected_record": "NW_024426341.1",
+    "length": 1153480,
+    "selection_reason": "largest nuccore record of GCF_017311325.1 within 50000-2000000 bp ([Assembly] esearch, sort=SLEN, retmax=1)"
+  },
+  "2b_ground_truth_n_profile": {
+    "accession": "NW_024426341.1",
+    "scanned_bp": 1153480,
+    "n_bases_total": 8184,
+    "n_runs_total": 30,
+    "n_runs_ge_MIN_GAP_BP": 23,
+    "length_histogram": {
+      "1": 4,
+      "2": 2,
+      "4": 1,
+      "5": 2,
+      "7": 2,
+      "9": 2,
+      "10": 8,
+      "18": 1,
+      "24": 1,
+      "25": 1,
+      "90": 1,
+      "537": 1
+    }
+  },
+  "3_raw_gaps": {
+    "total_gaps_any_length": 30,
+    "gaps": [
+      {
+        "gap_id": "raw_1",
+        "start": 25858,
+        "end": 25859,
+        "length": 2
+      },
+      {
+        "gap_id": "raw_2",
+        "start": 42803,
+        "end": 42809,
+        "length": 7
+      },
+      {
+        "gap_id": "raw_3",
+        "start": 134876,
+        "end": 134884,
+        "length": 9
+      },
+      {
+        "gap_id": "raw_4",
+        "start": 157381,
+        "end": 157381,
+        "length": 1
+      },
+      {
+        "gap_id": "raw_5",
+        "start": 250004,
+        "end": 250013,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_6",
+        "start": 337487,
+        "end": 337491,
+        "length": 5
+      },
+      {
+        "gap_id": "raw_7",
+        "start": 340801,
+        "end": 341337,
+        "length": 537
+      },
+      {
+        "gap_id": "raw_8",
+        "start": 364807,
+        "end": 364815,
+        "length": 9
+      },
+      {
+        "gap_id": "raw_9",
+        "start": 392152,
+        "end": 392161,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_10",
+        "start": 396349,
+        "end": 396355,
+        "length": 7
+      },
+      {
+        "gap_id": "raw_11",
+        "start": 445142,
+        "end": 445145,
+        "length": 4
+      },
+      {
+        "gap_id": "raw_12",
+        "start": 568110,
+        "end": 568133,
+        "length": 24
+      },
+      {
+        "gap_id": "raw_13",
+        "start": 568565,
+        "end": 569316,
+        "length": 752
+      },
+      {
+        "gap_id": "raw_14",
+        "start": 572197,
+        "end": 573681,
+        "length": 1485
+      },
+      {
+        "gap_id": "raw_15",
+        "start": 633559,
+        "end": 635893,
+        "length": 2335
+      },
+      {
+        "gap_id": "raw_16",
+        "start": 636831,
+        "end": 636848,
+        "length": 18
+      },
+      {
+        "gap_id": "raw_17",
+        "start": 691218,
+        "end": 691227,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_18",
+        "start": 693003,
+        "end": 695786,
+        "length": 2784
+      },
+      {
+        "gap_id": "raw_19",
+        "start": 723107,
+        "end": 723116,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_20",
+        "start": 806480,
+        "end": 806489,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_21",
+        "start": 819881,
+        "end": 819881,
+        "length": 1
+      },
+      {
+        "gap_id": "raw_22",
+        "start": 888123,
+        "end": 888123,
+        "length": 1
+      },
+      {
+        "gap_id": "raw_23",
+        "start": 895452,
+        "end": 895541,
+        "length": 90
+      },
+      {
+        "gap_id": "raw_24",
+        "start": 1017938,
+        "end": 1017939,
+        "length": 2
+      },
+      {
+        "gap_id": "raw_25",
+        "start": 1051062,
+        "end": 1051066,
+        "length": 5
+      },
+      {
+        "gap_id": "raw_26",
+        "start": 1058676,
+        "end": 1058685,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_27",
+        "start": 1093273,
+        "end": 1093282,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_28",
+        "start": 1107034,
+        "end": 1107034,
+        "length": 1
+      },
+      {
+        "gap_id": "raw_29",
+        "start": 1113102,
+        "end": 1113111,
+        "length": 10
+      },
+      {
+        "gap_id": "raw_30",
+        "start": 1148693,
+        "end": 1148717,
+        "length": 25
+      }
+    ]
+  },
+  "4_selected_gaps": {
+    "gaps_before_filtering": 30,
+    "gaps_after_filtering": 23,
+    "floor_MIN_GAP_BP": 5,
+    "cap_DEFAULT_MAX_GAPS": 10,
+    "selection_policy": "runs of N >= 5 bp, sorted SHORTEST first, first 10 kept",
+    "selected_gaps": [
+      {
+        "start": 337487,
+        "end": 337491,
+        "length": 5
+      },
+      {
+        "start": 1051062,
+        "end": 1051066,
+        "length": 5
+      },
+      {
+        "start": 42803,
+        "end": 42809,
+        "length": 7
+      },
+      {
+        "start": 396349,
+        "end": 396355,
+        "length": 7
+      },
+      {
+        "start": 134876,
+        "end": 134884,
+        "length": 9
+      },
+      {
+        "start": 364807,
+        "end": 364815,
+        "length": 9
+      },
+      {
+        "start": 250004,
+        "end": 250013,
+        "length": 10
+      },
+      {
+        "start": 392152,
+        "end": 392161,
+        "length": 10
+      },
+      {
+        "start": 691218,
+        "end": 691227,
+        "length": 10
+      },
+      {
+        "start": 723107,
+        "end": 723116,
+        "length": 10
+      }
+    ],
+    "discarded_gaps_count": 13,
+    "discarded_gaps_sample": [
+      {
+        "start": 806480,
+        "end": 806489,
+        "length": 10
+      },
+      {
+        "start": 1058676,
+        "end": 1058685,
+        "length": 10
+      },
+      {
+        "start": 1093273,
+        "end": 1093282,
+        "length": 10
+      },
+      {
+        "start": 1113102,
+        "end": 1113111,
+        "length": 10
+      },
+      {
+        "start": 636831,
+        "end": 636848,
+        "length": 18
+      },
+      {
+        "start": 568110,
+        "end": 568133,
+        "length": 24
+      },
+      {
+        "start": 1148693,
+        "end": 1148717,
+        "length": 25
+      },
+      {
+        "start": 895452,
+        "end": 895541,
+        "length": 90
+      },
+      {
+        "start": 340801,
+        "end": 341337,
+        "length": 537
+      },
+      {
+        "start": 568565,
+        "end": 569316,
+        "length": 752
+      }
+    ]
+  },
+  "5_genome_to_reconstruction_payload": {
+    "status": "needs_agent",
+    "target_agent": "Reconstruction Agent",
+    "prompt_to_target_agent": "Reconstruct the selected unresolved regions.",
+    "continuation_reason": null,
+    "retryable": null,
+    "context": {
+      "scientific_name": "Ursus maritimus (polar bear)",
+      "assembly_id": "GCF_017311325.1",
+      "sequence_accession": "NW_024426341.1",
+      "assembly_level": "Scaffold",
+      "target_gaps": [
+        {
+          "start": 337487,
+          "end": 337491,
+          "length": 5,
+          "left_flank": "TTGTGTATAGAGTTGCAATCAAATTTGTATATTGACTTTATATCCTGCTG",
+          "right_flank": "GAATTCATTAGTTATAACAGATTTTTTCTTTTAAACAATTCATTGAATTA"
+        },
+        {
+          "start": 1051062,
+          "end": 1051066,
+          "length": 5,
+          "left_flank": "ACAAACAGTGAACCATCTGAGAAGTAAATAAAATAATTCCATCTACACGA",
+          "right_flank": "CAATAGAATAACAATATCACTTCACACCATTCAGAATGGCTAGTATAAAA"
+        },
+        {
+          "start": 42803,
+          "end": 42809,
+          "length": 7,
+          "left_flank": "TATCAGAAGGTTGCAGGTGCAATGAAGACAAAGCCGGTATAAAGGAAAGA",
+          "right_flank": "GGATAGGGTGTTATTTTTTACCGGTTGCTCAGGTAGACAACACATTTACA"
+        },
+        {
+          "start": 396349,
+          "end": 396355,
+          "length": 7,
+          "left_flank": "CTGATCTGTTATTTCCTTTCTTTTACTCATGTTGTGTTTTGTTTGTTCTA",
+          "right_flank": "GGGAAAGAGTGCTTTGAATATAAAATCAATACCTGGTAGTGAATTAGAAC"
+        },
+        {
+          "start": 134876,
+          "end": 134884,
+          "length": 9,
+          "left_flank": "TTCTTCTATTTAAAAATTAAATGAACTTGGGTGAATTCTTTAAATTTCAT",
+          "right_flank": "CCTACATCCATAATTAACACTTGCTTTCCTTCCTTGTGAGGAGAGCCCGT"
+        },
+        {
+          "start": 364807,
+          "end": 364815,
+          "length": 9,
+          "left_flank": "AAGGGCACGGTTGTTCCTTTTGAGCTCCCAAGTCTGGCTGGGGGCTCATG",
+          "right_flank": "CTCTTTCCTCCTGTCCTGCCTGGGAACAGAGCTCTCGGTCTTCATCATCA"
+        },
+        {
+          "start": 250004,
+          "end": 250013,
+          "length": 10,
+          "left_flank": "GATGTACTGTATGTGACTAACATAATATAATAAAAAATCATTAAAAAAAA",
+          "right_flank": "AGAAAAACATGCAGCCAAGGATCCTTTATCCAGCAAGGCTGTCATTCAGA"
+        },
+        {
+          "start": 392152,
+          "end": 392161,
+          "length": 10,
+          "left_flank": "CCCTGGAACTTCATCCTGACTTCTATTTTGAAAACTTCAGGCAGATTCTG",
+          "right_flank": "AAAAAAAAAAAAAATGCATGTATCATTGCATTTGGTAGATGGTAAATTTT"
+        },
+        {
+          "start": 691218,
+          "end": 691227,
+          "length": 10,
+          "left_flank": "GCAGAGGCAGAAAAATCTGGGGGGAGAGGGAGTGCAGAGTTTCAGAGAGA",
+          "right_flank": "TCATTTAGAAAAGTTCTTTTAGCAAATAATCTTTCAACATCCCCCATTTT"
+        },
+        {
+          "start": 723107,
+          "end": 723116,
+          "length": 10,
+          "left_flank": "GTCTCATTATATATGGGTATTTATATTTATTTATTTATTTATTTATTTAT",
+          "right_flank": "ACTCATGATTATTCCTTCAGGAAGACTAGGGAAATTTTACTTGGCATGAC"
+        }
+      ]
+    }
+  },
+  "7_reconstruction_received": {
+    "instruction": "Reconstruct the selected unresolved regions.",
+    "context_keys": [
+      "assembly_id",
+      "assembly_level",
+      "scientific_name",
+      "sequence_accession",
+      "target_gaps"
+    ],
+    "species": "Ursus maritimus (polar bear)",
+    "assembly_id": "GCF_017311325.1",
+    "sequence_accession": "NW_024426341.1",
+    "target_gaps_count": 10,
+    "reconstruction_status": "completed",
+    "summary": {
+      "requested_gaps": 10,
+      "resolved_gaps": 1,
+      "unresolved_gaps": 9
+    },
+    "reconstruction_sequence_is": "str"
+  }
+}

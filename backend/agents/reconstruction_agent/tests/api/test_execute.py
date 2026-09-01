@@ -26,7 +26,7 @@ from reconstruction_agent.domain.models.result import GapReconstruction, Reconst
 from reconstruction_agent.domain.models.sequence import Gap
 from reconstruction_agent.main import create_app
 
-CARD_OUTPUT_KEYS = {"reconstruction", "reconstruction_summary", "reconstruction_sequence"}
+CARD_OUTPUT_KEYS = {"reconstruction", "reconstruction_summary", "reconstruction_best_fill"}
 
 
 class _StubService:
@@ -185,7 +185,7 @@ class TestOutputContract:
         client = _client(_StubService(result=_unresolved_result()))
         output = _execute(client, {"sequence_accession": "NC_003428.1"})["output"]
 
-        assert output["reconstruction_sequence"] is None
+        assert output["reconstruction_best_fill"] is None
         assert "0 of 1" in output["reconstruction_summary"]
 
     def test_the_payload_is_json_serialisable(self) -> None:

@@ -17,6 +17,7 @@ import {
   biodiversityMapFrom,
   genomeChartFrom,
   proteinViewerFrom,
+  reconstructionFrom,
   recognitionFrom,
   writingDraftFrom,
   type UploadedImage,
@@ -192,6 +193,10 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 ...(() => {
                   const writing = writingDraftFrom(response.context);
                   return writing ? { writingDraft: writing } : {};
+                })(),
+                ...(() => {
+                  const reconstruction = reconstructionFrom(response.context);
+                  return reconstruction ? { reconstruction } : {};
                 })(),
               },
             ],
