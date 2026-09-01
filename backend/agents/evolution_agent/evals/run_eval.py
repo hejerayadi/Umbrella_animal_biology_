@@ -14,6 +14,9 @@ scores the five Sprint 4 criteria:
     5. Response consistency  -- for cases with consistency_repeats > 1, run
                                  N times and check routing/species don't
                                  flip-flop across runs
+    6. Latency               -- wall-clock time per request recorded and
+                                 included in the report
+    7. Provenance            -- source_agents field populated correctly
 
 Usage (server must already be running on port 8002):
     python -m backend.agents.evolution_agent.evals.run_eval
@@ -64,6 +67,8 @@ class CaseResult:
     correctness: CriterionResult
     relevance: CriterionResult
     consistency: CriterionResult | None
+    latency_s: float = 0.0          # wall-clock time for the primary run
+    provenance: CriterionResult | None = None
     notes: str = ""
 
 
@@ -71,14 +76,17 @@ class CaseResult:
 # HTTP call
 # ---------------------------------------------------------------------------
 
-def call_agent(prompt: str) -> dict[str, Any]:
+def call_agent(prompt: str) -> tuple[dict[str, Any], float]:
+    """Return (response, latency_seconds)."""
+    t0 = time.perf_counter()
     resp = requests.post(
         API_URL,
         json={"instruction": prompt, "context": {}},
         timeout=REQUEST_TIMEOUT,
     )
+    latency = time.perf_counter() - t0
     resp.raise_for_status()
-    return resp.json()
+    return resp.json(), latency
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +250,32 @@ def llm_judge(prompt: str, explanation: str, llm) -> CriterionResult:
 
 
 # ---------------------------------------------------------------------------
+# Criterion 6: provenance
+# ---------------------------------------------------------------------------
+
+def score_provenance(response: dict[str, Any]) -> CriterionResult:
+    """source_agents must be non-empty and include the orchestrator."""
+    source = response.get("source_agents") or []
+    if not source:
+        return CriterionResult(passed=False, detail="source_agents is empty")
+    if "Evolution Agent Orchestrator" not in source:
+        return CriterionResult(
+            passed=False,
+            detail=f"'Evolution Agent Orchestrator' missing; got {source}",
+        )
+    status = response.get("status")
+    if status == "completed":
+        workers = [a for a in source if a != "Evolution Agent Orchestrator"]
+        if not workers:
+            return CriterionResult(
+                passed=False,
+                detail="no worker agent in source_agents for a completed result",
+            )
+        return CriterionResult(passed=True, detail=f"workers={workers}")
+    return CriterionResult(passed=True, detail=f"source_agents={source}")
+
+
+# ---------------------------------------------------------------------------
 # Criterion 5: response consistency
 # ---------------------------------------------------------------------------
 
@@ -281,17 +315,20 @@ def run() -> list[CaseResult]:
     for case in CASES:
         print(f"[eval] running {case.id!r}: {case.prompt!r}")
         responses: list[dict[str, Any]] = []
+        latencies: list[float] = []
         for i in range(max(1, case.consistency_repeats)):
-            t0 = time.time()
-            resp = call_agent(case.prompt)
-            print(f"    run {i + 1}/{case.consistency_repeats}: status={resp.get('status')} ({time.time() - t0:.1f}s)")
+            resp, lat = call_agent(case.prompt)
+            latencies.append(lat)
             responses.append(resp)
+            print(f"    run {i + 1}/{case.consistency_repeats}: status={resp.get('status')} ({lat:.1f}s)")
 
-        primary = responses[0]
+        primary    = responses[0]
+        primary_lat = latencies[0]
 
-        tool_selection = score_tool_selection(case, primary)
+        tool_selection  = score_tool_selection(case, primary)
         task_completion = score_task_completion(case, primary)
-        correctness = score_correctness(case, primary)
+        correctness     = score_correctness(case, primary)
+        provenance      = score_provenance(primary)
 
         relevance = CriterionResult(passed=None, detail="skipped (no LLM configured)")
         if llm is not None and primary.get("status") == "completed":
@@ -311,6 +348,8 @@ def run() -> list[CaseResult]:
                 correctness=correctness,
                 relevance=relevance,
                 consistency=consistency,
+                latency_s=primary_lat,
+                provenance=provenance,
                 notes=case.notes,
             )
         )
@@ -350,12 +389,18 @@ def write_reports(results: list[CaseResult], out_dir: Path) -> None:
         passed = sum(1 for c in scored if c.passed)
         return f"{passed}/{len(scored)}"
 
+    # Latency stats
+    lats = [r.latency_s for r in results if r.latency_s > 0]
+    lat_median = sorted(lats)[len(lats) // 2] if lats else 0.0
+    lat_max    = max(lats) if lats else 0.0
+
     lines.append("## Summary")
     lines.append("")
     lines.append(f"- Cases run: {len(results)}")
     lines.append(f"- Agent/tool selection: {pass_rate('tool_selection')} passed")
     lines.append(f"- Task completion: {pass_rate('task_completion')} passed")
     lines.append(f"- Correctness (deterministic): {pass_rate('correctness')} passed")
+    lines.append(f"- Provenance: {pass_rate('provenance')} passed")
     consistency_scored = [r.consistency for r in results if r.consistency is not None]
     if consistency_scored:
         cpass = sum(1 for c in consistency_scored if c.passed)
@@ -363,6 +408,8 @@ def write_reports(results: list[CaseResult], out_dir: Path) -> None:
     relevance_scores = [r.relevance.score for r in results if r.relevance.score is not None]
     if relevance_scores:
         lines.append(f"- Relevance (LLM judge, mean): {sum(relevance_scores) / len(relevance_scores):.1f}/5")
+    if lats:
+        lines.append(f"- Median latency: {lat_median:.1f}s  Max: {lat_max:.1f}s")
     lines.append("")
 
     lines.append("## Weaknesses identified")
@@ -373,6 +420,7 @@ def write_reports(results: list[CaseResult], out_dir: Path) -> None:
             ("agent/tool selection", r.tool_selection),
             ("task completion", r.task_completion),
             ("correctness", r.correctness),
+            ("provenance", r.provenance),
             ("consistency", r.consistency),
         ]:
             if crit is not None and crit.passed is False:
@@ -388,15 +436,17 @@ def write_reports(results: list[CaseResult], out_dir: Path) -> None:
     lines.append("## Per-case detail")
     lines.append("")
     for r in results:
-        lines.append(f"### `{r.case_id}`")
+        lines.append(f"### `{r.case_id}` — {r.latency_s:.1f}s")
         lines.append(f"- Prompt: {r.prompt!r}")
         if r.notes:
             lines.append(f"- Notes: {r.notes}")
         lines.append(f"- Agent/tool selection: {_fmt_criterion(r.tool_selection)}")
         lines.append(f"- Task completion: {_fmt_criterion(r.task_completion)}")
         lines.append(f"- Correctness: {_fmt_criterion(r.correctness)}")
+        lines.append(f"- Provenance: {_fmt_criterion(r.provenance)}")
         lines.append(f"- Relevance: {_fmt_criterion(r.relevance)}")
         lines.append(f"- Consistency: {_fmt_criterion(r.consistency)}")
+        lines.append(f"- Latency: {r.latency_s:.2f}s")
         lines.append("")
 
     md_path.write_text("\n".join(lines), encoding="utf-8")

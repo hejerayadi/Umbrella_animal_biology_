@@ -1,4 +1,4 @@
-# Evolution Agent — Sprint 2
+# Evolution Agent — Sprint 4
 
 Part of the **Umbrella BioHub** platform. Analyses evolutionary relationships between species using an autonomous planner, branch-specific workers, and real bioinformatics tools.
 
@@ -52,6 +52,99 @@ Explainer (GPT-5-mini)  — human-readable summary
         ↓
 AgentResult (flat, branch-specific)
 ```
+
+---
+
+## LangSmith Tracing (Sprint 4, Task 3)
+
+Every request is traced end-to-end in [LangSmith](https://smith.langchain.com) with no code changes required — just set three environment variables in your `.env`:
+
+```env
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+LANGCHAIN_PROJECT=evolution-agent
+```
+
+When tracing is enabled, each request produces a trace tree like this:
+
+```
+Evolution Agent request                ← OrchestratorEvolutionAgent.run()
+  └── Planner (LLM #1)                 ← planner.plan()  [LLM call]
+  └── EvolutionOrchestrator graph      ← LangGraph graph.ainvoke()
+        ├── plan_node                  ← reads planner decision from state
+        ├── species_resolver_node      ← "human" → "Homo sapiens"
+        ├── dispatch_node              ← calls MC worker and/or Phylo worker
+        ├── assemble_node              ← combines worker outputs
+        └── explain_node
+              └── Explainer (LLM #2)   ← explainer.explain()  [LLM call]
+```
+
+**What each span tells you:**
+
+| Span | Useful for |
+|---|---|
+| `Evolution Agent request` | End-to-end latency, total LLM calls (max 2), final status |
+| `Planner (LLM #1)` | What feature the LLM chose, which species it extracted, prompt tokens |
+| `EvolutionOrchestrator graph` | Which nodes ran, state at each transition |
+| `dispatch_node` | Worker call latency, which workers were invoked |
+| `Explainer (LLM #2)` | Whether interpretation was grounded, grounding violation reason if discarded |
+
+**Debugging with traces:**
+
+- **Wrong feature dispatched** → check the `Planner` span input/output; look at the raw LLM response before `_apply_guards` ran.
+- **Species not resolving** → check `species_resolver_node` in the graph span; the state diff shows `unresolved_species`.
+- **Interpretation discarded** → check the `Explainer` span; the grounding check logs the exact violation reason.
+- **High latency** → `dispatch_node` shows worker time; MAFFT+IQ-TREE latency appears here for phylo requests.
+- **Unexpected failures** → `fail_node` in the graph span captures the exact error message and which worker triggered it.
+
+**Monitoring in LangSmith:**
+
+Once traces start appearing, set up these monitors in the LangSmith UI:
+
+1. **Failure rate** — filter by `status=failed` on the root `Evolution Agent request` span.
+2. **Planner consistency** — tag by `feature` output; watch for drift if the same prompt routes to different features across runs.
+3. **LLM call count** — the `llm_calls` field in the response must be ≤ 2 per request; alert if it exceeds this.
+4. **Latency by feature** — `molecular_comparison` should be < 5s (mock); `phylogenetic_tree` varies with MAFFT+IQ-TREE.
+
+---
+
+## Evaluation (Sprint 4, Tasks 1 & 2)
+
+### Agent Evaluation
+
+9 golden cases covering all five Sprint 4 criteria (agent/tool selection, task completion, correctness, relevance, response consistency). Results are in `evals/report.md`.
+
+```powershell
+# Server must be running on port 8002 first
+python -m backend.agents.evolution_agent.evals.run_eval
+```
+
+| Criterion | Result |
+|---|---|
+| Agent/tool selection | 8/8 passed |
+| Task completion | 9/9 passed |
+| Correctness (deterministic) | 3/3 passed |
+| Response consistency | 1/1 passed |
+| Relevance (LLM judge, mean) | 4.2/5 |
+
+**Weakness fixed:** Explainer relevance was 2.0/5 on phylo and full-analysis cases because the original prompt was feature-agnostic. Rewritten in `explainer.py` with feature-specific field guidance — scores rose to 4.2/5 mean.
+
+### RAG Evaluation
+
+The Species Resolver (`orchestrator/services/species_resolver.py`) is the agent's retrieval component. It is evaluated with RAGAS-style metrics (no LLM required).
+
+```powershell
+python backend\agents\evolution_agent\evals\rag_eval.py
+```
+
+| RAGAS Metric | Score |
+|---|---|
+| Retrieval Relevance | 1.000 |
+| Context Quality | 1.000 |
+| Answer Faithfulness | 1.000 |
+| Answer Relevance | 1.000 |
+
+36/36 cases passed across 8 categories: exact scientific names, case normalisation, common names, secondary aliases, fuzzy substring fallback, edge cases, unknown species, and batch resolution. Results in `evals/rag_report.md`.
 
 ---
 
@@ -208,10 +301,12 @@ evolution_agent/
 ├── schema.py                     PlannedFeature, PlannerDecision, all result types
 ├── planner.py                    LLM planner + deterministic guards
 ├── intent.py                     Backward-compat re-exports from planner
-├── explainer.py                  LLM explainer (human-readable summaries)
+├── explainer.py                  LLM explainer — feature-aware, grounded summaries
 ├── orchestrator_adapter.py       Branch-specific output mapping, legacy path
 ├── orchestrator/
-│   └── evolution_orchestrator.py LangGraph pipeline, feature-dependent dispatch
+│   ├── evolution_orchestrator.py LangGraph pipeline, feature-dependent dispatch
+│   └── services/
+│       └── species_resolver.py   Offline dict + Qdrant backend (Sprint 3+)
 ├── framework/
 │   └── llm_client.py             Azure → Groq → GitHub Models priority chain
 ├── tools/
@@ -223,14 +318,20 @@ evolution_agent/
 │   │   └── mock.py               Deterministic MC mock (5 species, calibrated scores)
 │   └── phylogenetic_tree/
 │       └── worker.py             Real phylo worker: MAFFT → IQ-TREE → Newick
+├── evals/
+│   ├── golden_dataset.py         9 agent eval cases (all 5 Sprint 4 criteria)
+│   ├── run_eval.py               Agent eval runner → report.json + report.md
+│   ├── report.md                 Agent eval results (4.2/5 relevance after fix)
+│   ├── rag_eval.py               RAG eval for Species Resolver (36 cases, 4 metrics)
+│   └── rag_report.md             RAG eval results (1.000 across all RAGAS metrics)
 ├── tests/
 │   ├── conftest.py               Shared fixtures
 │   ├── test_orchestrator_pipeline.py
 │   ├── test_adapter.py
 │   ├── test_mock_quality_audit.py
 │   └── test_branch_acceptance.py
-├── .env.example                  Credentials template
-├── .env                          Git-ignored: Azure + EBI credentials
+├── .env.example                  Credentials template (LLM + LangSmith + Qdrant)
+├── .env                          Git-ignored: Azure + EBI + LangSmith credentials
 ├── card.json                     Agent card (platform registry)
 ├── README.md
 └── requirements.txt
