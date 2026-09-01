@@ -77,8 +77,10 @@ repository referenced this code.
 
 ## Configuration
 
-Copy `.env.example` to `.env` here. Anything missing falls back to the
-`Literature_Agent/.env` two levels up.
+Every setting lives in the single `Literature_Agent/.env`, two levels up —
+copy `.env.example` to `.env` there. This folder no longer keeps a `.env` of
+its own: it used to, and that is how the same Qdrant cluster ended up addressed
+with a different API key here than in the rest of the agent.
 
 | Setting | Purpose |
 |---|---|

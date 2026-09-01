@@ -9,10 +9,9 @@ from qdrant_client import QdrantClient
 # Addressed by absolute path: this package is imported from the orchestrator,
 # whose working directory is the repository root, so a bare load_dotenv() finds
 # backend/.env - which has none of these keys - and the cluster URL would come
-# back empty. Falls back to the Literature_Agent .env for the values shared
-# with the other subagents.
+# back empty. The Literature_Agent .env is the agent's single settings file;
+# this package no longer carries one of its own.
 _PKG = Path(__file__).resolve().parents[1]
-load_dotenv(_PKG / ".env", override=False)
 load_dotenv(_PKG.parents[1] / ".env", override=False)
 
 

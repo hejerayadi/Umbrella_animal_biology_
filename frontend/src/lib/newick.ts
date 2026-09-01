@@ -278,3 +278,89 @@ export function niceScaleStep(max: number): number {
   }
   return 10 * magnitude;
 }
+
+// ---------------------------------------------------------------------------
+// Radial layout
+// ---------------------------------------------------------------------------
+
+/** One node of a radial layout, in polar coordinates. */
+export interface RadialNode {
+  node: NewickNode;
+  /** Angle in radians, 0 at 12 o'clock, increasing clockwise. */
+  angle: number;
+  /** Distance from the centre, in substitutions/site (depth for a cladogram). */
+  radius: number;
+  children: RadialNode[];
+}
+
+export interface RadialLayout {
+  root: RadialNode;
+  tips: RadialNode[];
+  /** Greatest root-to-tip distance, for scaling radius into pixels. */
+  maxRadius: number;
+  rooted: boolean;
+  cladogram: boolean;
+}
+
+/**
+ * The same tree drawn round instead of along.
+ *
+ * A rectangular phylogram spends its vertical extent linearly in the number of
+ * tips, so past a dozen species it is a tall strip that no longer fits beside
+ * the answer it belongs to. A radial layout spends the *circumference*
+ * instead, which grows with the radius - the tips stay legible and the
+ * topology stays visible in one screen.
+ *
+ * Radius is accumulated branch length, exactly as `layoutTree` computes x, so
+ * the two views are the same measurements in different coordinates and a
+ * reader can move between them without recalibrating.
+ */
+export function layoutRadial(root: NewickNode): RadialLayout {
+  const anyLength = hasAnyLength(root);
+  const tipCount = Math.max(tipNames(root).length, 1);
+  const tips: RadialNode[] = [];
+  let nextIndex = 0;
+
+  function place(node: NewickNode, parentRadius: number): RadialNode {
+    const step = anyLength ? (node.length ?? 0) : 1;
+    const radius = parentRadius + step;
+
+    if (node.children.length === 0) {
+      const laid: RadialNode = {
+        node,
+        // Evenly spaced around the full circle. Index rather than a swept
+        // fraction, so the gap between the last tip and the first is the same
+        // as every other gap instead of collapsing to zero.
+        angle: (nextIndex / tipCount) * Math.PI * 2,
+        radius,
+        children: [],
+      };
+      nextIndex += 1;
+      tips.push(laid);
+      return laid;
+    }
+
+    const children = node.children.map((child) => place(child, radius));
+    // The midpoint of the clade's angular span, matching how `layoutTree`
+    // centres an internal node between its children.
+    const first = children[0].angle;
+    const last = children[children.length - 1].angle;
+    return { node, angle: (first + last) / 2, radius, children };
+  }
+
+  const laidRoot = place(root, 0);
+  const maxRadius = tips.reduce((max, tip) => Math.max(max, tip.radius), 0);
+
+  return {
+    root: laidRoot,
+    tips,
+    maxRadius: maxRadius > 0 ? maxRadius : 1,
+    rooted: isRooted(root),
+    cladogram: !anyLength,
+  };
+}
+
+/** Every node of a radial layout, root first. */
+export function walkRadial(node: RadialNode): RadialNode[] {
+  return [node, ...node.children.flatMap(walkRadial)];
+}

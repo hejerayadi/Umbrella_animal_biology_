@@ -16,51 +16,12 @@ raw input, so interpretation can never break retrieval.
 """
 
 import json
-import os
-from functools import lru_cache
-from pathlib import Path
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
-
-# Absolute path: imported from the orchestrator, whose CWD is the repository
-# root, so a bare load_dotenv() would read backend/.env instead of this one.
-_PKG = Path(__file__).resolve().parents[1]
-load_dotenv(_PKG / ".env", override=False)
-load_dotenv(_PKG.parents[1] / ".env", override=False)
-
-
-def _env(name: str, default: str = "") -> str:
-    return (os.getenv(name) or default).strip().strip('"').strip("'")
-
-
-def is_configured() -> bool:
-    """Whether an LLM call can be attempted. Never raises."""
-    return all(
-        _env(n)
-        for n in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT")
-    )
-
-
-def get_deployment() -> str:
-    return _env("AZURE_OPENAI_DEPLOYMENT")
-
-
-# Built on first use. Raising at import time made this module - and therefore
-# the whole publication_support package - unimportable without credentials,
-# which no caller can catch, so the writing sub-orchestrator could not even
-# fall back. A missing key is now a call-time error the caller degrades from.
-@lru_cache(maxsize=1)
-def get_client() -> OpenAI:
-    missing = [
-        n
-        for n in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT")
-        if not _env(n)
-    ]
-    if missing:
-        raise RuntimeError(f"Missing Azure OpenAI settings in .env: {', '.join(missing)}")
-    return OpenAI(api_key=_env("AZURE_OPENAI_API_KEY"), base_url=_env("AZURE_OPENAI_ENDPOINT"))
+# Credentials, the .env lookup and the lazily-built client all live in
+# `azure_config`, which resolves them across the AZURE_LITERATURE_PUBLICATION_*
+# / AZURE_LITERATURE_* / AZURE_OPENAI_* chain in the agent's single .env.
+# Re-exported here because `agent.py` has always imported them from this module.
+from ..azure_config import get_client, get_deployment, is_configured  # noqa: F401
 
 
 # Interpreting the same input twice costs a call and returns the same thing,
