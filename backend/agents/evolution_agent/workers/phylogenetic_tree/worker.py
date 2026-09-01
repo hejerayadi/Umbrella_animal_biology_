@@ -30,7 +30,7 @@ What this worker returns (PhylogeneticResult):
 from __future__ import annotations
 
 import logging
-import re
+from typing import Callable
 
 from langsmith import traceable
 
@@ -43,15 +43,28 @@ from ...schema import (
 from ...tools.mafft import align as mafft_align, MAFFTError
 from ...tools.iqtree import build_tree as iqtree_build, IQTreeError
 from ...tools import taxon_ids
+from ...tools.sequences import (
+    DEFAULT_GENE_CANDIDATES,
+    fetch_uniprot_sequence,
+    parse_fasta_inputs,
+)
 
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Sequence catalogue (temporary — will be replaced with real NCBI/UniProt fetch)
+# Offline fallback catalogue
 # ---------------------------------------------------------------------------
 
-# Real cytochrome b sequences (60 aa) for 5 model organisms.
-# These are actual protein sequences from UniProt/NCBI.
+# Cytochrome b fragments (60 aa) for 5 model organisms, kept ONLY as an
+# offline fallback for when UniProt is unreachable, and as a fixture the
+# tests can rely on without network access. The primary path is the same
+# UniProt fetch the Molecular Comparison worker uses, so that a
+# full_analysis builds its tree and its similarity network from the same
+# sequences instead of two unrelated datasets.
+#
+# A tree built from these 60 columns is far weaker than one built from the
+# full-length protein: any run that falls back here reports
+# ``offline_sequence_fallback`` in its warnings.
 _SEQUENCES: dict[str, str] = {
     "homo sapiens": (
         "MTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT"
@@ -74,18 +87,22 @@ _SEQUENCES: dict[str, str] = {
 class PhylogeneticTreeWorker:
     """Real phylogenetic tree builder using MAFFT + IQ-TREE.
 
-    Runs independently of the Molecular Comparison subagent (parallel
-    fan-out).  If ``request.context["alignment"]`` happens to be present it
-    is used; otherwise the worker fetches sequences and aligns them.
+    Runs concurrently with the Molecular Comparison subagent and builds
+    its own alignment: MAFFT gap characters would corrupt ESM-2 embeddings,
+    so the two branches share sequences but never share an alignment.
     """
 
     def __init__(
         self,
         mafft_path: str | None = None,
         iqtree_path: str | None = None,
+        fetch_fn: Callable[[str, list[str]], str] | None = None,
     ) -> None:
         self._mafft_path = mafft_path
         self._iqtree_path = iqtree_path
+        # Same fetcher as Molecular Comparison. Injectable so tests run
+        # without network access.
+        self._fetch = fetch_fn or fetch_uniprot_sequence
 
     # ------------------------------------------------------------------
     # Public interface
@@ -112,18 +129,34 @@ class PhylogeneticTreeWorker:
                 source_agents=["Phylogenetic Tree Agent"],
             )
 
-        # Fetch sequences for each species
-        sequences = self._fetch_sequences(species)
+        # Same gene selection rule as Molecular Comparison, so a
+        # full_analysis aligns and embeds the same protein.
+        gene_candidates = (
+            [request.target_gene_or_protein] if request.target_gene_or_protein
+            else DEFAULT_GENE_CANDIDATES
+        )
+        presupplied = (
+            parse_fasta_inputs(request.protein_inputs, species)
+            if request.protein_inputs else {}
+        )
+
+        sequences, fetch_warnings = self._fetch_sequences(
+            species, gene_candidates, presupplied
+        )
         missing = [s for s in species if s not in sequences]
         if missing:
             return AgentResult(
                 status=AgentStatus.FAILED,
-                output=f"Could not fetch sequences for: {missing}",
+                output=(
+                    "Could not obtain sequences for: "
+                    f"{missing}. Tried UniProt (genes={gene_candidates}) "
+                    "and the offline catalogue."
+                ),
                 source_agents=["Phylogenetic Tree Agent"],
             )
 
         try:
-            phylo_result = self._build_tree(species, sequences)
+            phylo_result = self._build_tree(species, sequences, fetch_warnings)
         except (MAFFTError, IQTreeError) as exc:
             _logger.error("[Phylo] tree build failed: %s", exc)
             return AgentResult(
@@ -148,7 +181,10 @@ class PhylogeneticTreeWorker:
 
     @traceable(name="MAFFT -> IQ-TREE pipeline", run_type="chain")
     def _build_tree(
-        self, species: list[str], sequences: dict[str, str]
+        self,
+        species: list[str],
+        sequences: dict[str, str],
+        extra_warnings: list[str] | None = None,
     ) -> PhylogeneticResult:
         """Run MAFFT → IQ-TREE pipeline.
 
@@ -157,7 +193,7 @@ class PhylogeneticTreeWorker:
         both truncate a FASTA header at the first space, which would turn
         "Homo sapiens" into "Homo" and collide with "Homo erectus".
         """
-        warnings: list[str] = []
+        warnings: list[str] = list(extra_warnings or [])
 
         name_to_id, id_to_name = taxon_ids.make_mapping(list(sequences))
         safe_sequences = taxon_ids.to_safe_sequences(sequences, name_to_id)
@@ -215,16 +251,52 @@ class PhylogeneticTreeWorker:
     # Sequence fetching (temporary — will use real NCBI/UniProt later)
     # ------------------------------------------------------------------
 
-    def _fetch_sequences(self, species: list[str]) -> dict[str, str]:
-        """Fetch sequences for species. Currently uses local catalogue."""
-        result = {}
+    def _fetch_sequences(
+        self,
+        species: list[str],
+        gene_candidates: list[str],
+        presupplied: dict[str, str] | None = None,
+    ) -> tuple[dict[str, str], list[str]]:
+        """Resolve one sequence per species.
+
+        Order of preference, per species:
+          1. a sequence supplied on the request (``protein_inputs``);
+          2. a live UniProt fetch — the same call the Molecular Comparison
+             worker makes, so both branches see identical data;
+          3. the offline 60-aa catalogue.
+
+        Returns ``(sequences, warnings)``. A species that none of the three
+        can satisfy is simply absent from ``sequences``; the caller turns
+        that into a FAILED result naming it.
+        """
+        resolved: dict[str, str] = dict(presupplied or {})
+        warnings: list[str] = []
+        fell_back: list[str] = []
+
         for s in species:
+            if s in resolved:
+                continue
+            try:
+                resolved[s] = self._fetch(s, gene_candidates)
+                continue
+            except Exception as exc:
+                _logger.info("[Phylo] UniProt fetch failed for %r (%s)", s, exc)
+
             key = s.strip().lower()
             if key in _SEQUENCES:
-                result[s] = _SEQUENCES[key]
+                resolved[s] = _SEQUENCES[key]
+                fell_back.append(s)
             else:
-                _logger.warning("[Phylo] no sequence for '%s' in local catalogue", s)
-        return result
+                _logger.warning(
+                    "[Phylo] no sequence for '%s' from UniProt or the offline catalogue", s
+                )
+
+        if fell_back:
+            warnings.append(
+                "offline_sequence_fallback: used the 60-aa offline catalogue for "
+                + ", ".join(fell_back)
+            )
+        return resolved, warnings
 
     # ------------------------------------------------------------------
     # Helpers

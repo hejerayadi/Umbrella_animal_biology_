@@ -60,7 +60,7 @@ TREE_ONLY_KEYS = ("newick_tree", "tree_url", "bootstrap_support",
                   "confidence_values", "model")
 # Fields that only ever belong to a similarity-network answer.
 NETWORK_ONLY_KEYS = ("similarity_network", "similarity_scores",
-                     "species_groups", "alignment_url")
+                     "species_groups")
 
 
 # ===========================================================================
@@ -98,8 +98,6 @@ def mc_ok(species=None) -> AgentResult:
         status=AgentStatus.COMPLETED,
         output=MolecularComparisonResult(
             species_list=list(species),
-            alignment=">a\nMTNI\n>b\nMTNL",
-            alignment_url="http://mock/align.html",
             similarity_scores=[SimilarityEdge(species[0], species[1], 0.98)],
             species_groups=[SpeciesGroup(0, list(species), 0.98)],
             similarity_network={s: [] for s in species},
@@ -784,20 +782,50 @@ def test_sub_agents_have_disjoint_output_schemas() -> None:
 
 
 def test_sub_agents_never_import_or_call_each_other() -> None:
-    mc_src = (AGENT_DIR / "workers/molecular_comparison/mock.py").read_text(
-        encoding="utf-8")
+    """Neither sub-agent may import the other.
+
+    Shared code (the UniProt fetch both branches need) lives in
+    tools.sequences precisely so this stays true: a common dependency is
+    fine, a sibling dependency is not.
+    """
+    import re as _re
+
+    mc_files = ["workers/molecular_comparison/mock.py",
+                "workers/molecular_comparison/logic.py"]
     ph_src = (AGENT_DIR / "workers/phylogenetic_tree/worker.py").read_text(
         encoding="utf-8")
-    assert "phylogenetic" not in mc_src.lower().replace(
-        "phylogenetic reconstruction subagent", "")
+
+    for rel in mc_files:
+        src = (AGENT_DIR / rel).read_text(encoding="utf-8")
+        assert not _re.search(r"^\s*from\s+\.\.phylogenetic_tree", src, _re.M), rel
+        assert "PhylogeneticTreeWorker" not in src, rel
+
+    assert not _re.search(r"^\s*from\s+\.\.molecular_comparison", ph_src, _re.M)
     assert "MolecularComparisonMock" not in ph_src
+    assert "MolecularComparisonAgent" not in ph_src
+
+
+
+# Directories that are not this agent's source: the vendored virtualenv and
+# the unpacked MAFFT / IQ-TREE toolchains. Walking them is both slow and
+# wrong -- third-party files are not bound by this agent's invariants, and
+# some are not even valid UTF-8.
+_VENDORED = {".venv", "venv", "site-packages", "__pycache__", "mafft-win", "iqtree", "node_modules"}
+
+
+def _agent_sources():
+    """Every .py file that is actually part of this agent."""
+    for path in AGENT_DIR.rglob("*.py"):
+        if _VENDORED & set(path.parts):
+            continue
+        yield path
 
 
 def test_only_the_orchestrator_instantiates_the_workers() -> None:
     """No module other than the parent may construct a sub-agent."""
     offenders: list[str] = []
-    for py in AGENT_DIR.rglob("*.py"):
-        if "__pycache__" in py.parts or py.parent.name == "tests":
+    for py in _agent_sources():
+        if py.parent.name == "tests":
             continue
         if py.name in {"evolution_orchestrator.py", "mock.py", "worker.py", "__init__.py"}:
             continue

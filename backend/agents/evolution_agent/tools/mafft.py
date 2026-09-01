@@ -1,7 +1,9 @@
 """MAFFT multiple sequence alignment.
 
-Primary: EBI REST API (https://www.ebi.ac.uk/Tools/services/rest/mafft).
-Fallback: a locally installed MAFFT binary.
+Primary: a locally installed MAFFT binary.
+Fallback: the EBI REST API (https://www.ebi.ac.uk/Tools/services/rest/mafft),
+used only when no local binary is installed or the local run failed. It is
+a public third-party service, so sequences leave the machine on that path.
 
 The local binary is located by ``binaries.resolve_binary``:
 ``$MAFFT_BINARY`` first, then ``mafft.bat`` / ``mafft`` on PATH, then the
@@ -79,25 +81,33 @@ def align(
 
     fasta_input = _dict_to_fasta(sequences)
 
-    # Primary: EBI REST API
-    try:
-        return _align_ebi(fasta_input, timeout)
-    except MAFFTError as exc:
-        _logger.warning("[MAFFT] EBI API failed (%s), trying local binary...", exc)
-
-    # Fallback: local binary
+    # Primary: the local binary. It is faster than a queued remote job and,
+    # more importantly, it keeps the sequences on this machine -- the EBI
+    # service is a public third party, so uploading there should be the
+    # deliberate fallback, not the silent default.
     binary = resolve_mafft()
     if binary:
         try:
             return _align_local(fasta_input, method, timeout, binary=binary)
         except MAFFTError as exc:
-            _logger.warning("[MAFFT] local binary failed (%s)", exc)
-            raise
+            _logger.warning(
+                "[MAFFT] local binary failed (%s), trying the EBI API...", exc
+            )
+    else:
+        _logger.info(
+            "[MAFFT] no local binary (%s); using the EBI API",
+            describe_search(MAFFT_ENV_VAR, MAFFT_CANDIDATES, _LOCAL_MAFFT),
+        )
 
-    raise MAFFTError(
-        "EBI API failed and no local MAFFT executable was found. Searched: "
-        + describe_search(MAFFT_ENV_VAR, MAFFT_CANDIDATES, _LOCAL_MAFFT)
-    )
+    # Fallback: EBI REST API.
+    try:
+        return _align_ebi(fasta_input, timeout)
+    except MAFFTError as exc:
+        raise MAFFTError(
+            f"MAFFT alignment failed. Local binary: "
+            f"{describe_search(MAFFT_ENV_VAR, MAFFT_CANDIDATES, _LOCAL_MAFFT)}. "
+            f"EBI API: {exc}"
+        ) from exc
 
 
 @traceable(name="MAFFT via EBI REST API", run_type="tool")

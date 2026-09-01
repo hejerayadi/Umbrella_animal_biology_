@@ -145,11 +145,18 @@ class MolecularComparisonMock:
         groups  = self._compute_groups(species, scores)
         network = self._build_network(species, scores)
 
+        # The mock stands in for the real contract, so it must populate
+        # `confidence` too -- leaving it None made every orchestrator-level
+        # confidence read None and hid the real aggregation logic.
+        # Same separation measure the real agent uses.
+        from .logic import compute_confidence
+
         return MolecularComparisonResult(
             species_list=species,
             similarity_scores=scores,
             species_groups=groups,
             similarity_network=network,
+            confidence=compute_confidence(scores, groups),
         )
 
     # ------------------------------------------------------------------

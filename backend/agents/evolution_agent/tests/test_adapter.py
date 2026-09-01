@@ -58,8 +58,6 @@ def _make_mock_analysis() -> EvolutionAnalysisResult:
     )
     mc = MolecularComparisonResult(
         species_list=["homo sapiens", "mus musculus"],
-        alignment=">homo_sapiens\nATCG\n>mus_musculus\nATCT",
-        alignment_url="https://evolution.umbrella.local/alignment/test.html",
         similarity_scores=[SimilarityEdge("homo sapiens", "mus musculus", 0.85)],
         species_groups=[SpeciesGroup(0, ["homo sapiens", "mus musculus"], 0.85)],
         similarity_network={
@@ -244,7 +242,6 @@ def test_completed_result_publishes_flat_evolution_output() -> None:
         AgentResult(
             status=AgentStatus.COMPLETED,
             output=analysis,
-            alignment_url=analysis.molecular.alignment_url,
             tree_url=analysis.phylogenetic.tree_url,
             confidence=0.875,
             source_agents=["Evolution Agent Orchestrator"],
@@ -255,11 +252,14 @@ def test_completed_result_publishes_flat_evolution_output() -> None:
     assert mapped.output["status"]        == "completed"
     assert mapped.output["decision"]      == "analysis_complete"
     assert mapped.output["explanation"]
-    assert mapped.output["score_is_mock"] is True
+    # Reported from the workers that actually ran. The fixture builds an
+    # analysis with no mocked-provider flags set, i.e. nothing claims to be
+    # mocked, so the published output must not say the scores are.
+    assert mapped.output["score_is_mock"] is False
+    assert mapped.output["providers_are_mocked"] == {}
     assert mapped.output["species_list"]
     assert mapped.output["newick_tree"]
     assert mapped.output["model"]
-    assert mapped.output["alignment_url"]
     assert mapped.output["tree_url"]
 
 

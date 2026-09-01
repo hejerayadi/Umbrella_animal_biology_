@@ -72,9 +72,12 @@ async def test_analysis_result_species_list_matches_input(orchestrator) -> None:
 
 @pytest.mark.asyncio
 async def test_convenience_fields_populated_on_result(orchestrator) -> None:
+    # Four species so UFBoot actually runs: with three, branch support is
+    # legitimately unavailable and `confidence` is None by design.
     request = AgentRequest(
         instruction="test", context={"feature": "full_analysis"},
-        species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
+        species_list=["homo sapiens", "pan troglodytes", "mus musculus",
+                      "gallus gallus"],
     )
     result = await orchestrator.run(request)
 
@@ -93,26 +96,26 @@ async def test_convenience_fields_populated_on_result(orchestrator) -> None:
 async def test_overall_confidence_is_mean_of_mc_and_phylo(orchestrator) -> None:
     request = AgentRequest(
         instruction="test", context={"feature": "full_analysis"},
-        species_list=["homo sapiens", "pan troglodytes", "mus musculus"],
+        species_list=["homo sapiens", "pan troglodytes", "mus musculus",
+                      "gallus gallus"],
     )
     result = await orchestrator.run(request)
     analysis: EvolutionAnalysisResult = result.output
 
-    # The aggregate averages only the confidences that actually exist:
-    # phylo.overall_confidence is None when UFBoot did not run, and a
-    # missing value must never be counted as a number.
+    # The aggregate averages only the confidences that actually exist.
+    # Both inputs are the workers' own reported confidence -- NOT the mean
+    # of the raw similarity scores, which is a different quantity and can
+    # be negative once the embeddings are centred.
     mc    = analysis.molecular
     phylo = analysis.phylogenetic
-    mc_mean = round(
-        sum(e.score for e in mc.similarity_scores) / len(mc.similarity_scores), 4
-    )
 
-    parts = [c for c in (mc_mean, phylo.overall_confidence) if c is not None]
-    expected = round(sum(parts) / len(parts), 4)
+    parts = [c for c in (mc.confidence, phylo.overall_confidence) if c is not None]
+    expected = round(sum(parts) / len(parts), 4) if parts else None
     assert analysis.overall_confidence == expected
 
-    if phylo.overall_confidence is None:
-        assert analysis.overall_confidence == mc_mean
+    # A missing value is skipped, never counted as a zero.
+    if mc.confidence is None and phylo.overall_confidence is not None:
+        assert analysis.overall_confidence == phylo.overall_confidence
 
 
 @pytest.mark.asyncio
@@ -164,8 +167,6 @@ async def test_both_workers_are_called_in_parallel(make_orchestrator) -> None:
                 status=AgentStatus.COMPLETED,
                 output=MolecularComparisonResult(
                     species_list=request.species_list,
-                    alignment="",
-                    alignment_url="http://alignment",
                     similarity_scores=[],
                     species_groups=[],
                     similarity_network={},
@@ -302,14 +303,32 @@ async def test_phylo_failure_surfaces_correctly(make_orchestrator) -> None:
         )
     )
 
-    assert result.status is AgentStatus.FAILED
-    assert "phylogenetic reconstruction" in result.output.lower()
-    assert "iq-tree exploded" in result.output.lower()
+    # A full_analysis whose tree fails still has a usable similarity
+    # network, so the request completes with the half that worked and
+    # reports the half that did not -- discarding good work would help
+    # nobody, and silently narrowing the answer would be worse.
+    assert result.status is AgentStatus.COMPLETED
+    assert result.output.molecular is not None
+    assert result.output.phylogenetic is None
+
+    failure = [w for w in result.warnings if w.startswith("phylogenetic_tree_failed")]
+    assert failure, f"the tree failure was not reported: {result.warnings}"
+    assert "iq-tree exploded" in failure[0].lower()
+
+    # No tree fields are fabricated to fill the gap.
+    assert result.newick_tree is None
+    assert result.tree_url is None
 
 
 @pytest.mark.asyncio
-async def test_phylo_failure_includes_mc_source_agent(make_orchestrator) -> None:
-    """MC ran and succeeded, so its source agent should be mentioned."""
+async def test_phylo_failure_only_credits_the_worker_that_produced_output(
+    make_orchestrator,
+) -> None:
+    """MC succeeded and phylo did not, so only MC is credited.
+
+    source_agents names who contributed to the result. Listing a worker
+    whose output was discarded would overstate the evidence behind it.
+    """
     class _PhyloFail:
         def run(self, request: AgentRequest) -> AgentResult:
             return AgentResult(
@@ -326,7 +345,9 @@ async def test_phylo_failure_includes_mc_source_agent(make_orchestrator) -> None
         )
     )
 
-    assert "Phylogenetic Tree Agent" in result.source_agents
+    assert "Molecular Comparison Agent" in result.source_agents
+    assert "Phylogenetic Tree Agent" not in result.source_agents
+    assert any(w.startswith("phylogenetic_tree_failed") for w in result.warnings)
 
 
 # ---------------------------------------------------------------------------

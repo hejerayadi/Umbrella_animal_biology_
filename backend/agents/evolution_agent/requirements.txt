@@ -1,6 +1,16 @@
 # Standalone local dependencies for the Evolution agent
 numpy==2.1.3
-scikit-learn==1.5.2
+
+# --- Molecular Comparison worker (workers/molecular_comparison/logic.py) ---
+# ESM-2 protein embeddings + the similarity graph. torch is imported at
+# module scope, so it is a hard requirement of the whole agent, not just
+# of the molecular branch.
+# CPU wheels are enough — no GPU is used. To avoid pulling CUDA:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch==2.9.1
+fair-esm==2.0.0
+networkx==3.4.2
+requests>=2.32.0
 
 # --- Orchestrator dependencies ---
 langgraph==0.2.39

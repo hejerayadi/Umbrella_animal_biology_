@@ -297,5 +297,13 @@ class EvolutionAnalysisResult:
     species_list:       list[str]
     molecular:          MolecularComparisonResult | None = None
     phylogenetic:       PhylogeneticResult | None = None
-    overall_confidence: float = 0.0
+    # ``None`` means "no confidence could be measured" — never 0.0, which
+    # would read as "measured, and it is terrible". See the workers'
+    # confidence docstrings for when each branch legitimately reports None.
+    overall_confidence: float | None = None
     source_agents:      list[str] = field(default_factory=list)
+    # Per-branch flag: {"similarity": bool, "phylogeny": bool}. Populated by
+    # the orchestrator from the worker classes actually wired in, so the
+    # published output can state whether the numbers are real instead of
+    # hard-coding an answer.
+    providers_are_mocked: dict[str, bool] = field(default_factory=dict)

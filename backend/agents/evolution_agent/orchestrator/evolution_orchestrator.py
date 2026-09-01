@@ -5,7 +5,7 @@ decided:
 
     • molecular_comparison  → Molecular Comparison Agent only
     • phylogenetic_tree     → Phylogenetic Tree Agent only
-    • full_analysis         → both in parallel
+    • full_analysis         → both, concurrently (asyncio.gather)
     • clarification_required → clarify_node (ask the user a question)
 
 LangGraph graph shape
@@ -49,7 +49,6 @@ from ..schema import (
     AgentResult,
     AgentStatus,
     EvolutionAnalysisResult,
-    EvolutionaryFeature,
     MolecularComparisonResult,
     PhylogeneticResult,
     PlannedFeature,
@@ -87,11 +86,11 @@ class EvolutionState:
     resolved_species:   list[str] = field(default_factory=list)
     unresolved_species: list[str] = field(default_factory=list)
 
-    # Set by the dispatch step (parallel fan-out)
+    # Set by the dispatch step (concurrent fan-out)
     mc_result:    MolecularComparisonResult | None = None
     mc_error:     str | None = None
 
-    # Set by the dispatch step (parallel fan-out)
+    # Set by the dispatch step (concurrent fan-out)
     phylo_result: PhylogeneticResult | None = None
     phylo_error:  str | None = None
 
@@ -278,51 +277,71 @@ class EvolutionOrchestrator:
     async def _dispatch_node(self, state: EvolutionState) -> dict:
         """Dispatch the correct worker(s) based on planned_feature.
 
-        Only dispatches the worker(s) needed for the planned feature.
-        Each worker is offloaded to a thread via asyncio.to_thread.
+        Only the worker(s) needed for the planned feature run. Each is
+        offloaded to a thread with ``asyncio.to_thread`` and the selected
+        ones are awaited together with ``asyncio.gather`` — for
+        ``full_analysis`` the UniProt/ESM-2 branch and the MAFFT/IQ-TREE
+        branch are independent, so running them concurrently costs the
+        slower of the two instead of their sum.
         """
         req = state.request
         feature = state.planned_feature
 
+        want_mc = feature in (
+            PlannedFeature.MOLECULAR_COMPARISON.value,
+            PlannedFeature.FULL_ANALYSIS.value,
+        )
+        want_phylo = feature in (
+            PlannedFeature.PHYLOGENETIC_TREE.value,
+            PlannedFeature.FULL_ANALYSIS.value,
+        )
+
         async def call(worker: Any) -> AgentResult:
             return await asyncio.to_thread(worker.run, req)
 
+        pending: list[tuple[str, Any]] = []
+        if want_mc:
+            _logger.info("[Dispatch] running molecular_comparison")
+            pending.append(("mc", call(self._mc_worker)))
+        if want_phylo:
+            _logger.info("[Dispatch] running phylogenetic_tree")
+            pending.append(("phylo", call(self._phylo_worker)))
+
+        # return_exceptions keeps one branch's crash from cancelling the
+        # other: in full_analysis a failed tree must not discard a
+        # successful similarity network.
+        settled = await asyncio.gather(
+            *(coro for _, coro in pending), return_exceptions=True
+        )
+
         results: dict[str, Any] = {}
-
-        try:
-            if feature in (PlannedFeature.MOLECULAR_COMPARISON.value, PlannedFeature.FULL_ANALYSIS.value):
-                _logger.info("[Dispatch] running molecular_comparison")
-                mc_result = await call(self._mc_worker)
-                results["mc_result"] = mc_result.output
-                if mc_result.status is AgentStatus.NEEDS_AGENT:
-                    return {"result": mc_result}
-                if mc_result.status is AgentStatus.FAILED:
-                    results["mc_error"] = mc_result.output
-
-            if feature in (PlannedFeature.PHYLOGENETIC_TREE.value, PlannedFeature.FULL_ANALYSIS.value):
-                _logger.info("[Dispatch] running phylogenetic_tree")
-                phylo_result = await call(self._phylo_worker)
-                results["phylo_result"] = phylo_result.output
-                if phylo_result.status is AgentStatus.NEEDS_AGENT:
-                    return {"result": phylo_result}
-                if phylo_result.status is AgentStatus.FAILED:
-                    results["phylo_error"] = phylo_result.output
-
-        except Exception as exc:
-            _logger.warning("[Dispatch] worker call failed: %s", exc)
-            return {
-                "mc_error":    "Dispatch failed: " + str(exc) if feature in (PlannedFeature.MOLECULAR_COMPARISON.value, PlannedFeature.FULL_ANALYSIS.value) else None,
-                "phylo_error": "Dispatch failed: " + str(exc) if feature in (PlannedFeature.PHYLOGENETIC_TREE.value, PlannedFeature.FULL_ANALYSIS.value) else None,
-            }
+        for (name, _), outcome in zip(pending, settled):
+            if isinstance(outcome, BaseException):
+                _logger.warning(
+                    "[Dispatch] %s worker raised: %s", name, outcome
+                )
+                results[f"{name}_error"] = f"Dispatch failed: {outcome}"
+                continue
+            if outcome.status is AgentStatus.NEEDS_AGENT:
+                # Escalation short-circuits everything else.
+                return {"result": outcome}
+            if outcome.status is AgentStatus.FAILED:
+                results[f"{name}_error"] = outcome.output
+                continue
+            results[f"{name}_result"] = outcome.output
 
         return results
 
     def _route_after_dispatch(self, state: EvolutionState) -> str:
         if state.result is not None:
             return "failed"
-        if state.mc_error or state.phylo_error:
-            return "failed"
-        return "assemble"
+        # Assemble whenever at least one worker produced real output. A
+        # full_analysis whose tree failed still has a usable similarity
+        # network, and throwing it away helps nobody — the failure is
+        # reported as a warning instead. Only a total loss routes to fail.
+        if state.mc_result is not None or state.phylo_result is not None:
+            return "assemble"
+        return "failed"
 
     def _assemble_node(self, state: EvolutionState) -> dict:
         """Combine worker outputs into an EvolutionAnalysisResult.
@@ -356,6 +375,7 @@ class EvolutionOrchestrator:
             phylogenetic=phylo,
             overall_confidence=overall_confidence,
             source_agents=source_agents,
+            providers_are_mocked=self._mocked_flags(mc, phylo),
         )
 
         # Carry worker-level flags (e.g. ufboot_not_run) up to the caller.
@@ -363,6 +383,14 @@ class EvolutionOrchestrator:
         for w in getattr(phylo, "warnings", []) or []:
             if w not in warnings:
                 warnings.append(w)
+
+        # A partial full_analysis is reported, not hidden: the caller gets
+        # whichever branch succeeded plus an explicit note about the one
+        # that did not, instead of a silently narrower answer.
+        if state.mc_error:
+            warnings.append(f"molecular_comparison_failed: {state.mc_error}")
+        if state.phylo_error:
+            warnings.append(f"phylogenetic_tree_failed: {state.phylo_error}")
 
         # Branch-specific top-level fields
         newick_tree: str | None = None
@@ -444,6 +472,11 @@ class EvolutionOrchestrator:
             )
             interpretation = None
 
+        # Only a call that actually came back with usable prose is billed:
+        # a missing backend or a rejected answer costs the caller nothing,
+        # and reporting it as a spent call would misstate the LLM budget.
+        spent = 1 if interpretation else 0
+
         if not interpretation:
             warnings.append("interpretation_unavailable")
             interpretation = fallback_explanation(feature, species, results)
@@ -455,7 +488,7 @@ class EvolutionOrchestrator:
                 result,
                 interpretation=interpretation,
                 warnings=warnings,
-                llm_calls=result.llm_calls + 1,
+                llm_calls=result.llm_calls + spent,
             ),
         }
 
@@ -479,7 +512,10 @@ class EvolutionOrchestrator:
                      "mean_score": g.mean_score}
                     for g in mc.species_groups
                 ],
-                "network_nodes": len(mc.similarity_network["nodes"]),
+                # .get, not []: the payload is only a summary for the
+                # Explainer, so an unexpected network shape must not take
+                # down an otherwise complete analysis.
+                "network_nodes": len((mc.similarity_network or {}).get("nodes", [])),
             }
 
         phylo = analysis.phylogenetic
@@ -494,17 +530,27 @@ class EvolutionOrchestrator:
 
         return payload
 
-    def _providers_are_mocked(self, analysis: EvolutionAnalysisResult) -> dict:
+    def _mocked_flags(
+        self,
+        mc: MolecularComparisonResult | None,
+        phylo: PhylogeneticResult | None,
+    ) -> dict[str, bool]:
         """Report mocked/real per branch from the wired worker classes.
 
         Read-only inspection — it does not touch the providers themselves.
+        Only branches that actually produced output are reported, so a
+        caller can tell "real" from "did not run".
         """
         flags: dict[str, bool] = {}
-        if analysis.molecular is not None:
+        if mc is not None:
             flags["similarity"] = "mock" in type(self._mc_worker).__name__.lower()
-        if analysis.phylogenetic is not None:
+        if phylo is not None:
             flags["phylogeny"] = "mock" in type(self._phylo_worker).__name__.lower()
         return flags
+
+    def _providers_are_mocked(self, analysis: EvolutionAnalysisResult) -> dict:
+        """Mocked/real flags for the Explainer payload."""
+        return dict(analysis.providers_are_mocked)
 
     def _clarify_node(self, state: EvolutionState) -> dict:
         """Return a clarification question to the user."""

@@ -9,7 +9,10 @@ scores the five Sprint 4 criteria:
     3. Correctness           -- deterministic, domain-grounded checks
                                  (closest pair, well-formed tree, faithfulness
                                  of the LLM's prose to the structured data)
-    4. Relevance              -- LLM-as-judge: does the prose answer what was
+    4. Relevance              -- LLM-as-judge over the Explainer's
+                                 `interpretation`, shown the structured
+                                 results so grounding is checkable: does
+                                 it answer what was
                                  actually asked?
     5. Response consistency  -- for cases with consistency_repeats > 1, run
                                  N times and check routing/species don't
@@ -52,6 +55,7 @@ class CriterionResult:
     passed: bool | None  # None = not scored as pass/fail (e.g. a 1-5 judge score)
     detail: str
     score: float | None = None  # for judge criteria: 1-5
+    faithfulness: float | None = None  # judge criteria only: 1-5
 
 
 @dataclass
@@ -208,35 +212,67 @@ def score_correctness(case: EvalCase, response: dict[str, Any]) -> CriterionResu
     return CriterionResult(passed=ok, detail="; ".join(checks))
 
 
+# Keys carrying worker-produced evidence. The judge needs these to check
+# grounding at all: shown only prose it can rate "does this read well" but
+# never "is this true of the data", which is the whole point of the score.
+_EVIDENCE_KEYS = (
+    "species_list", "similarity_scores", "species_groups", "newick_tree",
+    "model", "bootstrap_support", "confidence_values", "overall_confidence",
+    "warnings",
+)
+
+
+def _evidence(output: dict[str, Any]) -> dict[str, Any]:
+    return {k: output[k] for k in _EVIDENCE_KEYS if output.get(k) is not None}
+
+
 # ---------------------------------------------------------------------------
 # Criterion 4: relevance (LLM-as-judge)
 # ---------------------------------------------------------------------------
 
 _JUDGE_SYSTEM = """\
 You are grading one response from a bioinformatics agent. You will see the
-user's original question and the agent's plain-English explanation.
+user's original question, the STRUCTURED RESULTS the agent's deterministic
+workers produced, and the agent's plain-English interpretation of them.
 
 Score two things, 1-5 each:
-- relevance: does the explanation actually address what the user asked?
-- faithfulness: does the explanation stick to what the structured data
-  would support, without fabricating claims not grounded in it?
+- relevance: does the interpretation actually address what the user asked?
+- faithfulness: is every claim in the interpretation supported by the
+  structured results shown to you? Penalise any number, species,
+  relationship or model name that does not appear in that data.
+
+Judge the interpretation only. Do not penalise it for omitting raw data
+that is already present in the structured results -- restating the tree or
+the full network is not its job.
 
 Respond with strict JSON only: {"relevance": <1-5>, "faithfulness": <1-5>, "reasoning": "<one sentence>"}
 """
 
 
-def llm_judge(prompt: str, explanation: str, llm) -> CriterionResult:
+def llm_judge(
+    prompt: str, interpretation: str, evidence: dict[str, Any], llm
+) -> CriterionResult:
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    user_msg = f"User question: {prompt}\n\nAgent explanation: {explanation}"
+    user_msg = (
+        f"User question: {prompt}\n\n"
+        f"Structured results:\n{json.dumps(evidence, indent=2, default=str)}\n\n"
+        f"Agent interpretation: {interpretation}"
+    )
     try:
         resp = llm.invoke([SystemMessage(content=_JUDGE_SYSTEM), HumanMessage(content=user_msg)])
         text = getattr(resp, "content", str(resp))
         match = re.search(r"\{.*\}", text, re.DOTALL)
         payload = json.loads(match.group(0)) if match else {}
         relevance = float(payload.get("relevance", 0))
+        faithfulness = float(payload.get("faithfulness", 0))
         reasoning = payload.get("reasoning", "")
-        return CriterionResult(passed=None, score=relevance, detail=reasoning)
+        return CriterionResult(
+            passed=None,
+            score=relevance,
+            faithfulness=faithfulness,
+            detail=reasoning,
+        )
     except Exception as exc:  # noqa: BLE001
         return CriterionResult(passed=None, detail=f"judge call failed: {exc}")
 
@@ -295,9 +331,19 @@ def run() -> list[CaseResult]:
 
         relevance = CriterionResult(passed=None, detail="skipped (no LLM configured)")
         if llm is not None and primary.get("status") == "completed":
-            explanation = (primary.get("output") or {}).get("explanation", "")
-            if explanation:
-                relevance = llm_judge(case.prompt, explanation, llm)
+            out = primary.get("output") or {}
+            # Grade the Explainer (LLM #2), not `explanation` -- that one is
+            # a deterministic template, so judging it measures the template
+            # and leaves the actual LLM output completely untested.
+            interpretation = out.get("interpretation") or ""
+            if interpretation:
+                relevance = llm_judge(
+                    case.prompt, interpretation, _evidence(out), llm
+                )
+            else:
+                relevance = CriterionResult(
+                    passed=None, detail="no interpretation returned by the agent"
+                )
 
         consistency = score_consistency(case, responses) if case.consistency_repeats > 1 else None
 
@@ -363,6 +409,14 @@ def write_reports(results: list[CaseResult], out_dir: Path) -> None:
     relevance_scores = [r.relevance.score for r in results if r.relevance.score is not None]
     if relevance_scores:
         lines.append(f"- Relevance (LLM judge, mean): {sum(relevance_scores) / len(relevance_scores):.1f}/5")
+    faith_scores = [
+        r.relevance.faithfulness for r in results
+        if r.relevance.faithfulness is not None
+    ]
+    if faith_scores:
+        lines.append(
+            f"- Faithfulness (LLM judge, mean): {sum(faith_scores) / len(faith_scores):.1f}/5"
+        )
     lines.append("")
 
     lines.append("## Weaknesses identified")
@@ -396,6 +450,8 @@ def write_reports(results: list[CaseResult], out_dir: Path) -> None:
         lines.append(f"- Task completion: {_fmt_criterion(r.task_completion)}")
         lines.append(f"- Correctness: {_fmt_criterion(r.correctness)}")
         lines.append(f"- Relevance: {_fmt_criterion(r.relevance)}")
+        if r.relevance.faithfulness is not None:
+            lines.append(f"- Faithfulness: {r.relevance.faithfulness:.1f}/5")
         lines.append(f"- Consistency: {_fmt_criterion(r.consistency)}")
         lines.append("")
 

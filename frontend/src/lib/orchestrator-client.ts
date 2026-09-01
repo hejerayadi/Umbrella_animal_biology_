@@ -1,4 +1,7 @@
 import type {
+  EvolutionSpec,
+  SimilarityScore,
+  SpeciesGroup,
   AgentActivity,
   AgentStatus,
   BiodiversityMapSpec,
@@ -751,5 +754,57 @@ export function reconstructionFrom(
     gaps: [...gaps].sort((a, b) => Number(b.resolved) - Number(a.resolved)),
     selection: selectionFrom(context),
     warnings: asStringList(root.warnings),
+  };
+}
+
+/**
+ * Reads the Evolution Agent's result out of a chat response's context.
+ *
+ * The Evolution Agent's output dict is merged flat into the shared context by
+ * `worker_node`, so these are top-level keys - there is no wrapper object the
+ * way `reconstruction` has one.
+ *
+ * Returns undefined unless there is a tree or at least one similarity score.
+ * The clarification and failure paths set neither, and a panel headed
+ * "Evolutionary analysis" containing only a species list says less than the
+ * written answer already did.
+ */
+export function evolutionFrom(context: Record<string, unknown>): EvolutionSpec | undefined {
+  const newick = asString(context.newick_tree);
+  const rawScores = Array.isArray(context.similarity_scores) ? context.similarity_scores : [];
+
+  if (!newick && rawScores.length === 0) return undefined;
+
+  const similarityScores: SimilarityScore[] = rawScores
+    .filter(isRecord)
+    .map((raw) => ({
+      speciesA: asString(raw.species_a) ?? "",
+      speciesB: asString(raw.species_b) ?? "",
+      score: asNumber(raw.score) ?? 0,
+    }))
+    .filter((edge) => edge.speciesA && edge.speciesB);
+
+  const rawGroups = Array.isArray(context.species_groups) ? context.species_groups : [];
+  const speciesGroups: SpeciesGroup[] = rawGroups
+    .filter(isRecord)
+    .map((raw, index) => ({
+      groupId: asNumber(raw.group_id) ?? index,
+      species: asStringList(raw.species),
+      meanScore: asNumber(raw.mean_score),
+    }))
+    .filter((group) => group.species.length > 0);
+
+  return {
+    speciesList: asStringList(context.species_list),
+    newick,
+    model: asString(context.model),
+    // Null is meaningful and must survive: it is what the agent reports when
+    // UFBoot did not run, and rendering it as 0 would read as "no support"
+    // rather than "not measured".
+    overallConfidence: asNumber(context.overall_confidence),
+    similarityScores,
+    speciesGroups,
+    interpretation: asString(context.interpretation),
+    warnings: asStringList(context.warnings),
   };
 }

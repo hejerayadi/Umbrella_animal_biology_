@@ -322,6 +322,49 @@ export interface Message {
    * `genomeChart`: a handful of gaps with short fills, measured in kilobytes.
    */
   reconstruction?: ReconstructionSpec;
+  /**
+   * The Evolution Agent's tree and/or similarity network. Travels with the
+   * message like `genomeChart`: a Newick string and a few dozen numbers.
+   */
+  evolution?: EvolutionSpec;
+}
+
+/** One pairwise similarity score from the Molecular Comparison sub-agent. */
+export interface SimilarityScore {
+  speciesA: string;
+  speciesB: string;
+  /**
+   * Centred cosine similarity in [-1, 1] - NOT a percentage identity.
+   * Embeddings are mean-centred across the species in the request, so a score
+   * is a position relative to the others and is routinely negative. Rendering
+   * it as a percentage bar is wrong.
+   */
+  score: number;
+}
+
+/** A cluster of species the comparison put together. */
+export interface SpeciesGroup {
+  groupId: number;
+  species: string[];
+  meanScore: number | null;
+}
+
+/** The Evolution Agent's result, shaped for display. */
+export interface EvolutionSpec {
+  /** Canonical scientific names that were analysed. */
+  speciesList: string[];
+  /** Newick from IQ-TREE, leaf labels quoted. Absent on the molecular branch. */
+  newick: string | null;
+  /** Substitution model ModelFinder chose, e.g. "MTREV+G4". */
+  model: string | null;
+  /** Mean UFBoot support in [0, 1], or null when UFBoot did not run. */
+  overallConfidence: number | null;
+  similarityScores: SimilarityScore[];
+  speciesGroups: SpeciesGroup[];
+  /** The Explainer's prose (LLM #2), when it produced a trustworthy one. */
+  interpretation: string | null;
+  /** `ufboot_not_run`, `offline_sequence_fallback`, `*_failed`, ... */
+  warnings: string[];
 }
 
 /** One score behind a candidate's confidence, as the agent reported it. */

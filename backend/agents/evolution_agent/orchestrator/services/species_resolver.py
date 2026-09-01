@@ -21,6 +21,7 @@ returns FAILED — it never passes partial species lists to workers.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 
@@ -130,18 +131,65 @@ class _ResolverBackend:
 
 
 class _OfflineBackend(_ResolverBackend):
-    """Dict lookup with naive substring fallback."""
+    """Dict lookup with a conservative, word-aware fallback.
+
+    The fallback only accepts a catalogue entry whose *whole words* all
+    appear as whole words in the query — "the common chimpanzee" still
+    resolves via "common chimpanzee", but "mouse lemur" no longer collapses
+    onto *Mus musculus*.
+
+    Two rules keep it from inventing matches:
+
+    * bare substring matching is not enough. ``"mouse" in "mouse lemur"``
+      is true, yet a mouse lemur (*Microcebus*) is not a house mouse; a
+      wrong canonical name is worse than an honest failure, because the
+      caller has no way to notice the swap.
+    * a query that adds a qualifying word to a catalogue name is rejected.
+      Extra words normally narrow to a *different* taxon, so anything left
+      over after the match has to be a filler word to be ignored.
+    """
+
+    # Words that carry no taxonomic meaning and may be dropped when
+    # comparing a query against a catalogue key.
+    _FILLER = frozenset({"the", "a", "an", "of", "species", "sp", "spp"})
+
+    @staticmethod
+    def _words(text: str) -> list[str]:
+        return [w for w in re.split(r"[^a-z0-9]+", text.lower()) if w]
 
     def lookup(self, query: str) -> ResolvedSpecies | None:
-        q = query.lower()
+        q = query.lower().strip()
+
         # Exact match first.
         if q in _OFFLINE:
             return ResolvedSpecies(query=query, canonical=_OFFLINE[q], score=1.0)
-        # Substring: "the common chimpanzee" → "common chimpanzee"
+
+        q_words = [w for w in self._words(q) if w not in self._FILLER]
+        if not q_words:
+            return None
+        q_set = set(q_words)
+
+        # Prefer the longest catalogue key that the query fully contains,
+        # so "common chimpanzee" wins over the shorter "chimpanzee" and the
+        # result cannot depend on dict ordering.
+        best: tuple[int, str, str] | None = None
         for key, sci in _OFFLINE.items():
-            if key in q or q in key:
-                return ResolvedSpecies(query=query, canonical=sci, score=0.6)
-        return None
+            key_words = [w for w in self._words(key) if w not in self._FILLER]
+            if not key_words:
+                continue
+            key_set = set(key_words)
+            if not key_set <= q_set:
+                continue
+            # Every leftover query word must be filler, else the query is
+            # naming something more specific than the catalogue entry.
+            if q_set - key_set:
+                continue
+            if best is None or len(key_words) > best[0]:
+                best = (len(key_words), key, sci)
+
+        if best is None:
+            return None
+        return ResolvedSpecies(query=query, canonical=best[2], score=0.9)
 
 
 class _QdrantBackend(_ResolverBackend):  # pragma: no cover — requires live cluster

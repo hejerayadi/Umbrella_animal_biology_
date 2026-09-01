@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { BiodiversityMap } from "@/components/umbrella/biodiversity-map";
+import { EvolutionPanel } from "@/components/umbrella/evolution-panel";
 import { GenomeChart } from "@/components/umbrella/genome-chart";
 import { Markdown } from "@/components/umbrella/markdown";
 import { UmbrellaMark } from "@/components/umbrella/logo";
@@ -139,6 +140,10 @@ export function ChatMessage({
             {message.reconstruction && done && (
               <ReconstructionPanel spec={message.reconstruction} />
             )}
+            {/* Held back like the panels above. The tree is the answer to a
+                "how are these related" question, so it must not appear above
+                the sentence that introduces it. */}
+            {message.evolution && done && <EvolutionPanel spec={message.evolution} />}
           </div>
         )}
       </div>

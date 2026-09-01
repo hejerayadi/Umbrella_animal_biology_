@@ -45,18 +45,15 @@ class TestMolecularComparisonMock:
         assert r.status is AgentStatus.COMPLETED
         assert isinstance(r.output, MolecularComparisonResult)
 
-    def test_fasta_alignment_contains_all_species(self) -> None:
-        species = ["homo sapiens", "pan troglodytes", "mus musculus"]
-        r = self.mc.run(_req(species))
-        alignment = r.output.alignment
-        for sp in species:
-            assert sp.replace(" ", "_") in alignment
+    def test_result_carries_no_alignment(self) -> None:
+        """MAFFT is exclusive to the phylogenetic branch.
 
-    def test_fasta_alignment_has_correct_header_count(self) -> None:
-        species = ["homo sapiens", "mus musculus", "gallus gallus"]
-        r = self.mc.run(_req(species))
-        headers = [l for l in r.output.alignment.splitlines() if l.startswith(">")]
-        assert len(headers) == 3
+        Gap characters would corrupt ESM-2 embeddings, so this sub-agent
+        never produces an alignment — see MolecularComparisonResult.
+        """
+        r = self.mc.run(_req(["homo sapiens", "pan troglodytes", "mus musculus"]))
+        assert not hasattr(r.output, "alignment")
+        assert not hasattr(r.output, "alignment_url")
 
     def test_similarity_scores_are_similarity_edge_objects(self) -> None:
         r = self.mc.run(_req(["homo sapiens", "mus musculus"]))
@@ -88,23 +85,19 @@ class TestMolecularComparisonMock:
         assert 1 in group_sizes
         assert 3 in group_sizes
 
-    def test_similarity_network_keys_match_species(self) -> None:
+    def test_similarity_network_nodes_match_species(self) -> None:
+        """The network is nx.node_link_data output, not an adjacency dict."""
         species = ["homo sapiens", "mus musculus"]
         r = self.mc.run(_req(species))
-        assert set(r.output.similarity_network.keys()) == set(species)
+        net = r.output.similarity_network
+        assert {n["id"] for n in net["nodes"]} == set(species)
 
-    def test_similarity_network_is_symmetric(self) -> None:
+    def test_similarity_network_is_undirected(self) -> None:
         r = self.mc.run(_req(["homo sapiens", "mus musculus"]))
         net = r.output.similarity_network
-        human_neighbours = {e["neighbour"] for e in net["homo sapiens"]}
-        mouse_neighbours = {e["neighbour"] for e in net["mus musculus"]}
-        assert "mus musculus"  in human_neighbours
-        assert "homo sapiens"  in mouse_neighbours
-
-    def test_alignment_url_is_returned(self) -> None:
-        r = self.mc.run(_req(["homo sapiens", "danio rerio"]))
-        assert r.output.alignment_url.startswith("https://")
-        assert r.alignment_url == r.output.alignment_url
+        assert net["directed"] is False
+        pairs = {frozenset({e["source"], e["target"]}) for e in net["edges"]}
+        assert frozenset({"homo sapiens", "mus musculus"}) in pairs
 
     def test_fails_with_one_species(self) -> None:
         r = self.mc.run(_req(["homo sapiens"]))
