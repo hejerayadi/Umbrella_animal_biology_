@@ -217,3 +217,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local bioinformatics toolchains for the Evolution Agent (~97 MB, machine-specific).
+# Point MAFFT_BINARY / IQTREE_BINARY in .env at wherever you unpacked them.
+**/mafft-win*/
+**/iqtree/
+**/iqtree-*/

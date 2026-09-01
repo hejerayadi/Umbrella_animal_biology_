@@ -138,9 +138,9 @@ def _assert_matches_dataclass(obj, klass) -> None:
 def test_molecular_result_matches_its_dataclass() -> None:
     out = MolecularComparisonMock().run(rq(THREE)).output
     _assert_matches_dataclass(out, MolecularComparisonResult)
-    assert isinstance(out.alignment, str) and out.alignment.startswith(">")
     assert isinstance(out.similarity_network, dict)
-    assert set(out.similarity_network) == set(THREE)
+    # nx.node_link_data output, not an adjacency map.
+    assert {n["id"] for n in out.similarity_network["nodes"]} == set(THREE)
 
 
 def test_phylogenetic_result_matches_its_dataclass() -> None:
@@ -168,12 +168,14 @@ def test_pairwise_score_count_is_n_choose_2() -> None:
 
 
 def test_similarity_network_is_symmetric() -> None:
+    """An undirected graph carries each pair once, in either orientation."""
     net = MolecularComparisonMock().run(rq(FIVE)).output.similarity_network
-    for node, edges in net.items():
-        for edge in edges:
-            back = net[edge["neighbour"]]
-            assert any(e["neighbour"] == node and e["score"] == edge["score"]
-                       for e in back)
+    assert net["directed"] is False
+
+    pairs = [frozenset({e["source"], e["target"]}) for e in net["edges"]]
+    assert len(pairs) == len(set(pairs)), "a pair was recorded twice"
+    # Every pair of the five species is present exactly once.
+    assert len(pairs) == len(FIVE) * (len(FIVE) - 1) // 2
 
 
 @pytest.mark.asyncio
@@ -319,9 +321,20 @@ def test_worker_crash_is_contained_by_the_http_boundary(client, monkeypatch) -> 
         "instruction": "compare",
         "context": {"species_list": THREE, "feature": "full_analysis"},
     })
+    # The contract this test protects is containment: a worker raising
+    # must never escape as a traceback or a 500.
     assert r.status_code == 200
-    assert r.json()["status"] == "failed"
     assert "Traceback" not in r.text
+
+    # full_analysis: the phylogenetic branch still ran, so the request
+    # completes with that half and names the branch that blew up.
+    body = r.json()
+    assert body["status"] == "completed"
+    assert any(
+        w.startswith("molecular_comparison_failed")
+        for w in body["output"]["warnings"]
+    ), body["output"]["warnings"]
+    assert body["output"].get("similarity_scores") is None
 
 
 # ===========================================================================
@@ -337,9 +350,12 @@ def test_DEFECT_router_and_aggregator_modules_are_never_imported() -> None:
     """The two modules that would implement branch routing are unused."""
     import re
 
+    _VENDORED = {".venv", "venv", "site-packages", "__pycache__",
+                 "mafft-win", "iqtree", "node_modules"}
     importers: list[str] = []
     for py in AGENT_DIR.rglob("*.py"):
-        if "__pycache__" in py.parts or py.name in {"router.py", "aggregator.py"}:
+        # Skip vendored trees: not this agent's source, and not all UTF-8.
+        if _VENDORED & set(py.parts) or py.name in {"router.py", "aggregator.py"}:
             continue
         src = py.read_text(encoding="utf-8")
         if re.search(r"^\s*from\s+\.(router|aggregator)\b", src, re.M):

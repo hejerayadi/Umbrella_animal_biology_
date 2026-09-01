@@ -15,6 +15,7 @@ import {
   imageUrlFor,
   parseExecutionHistory,
   biodiversityMapFrom,
+  evolutionFrom,
   genomeChartFrom,
   proteinViewerFrom,
   reconstructionFrom,
@@ -197,6 +198,10 @@ export function UmbrellaProvider({ children }: { children: ReactNode }) {
                 ...(() => {
                   const reconstruction = reconstructionFrom(response.context);
                   return reconstruction ? { reconstruction } : {};
+                })(),
+                ...(() => {
+                  const evolution = evolutionFrom(response.context);
+                  return evolution ? { evolution } : {};
                 })(),
               },
             ],

@@ -21,10 +21,14 @@ import statistics
 from typing import Callable, Optional
 
 import networkx as nx
-import requests
 import torch
 from langsmith import traceable
 
+from ...tools.sequences import (
+    DEFAULT_GENE_CANDIDATES,
+    fetch_uniprot_sequence,
+    parse_fasta_inputs,
+)
 from ...schema import (
     AgentRequest,
     AgentResult,
@@ -35,54 +39,12 @@ from ...schema import (
 )
 
 # ---------------------------------------------------------------------------
-# Sequence fetching (UniProt)
+# Sequence fetching
 # ---------------------------------------------------------------------------
-
-DEFAULT_GENE_CANDIDATES = ["CYTB", "COX1"]
-
-
-@traceable(name="UniProt sequence fetch", run_type="tool")
-def fetch_uniprot_sequence(species: str, gene_candidates: list[str]) -> str:
-    """Fetch a reviewed protein sequence for `species` by organism name.
-
-    Tries each gene symbol in order until one resolves. Raises ValueError
-    if none do -- callers turn that into a FAILED AgentResult, they never
-    let it propagate as an unhandled exception.
-    """
-    for gene in gene_candidates:
-        params = {
-            "query": f'organism_name:"{species}" AND gene:{gene} AND reviewed:true',
-            "format": "fasta",
-            "size": 1,
-        }
-        resp = requests.get(
-            "https://rest.uniprot.org/uniprotkb/search", params=params, timeout=30
-        )
-        resp.raise_for_status()
-        fasta = resp.text.strip()
-        if fasta:
-            lines = fasta.split("\n")
-            return "".join(l for l in lines if not l.startswith(">"))
-    raise ValueError(
-        f"No reviewed UniProt sequence for species='{species}', "
-        f"tried genes={gene_candidates}"
-    )
-
-
-def parse_fasta_inputs(protein_inputs: list[str], species_list: list[str]) -> dict[str, str]:
-    """Match pre-supplied FASTA strings to species by header substring."""
-    resolved: dict[str, str] = {}
-    for fasta in protein_inputs:
-        lines = [l for l in fasta.strip().split("\n") if l]
-        if not lines or not lines[0].startswith(">"):
-            continue
-        header = lines[0][1:].lower()
-        seq = "".join(l for l in lines[1:] if not l.startswith(">"))
-        for sp in species_list:
-            if sp.lower().replace(" ", "_") in header or sp.lower() in header:
-                resolved[sp] = seq
-                break
-    return resolved
+# Shared with the phylogenetic worker via tools.sequences so a full_analysis
+# compares and reconstructs from the same sequences, without either
+# sub-agent importing the other. Re-exported here because this module is
+# the documented import site for the molecular branch.
 
 
 # ---------------------------------------------------------------------------

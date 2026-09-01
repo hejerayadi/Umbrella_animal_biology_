@@ -11,7 +11,7 @@ The output dict shape mirrors what the recognition agent returns:
     "evolution": {
       "decision": "analysis_complete",
       "text_alignment": "neutral",
-      "score_is_mock": true,
+      "score_is_mock": false,
       "explanation": "Analysed 3 species...",
       "clarification_question": null
     },
@@ -30,9 +30,8 @@ The output dict shape mirrors what the recognition agent returns:
     "source_agents":      [...]
   }
 
-Which implementation answers is chosen by EVOLUTION_AGENT_IMPL:
-  mock         (default) the stub in mock.py
-  orchestrator the real LangGraph pipeline via orchestrator_adapter.py
+The LangGraph pipeline in orchestrator_adapter.py always answers; the
+Sprint 2 mock implementation and its EVOLUTION_AGENT_IMPL switch are gone.
 
 Run (from repo root):
   python -m uvicorn backend.agents.evolution_agent.api:app --port 8002 --reload
@@ -62,9 +61,11 @@ app = FastAPI(
     title="Evolution Agent",
     description=(
         "Analyses evolutionary relationships between species.\n\n"
-        "Pipeline: **Molecular Comparison** (MAFFT + ESM-C) "
-        "→ **Phylogenetic Reconstruction** (IQ-TREE + UFBoot).\n\n"
-        "Uses MAFFT and the configured IQ-TREE service for reconstruction."
+        "Pipeline: **Molecular Comparison** (UniProt + ESM-2 embeddings) "
+        "and **Phylogenetic Reconstruction** (MAFFT + IQ-TREE/UFBoot), "
+        "run concurrently when both are requested." + chr(10) + chr(10) +
+        "No alignment feeds the embeddings: MAFFT gap characters would "
+        "corrupt them, so only the tree branch aligns."
     ),
     version="2.0.0",
 )
@@ -108,8 +109,7 @@ def health() -> dict:
         '{"instruction": "Compare human, chimp and mouse.", '
         '"context": {"species_list": ["homo sapiens", "pan troglodytes", "mus musculus"]}}\n'
         "```\n\n"
-        "**With GPT-5-mini intent classification** "
-        "(set `EVOLUTION_AGENT_IMPL=orchestrator`):\n"
+        "**Letting the Planner (LLM #1) infer the feature and species:**" + chr(10) +
         "```json\n"
         '{"instruction": "How are human and chimp related evolutionarily?", "context": {}}\n'
         "```"

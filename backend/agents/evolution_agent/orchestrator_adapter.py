@@ -180,6 +180,8 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
                 "status":        "completed",
                 "decision":      "analysis_complete",
                 "explanation":   str(result.output),
+                # No structured analysis came back, so nothing here can be
+                # vouched for as a real measurement.
                 "score_is_mock": True,
             },
             confidence=result.confidence,
@@ -189,11 +191,18 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
     mc    = analysis.molecular
     phylo = analysis.phylogenetic
 
+    # Reported from the workers that actually ran, not hard-coded: with the
+    # real UniProt/ESM-2 and MAFFT/IQ-TREE workers wired in these numbers
+    # are genuine measurements, and claiming otherwise misleads every
+    # downstream consumer.
+    mocked_flags = dict(analysis.providers_are_mocked)
+
     output: dict[str, Any] = {
         "status":             "completed",
         "decision":           "analysis_complete",
         "explanation":        _build_summary(analysis, feature),
-        "score_is_mock":      True,
+        "score_is_mock":      any(mocked_flags.values()),
+        "providers_are_mocked": mocked_flags,
         "species_list":       analysis.species_list,
         "overall_confidence": analysis.overall_confidence,
     }
