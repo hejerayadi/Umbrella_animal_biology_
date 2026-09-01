@@ -6,8 +6,6 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from langsmith import traceable
-
 from .planner import plan
 from .orchestrator import EvolutionOrchestrator
 from .schema import (
@@ -95,13 +93,7 @@ def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
     n       = len(species)
 
     if feature == PlannedFeature.PHYLOGENETIC_TREE.value and phylo:
-        # overall_confidence is None when UFBoot did not run (e.g. too few
-        # species) — never fabricate a percentage in that case.
-        conf = (
-            f"{analysis.overall_confidence * 100:.0f}%"
-            if analysis.overall_confidence is not None
-            else "not available (bootstrap not run)"
-        )
+        conf = f"{analysis.overall_confidence * 100:.0f}%"
         return (
             f"Phylogenetic tree built for {n} species "
             f"using {phylo.model} model with {conf} overall confidence."
@@ -119,13 +111,7 @@ def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
 
         groups    = len(mc.species_groups)
         group_str = f"forming {groups} evolutionary group" + ("s" if groups != 1 else "")
-        # None when there's no separation signal to measure (e.g. every
-        # species landed in one group) — never fabricate a percentage.
-        conf = (
-            f"{analysis.overall_confidence * 100:.0f}%"
-            if analysis.overall_confidence is not None
-            else "not available (no group separation to measure)"
-        )
+        conf      = f"{analysis.overall_confidence * 100:.0f}%"
 
         return (
             f"Analysed {n} species. "
@@ -147,11 +133,7 @@ def _build_summary(analysis: EvolutionAnalysisResult, feature: str) -> str:
         parts.append(f"forming {groups} evolutionary group" + ("s" if groups != 1 else ""))
     if phylo:
         parts.append(f"Phylogenetic tree built using {phylo.model} model")
-    conf = (
-        f"{analysis.overall_confidence * 100:.0f}%"
-        if analysis.overall_confidence is not None
-        else "not available"
-    )
+    conf = f"{analysis.overall_confidence * 100:.0f}%"
     return f"Analysed {n} species. {'. '.join(parts)}. Overall confidence: {conf}."
 
 
@@ -209,6 +191,7 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
             for g in mc.species_groups
         ]
         output["similarity_network"] = mc.similarity_network
+        output["alignment_url"]      = mc.alignment_url
 
     # Branch-specific: phylogenetic tree fields
     if phylo:
@@ -235,6 +218,7 @@ def to_platform_result(result: AgentResult, feature: str = "full_analysis") -> A
             {"species_a": e.species_a, "species_b": e.species_b, "score": e.score}
             for e in mc.similarity_scores
         ] if mc else None,
+        alignment_url=mc.alignment_url if mc else None,
         confidence=analysis.overall_confidence,
         source_agents=analysis.source_agents,
         interpretation=result.interpretation,
@@ -263,7 +247,6 @@ class OrchestratorEvolutionAgent:
     ) -> None:
         self._orchestrator = orchestrator or EvolutionOrchestrator()
 
-    @traceable(name="Evolution Agent request", run_type="chain")
     async def run(self, request: AgentRequest) -> AgentResult:
         context = request.context or {}
 

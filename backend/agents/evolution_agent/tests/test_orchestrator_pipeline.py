@@ -80,7 +80,7 @@ async def test_convenience_fields_populated_on_result(orchestrator) -> None:
 
     # Top-level AgentResult convenience fields
     assert result.newick_tree is not None
-    assert result.alignment_url is None
+    assert result.alignment_url is not None
     assert result.similarity_scores is not None
     assert result.confidence is not None
 

@@ -16,8 +16,6 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from langsmith import traceable
-
 from .schema import PlannerDecision, PlannedFeature
 
 _logger = logging.getLogger(__name__)
@@ -183,7 +181,6 @@ def _apply_guards(payload: dict) -> PlannerDecision:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-@traceable(name="Planner (LLM #1)", run_type="chain")
 async def plan(prompt: str, llm=None) -> PlannerDecision:
     """Plan what the user wants. Never raises.
 

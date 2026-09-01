@@ -56,7 +56,7 @@ from ..schema import (
     PlannerDecision,
 )
 from ..explainer import explain as _default_explainer, fallback_explanation
-from ..workers.molecular_comparison.logic import MolecularComparisonAgent
+from ..workers.molecular_comparison.mock import MolecularComparisonMock
 from ..workers.phylogenetic_tree.worker import PhylogeneticTreeWorker
 from .services.species_resolver import SpeciesResolverService
 
@@ -124,7 +124,7 @@ class EvolutionOrchestrator:
         resolver:     SpeciesResolverService | None = None,
         explainer:    Any | None = None,
     ) -> None:
-        self._mc_worker    = mc_worker    or MolecularComparisonAgent()
+        self._mc_worker    = mc_worker    or MolecularComparisonMock()
         self._phylo_worker = phylo_worker or PhylogeneticTreeWorker()
         self._resolver     = resolver     or SpeciesResolverService.from_env()
         # LLM #2. Injectable so tests never touch a real backend.
@@ -137,14 +137,7 @@ class EvolutionOrchestrator:
 
     async def run(self, request: AgentRequest) -> AgentResult:
         state = EvolutionState(request=request)
-        # run_name/tags give the LangGraph trace a readable root in
-        # LangSmith instead of the default "LangGraph" label; every node
-        # (plan, species_resolver, dispatch, assemble, explain, ...) traces
-        # automatically as a child span once LANGCHAIN_TRACING_V2 is set.
-        final = await self._graph.ainvoke(
-            state,
-            config={"run_name": "EvolutionOrchestrator graph", "tags": ["evolution-agent"]},
-        )
+        final = await self._graph.ainvoke(state)
         if isinstance(final, dict):
             return final["result"]
         return final.result  # pragma: no cover
@@ -334,12 +327,10 @@ class EvolutionOrchestrator:
         phylo = state.phylo_result
         feature = state.planned_feature
 
-        # phylo.overall_confidence is None when UFBoot did not run, and
-        # mc.confidence is None when there's no separation signal to
-        # measure (e.g. every species landed in one group); neither must
-        # be silently treated as a number.
+        # phylo.overall_confidence is None when UFBoot did not run; it must
+        # not be silently treated as a number.
         phylo_conf = getattr(phylo, "overall_confidence", None) if phylo else None
-        mc_conf = mc.confidence if mc else None
+        mc_conf = round(self._mc_mean(mc), 4) if mc else None
 
         parts = [c for c in (mc_conf, phylo_conf) if c is not None]
         overall_confidence = round(sum(parts) / len(parts), 4) if parts else None
@@ -382,6 +373,7 @@ class EvolutionOrchestrator:
                 }
                 for e in mc.similarity_scores
             ]
+            alignment_url = mc.alignment_url
 
         return {
             "warnings": warnings,
@@ -479,7 +471,7 @@ class EvolutionOrchestrator:
                      "mean_score": g.mean_score}
                     for g in mc.species_groups
                 ],
-                "network_nodes": len(mc.similarity_network["nodes"]),
+                "network_nodes": len(mc.similarity_network),
             }
 
         phylo = analysis.phylogenetic
@@ -580,3 +572,13 @@ class EvolutionOrchestrator:
             )
         }
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _mc_mean(mc: MolecularComparisonResult) -> float:
+        scores = mc.similarity_scores
+        if not scores:
+            return 0.0
+        return sum(e.score for e in scores) / len(scores)

@@ -30,16 +30,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-def load_env() -> None:
-    """Walk up from this file until a .env is found and load it.
-
-    Public and idempotent (``load_dotenv`` is safe to call repeatedly) so
-    callers that need MAFFT_BINARY / IQTREE_BINARY / etc. can call this
-    directly instead of relying on the LLM client being imported first —
-    the Planner only imports this module lazily, inside its own function,
-    so anything that skips the Planner (e.g. a request with an explicit
-    ``feature``) would otherwise never trigger the .env load.
-    """
+def _load_env() -> None:
+    """Walk up from this file until a .env is found and load it."""
     here = Path(__file__).resolve()
     for parent in [here.parent.parent, *here.parents]:
         candidate = parent / ".env"
@@ -48,7 +40,7 @@ def load_env() -> None:
             return
 
 
-load_env()
+_load_env()
 
 
 class LLMUnavailable(RuntimeError):

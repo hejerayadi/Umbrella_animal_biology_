@@ -32,8 +32,6 @@ from __future__ import annotations
 import logging
 import re
 
-from langsmith import traceable
-
 from ...schema import (
     AgentRequest,
     AgentResult,
@@ -91,7 +89,6 @@ class PhylogeneticTreeWorker:
     # Public interface
     # ------------------------------------------------------------------
 
-    @traceable(name="Phylogenetic Tree Agent", run_type="chain")
     def run(self, request: AgentRequest) -> AgentResult:
         species = self._resolve_species(request)
 
@@ -146,7 +143,6 @@ class PhylogeneticTreeWorker:
     # Tree building pipeline
     # ------------------------------------------------------------------
 
-    @traceable(name="MAFFT -> IQ-TREE pipeline", run_type="chain")
     def _build_tree(
         self, species: list[str], sequences: dict[str, str]
     ) -> PhylogeneticResult:

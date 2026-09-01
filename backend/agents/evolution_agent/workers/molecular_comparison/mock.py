@@ -1,29 +1,24 @@
 """Sprint 2 mock for the Molecular Comparison subagent.
 
-Simulates the pipeline that will become real in Sprint 3+:
-    NCBI / UniProt (raw sequences)  →  ESM-2 embeddings  →  pairwise
-    similarity scores  →  species groups  →  similarity network (NetworkX)
+Simulates the full pipeline:
+    NCBI / UniProt  →  MAFFT alignment  →  ESM-C embeddings
+    →  pairwise similarity scores  →  species groups  →  similarity network
 
-No alignment step runs in this sub-agent. MAFFT is exclusive to the
-Phylogenetic Reconstruction sub-agent — alignment gap characters would
-corrupt ESM-2 embeddings. Both sub-agents receive the same raw, unaligned
-sequences as parallel siblings.
-
-Everything here is deterministic and dependency-free so the orchestrator
-can be exercised end-to-end without any external service.
+Everything is deterministic and dependency-free so the orchestrator can be
+exercised end-to-end without any external service.
 
 What this mock returns (MolecularComparisonResult):
+  • alignment          — mock FASTA multiple sequence alignment
+  • alignment_url      — URL to a rendered alignment viewer
   • similarity_scores  — pairwise cosine-similarity scores (SimilarityEdge list)
   • species_groups     — clusters derived from the scores (SpeciesGroup list)
-  • similarity_network — nx.node_link_data(graph, edges="edges") output
+  • similarity_network — adjacency-list graph {species: [{neighbour, score}]}
 
 Swap for the real worker (Sprint 3+) without changing the orchestrator —
 the run() signature and return type are stable.
 """
 
 from __future__ import annotations
-
-import networkx as nx
 
 from ...schema import (
     AgentRequest,
@@ -46,8 +41,8 @@ _CATALOGUE: set[str] = {
     "danio rerio",
 }
 
-# Raw (unaligned) mock sequences — cytochrome-b proxies. No gap characters;
-# this is what the real fetch step would hand to ESM-2 directly.
+# Mock FASTA sequences — length 60 aa, biologically plausible cytochrome-b
+# proxies (same length so MAFFT would not need to insert gaps).
 _SEQUENCES: dict[str, str] = {
     "homo sapiens": (
         "MTNIRKSHPLFKIINHSFIDLPAPSNISSWWNFGSLLGACLILQITTGLFLAMHYTSDTT"
@@ -66,8 +61,8 @@ _SEQUENCES: dict[str, str] = {
     ),
 }
 
-# Pairwise cosine-similarity scores (ESM-2 embedding proxies, hand-set for
-# the mock). Human-chimp very close, human-fish distant.
+# Pairwise cosine-similarity scores (ESMC embedding proxies).
+# Values are biologically calibrated: human-chimp very close, human-fish distant.
 _SCORES: dict[frozenset[str], float] = {
     frozenset({"homo sapiens",    "pan troglodytes"}): 0.98,
     frozenset({"homo sapiens",    "mus musculus"}):    0.85,
@@ -82,11 +77,11 @@ _SCORES: dict[frozenset[str], float] = {
 }
 
 # Similarity threshold above which two species are placed in the same group.
-_GROUP_THRESHOLD = 0.6
+_GROUP_THRESHOLD = 0.75
 
 
 class MolecularComparisonMock:
-    """Deterministic stand-in for the NCBI/UniProt + ESM-2 pipeline."""
+    """Deterministic stand-in for the NCBI + MAFFT + ESM-C pipeline."""
 
     # ------------------------------------------------------------------
     # Public interface
@@ -132,6 +127,7 @@ class MolecularComparisonMock:
                 {"species_a": e.species_a, "species_b": e.species_b, "score": e.score}
                 for e in mc_result.similarity_scores
             ],
+            alignment_url=mc_result.alignment_url,
             confidence=self._mean_score(mc_result.similarity_scores),
             source_agents=["Molecular Comparison Agent"],
         )
@@ -141,16 +137,40 @@ class MolecularComparisonMock:
     # ------------------------------------------------------------------
 
     def _build_result(self, species: list[str]) -> MolecularComparisonResult:
-        scores  = self._compute_scores(species)
-        groups  = self._compute_groups(species, scores)
-        network = self._build_network(species, scores)
+        alignment     = self._build_alignment(species)
+        alignment_url = self._alignment_url(species)
+        scores        = self._compute_scores(species)
+        groups        = self._compute_groups(species, scores)
+        network       = self._build_network(species, scores)
 
         return MolecularComparisonResult(
             species_list=species,
+            alignment=alignment,
+            alignment_url=alignment_url,
             similarity_scores=scores,
             species_groups=groups,
             similarity_network=network,
         )
+
+    # ------------------------------------------------------------------
+    # FASTA alignment
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_alignment(species: list[str]) -> str:
+        """Return a mock FASTA multiple sequence alignment.
+
+        All sequences are the same length (60 aa), so no gaps are needed —
+        MAFFT would produce this trivially.  The sequences differ only in
+        the last few residues, reflecting real cytochrome-b divergence.
+        """
+        lines: list[str] = []
+        for sp in species:
+            header = f">{sp.replace(' ', '_')}"
+            seq    = _SEQUENCES[sp]
+            lines.append(header)
+            lines.append(seq)
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Similarity scores
@@ -167,19 +187,27 @@ class MolecularComparisonMock:
         return edges
 
     # ------------------------------------------------------------------
-    # Species groups (connected-components clustering at threshold)
+    # Species groups (simple threshold clustering)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _compute_groups(
         species: list[str], scores: list[SimilarityEdge]
     ) -> list[SpeciesGroup]:
+        """Single-linkage clustering at _GROUP_THRESHOLD.
+
+        Produces the minimum number of groups such that every pair of
+        species within a group has similarity >= _GROUP_THRESHOLD.
+        Small enough for the mock catalogue; not meant to scale.
+        """
+        # Build adjacency set above threshold
         neighbours: dict[str, set[str]] = {s: set() for s in species}
         for edge in scores:
             if edge.score >= _GROUP_THRESHOLD:
                 neighbours[edge.species_a].add(edge.species_b)
                 neighbours[edge.species_b].add(edge.species_a)
 
+        # BFS to find connected components
         visited:  set[str]        = set()
         groups:   list[list[str]] = []
         for sp in species:
@@ -196,6 +224,7 @@ class MolecularComparisonMock:
                 queue.extend(neighbours[node] - visited)
             groups.append(component)
 
+        # Compute mean intra-group similarity for each component
         score_map = {
             frozenset({e.species_a, e.species_b}): e.score for e in scores
         }
@@ -213,20 +242,28 @@ class MolecularComparisonMock:
         return result
 
     # ------------------------------------------------------------------
-    # Similarity network — built as a real NetworkX graph, serialized via
-    # node_link_data so the shape matches MolecularComparisonResult's
-    # documented contract exactly.
+    # Similarity network (adjacency list)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _build_network(
         species: list[str], scores: list[SimilarityEdge]
-    ) -> dict:
-        graph = nx.Graph()
-        graph.add_nodes_from(species)
+    ) -> dict[str, list[dict]]:
+        """Return the full similarity graph as an adjacency list.
+
+        Every species node lists all its neighbours with their scores.
+        Keeps all edges (not just those above threshold) so consumers can
+        apply their own cutoff.
+        """
+        network: dict[str, list[dict]] = {s: [] for s in species}
         for edge in scores:
-            graph.add_edge(edge.species_a, edge.species_b, score=edge.score)
-        return nx.node_link_data(graph, edges="edges")
+            network[edge.species_a].append(
+                {"neighbour": edge.species_b, "score": edge.score}
+            )
+            network[edge.species_b].append(
+                {"neighbour": edge.species_a, "score": edge.score}
+            )
+        return network
 
     # ------------------------------------------------------------------
     # Helpers
@@ -243,6 +280,11 @@ class MolecularComparisonMock:
             if isinstance(raw, str):
                 raw = [raw]
         return [s.strip().lower() for s in raw if s.strip()]
+
+    @staticmethod
+    def _alignment_url(species: list[str]) -> str:
+        slug = "_vs_".join(s.replace(" ", "_") for s in sorted(species))
+        return f"https://evolution.umbrella.local/alignment/{slug}.html"
 
     @staticmethod
     def _mean_score(scores: list[SimilarityEdge]) -> float:

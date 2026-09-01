@@ -20,8 +20,6 @@ import tempfile
 import time
 from pathlib import Path
 
-from langsmith import traceable
-
 from .binaries import (
     MAFFT_CANDIDATES,
     MAFFT_ENV_VAR,
@@ -50,7 +48,6 @@ class MAFFTError(Exception):
     """Raised when MAFFT alignment fails."""
 
 
-@traceable(name="MAFFT alignment", run_type="tool")
 def align(
     sequences: dict[str, str],
     method: str = "auto",
@@ -100,7 +97,6 @@ def align(
     )
 
 
-@traceable(name="MAFFT via EBI REST API", run_type="tool")
 def _align_ebi(fasta_input: str, timeout: int) -> str:
     """Align using EBI REST API."""
     try:
@@ -167,7 +163,6 @@ def _align_ebi(fasta_input: str, timeout: int) -> str:
         raise MAFFTError(f"EBI API error: {exc}") from exc
 
 
-@traceable(name="MAFFT via local binary", run_type="tool")
 def _align_local(
     fasta_input: str, method: str, timeout: int, binary: str | None = None
 ) -> str:
