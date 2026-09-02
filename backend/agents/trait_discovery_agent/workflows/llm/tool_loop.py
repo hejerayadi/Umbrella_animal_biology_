@@ -4,14 +4,31 @@ import time
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-from .client import _candidate_models, _parse_json_object, _retry_on_capacity, _is_missing_model_error, get_llm
+from .client import (
+    NonJSONFinalAnswerError,
+    TruncatedCompletionError,
+    _candidate_models,
+    _parse_json_object,
+    _retry_on_capacity,
+    _is_advance_worthy_error,
+    _is_truncated_completion,
+    _reasoning_off_preamble,
+    get_llm,
+)
 
 logger = logging.getLogger(__name__)
 
 # Hard ceiling on tool-call/tool-result round-trips inside a single bind_tools
 # decision, so a model that keeps calling tools instead of answering can't spin
-# forever. One real decision (§0.1 of the guide) should resolve in 1-2 turns.
-MAX_TOOL_TURNS = 6
+# forever. One real decision (§0.1 of the guide) should resolve in 1-2 turns,
+# but hosted NIM models occasionally need an extra round-trip or two under
+# real latency/load (see the ~60s silent-poll note below) even with the
+# repeated-identical-call guard in the loop -- observed on BRCA1 despite that
+# guard, i.e. not every turn-exhaustion case is a repeated call. 8 gives that
+# headroom without meaningfully raising the cost of a model that's genuinely
+# stuck (the deterministic fallback in each subagent still catches that case
+# either way).
+MAX_TOOL_TURNS = 8
 
 
 def _coerce_stringified_json_args(args: dict) -> dict:
@@ -29,14 +46,29 @@ def _coerce_stringified_json_args(args: dict) -> dict:
     unchanged. This runs once, at the loop level, so every tool bound via
     invoke_tool_loop_with_fallback benefits — not just the one tool where
     this was first observed.
+
+    Raises TruncatedCompletionError if a value LOOKS like the start of a
+    JSON array/object (`[` or `{`) but fails to parse — that combination
+    essentially only happens when max_tokens cut generation off mid-value
+    (observed verbatim: go_ids='["GO:0051726", "GO:0008630", "GO:0'). This
+    used to fall through the `continue` below and hand the raw truncated
+    string to the tool, which raised an opaque, non-advance-worthy Pydantic
+    ValidationError several layers away from the actual cause, discarding
+    the LLM's pick and falling back to the deterministic heuristic every
+    time a batched call (e.g. resolve_go_term_names over a dozen+ GO ids)
+    ran long. Raising here instead lets the caller treat it the same as any
+    other truncated completion — see _is_truncated_completion.
     """
     coerced = dict(args)
     for key, value in args.items():
         if isinstance(value, str) and value[:1] in "[{":
             try:
                 parsed_value = json.loads(value)
-            except (json.JSONDecodeError, ValueError):
-                continue
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise TruncatedCompletionError(
+                    f"Tool argument {key!r} looks like truncated JSON "
+                    f"(max_tokens cut the completion off mid-value): {value!r}"
+                ) from exc
             if isinstance(parsed_value, (list, dict)):
                 coerced[key] = parsed_value
     return coerced
@@ -99,7 +131,7 @@ async def invoke_tool_loop_with_fallback(
         )
 
         convo: list = [
-            SystemMessage(content=system_prompt),
+            SystemMessage(content=_reasoning_off_preamble() + system_prompt),
             HumanMessage(content=human_prompt),
         ]
         tool_call_log: list[dict] = []
@@ -129,6 +161,17 @@ async def invoke_tool_loop_with_fallback(
                     "Turn %d/%d: got a response after %.1fs.",
                     turn + 1, turns_limit, time.monotonic() - turn_start,
                 )
+                if _is_truncated_completion(ai_msg):
+                    # Caught here, before parsing .content or executing a
+                    # tool call with possibly-incomplete arguments, since not
+                    # every truncation produces an obviously-malformed value
+                    # (see TruncatedCompletionError) -- finish_reason=="length"
+                    # is the API telling us directly, so there's no reason to
+                    # wait for a downstream parse/Pydantic failure to infer it.
+                    raise TruncatedCompletionError(
+                        f"{candidate_model}: completion truncated by max_tokens "
+                        f"(finish_reason=length) on turn {turn + 1}/{turns_limit}"
+                    )
                 convo.append(ai_msg)
 
                 tool_calls = getattr(ai_msg, "tool_calls", None)
@@ -166,7 +209,14 @@ async def invoke_tool_loop_with_fallback(
                         continue
 
                     if parsed is None or disguised is not None:
-                        raise RuntimeError(
+                        if ai_msg.content is None:
+                            reasoning = (ai_msg.additional_kwargs or {}).get("reasoning_content")
+                            logger.warning(
+                                "%s: content is None (likely still mid hidden-analysis "
+                                "channel at max_tokens); reasoning_content length=%s",
+                                candidate_model, len(reasoning) if reasoning else 0,
+                            )
+                        raise NonJSONFinalAnswerError(
                             f"Model returned a non-JSON final answer: {ai_msg.content!r}"
                         )
                     return parsed, tool_call_log
@@ -191,6 +241,44 @@ async def invoke_tool_loop_with_fallback(
                             "Coerced stringified-JSON args for %s: %r -> %r",
                             call["name"], call["args"], call_args,
                         )
+                    # A model that calls the same (name, args) pair it already
+                    # called earlier in this loop learns nothing new from
+                    # re-running it -- these tools are deterministic reads
+                    # (re-fetch the same candidate list), so a repeat is a
+                    # model that's stuck, not one gathering information. Left
+                    # unchecked this is exactly what burns through
+                    # MAX_TOOL_TURNS without ever reaching a final answer
+                    # (observed on MC1R/HRAS). Reuse the earlier result and
+                    # tell it plainly instead of re-invoking and hoping the
+                    # next turn is different.
+                    repeat = next(
+                        (
+                            logged for logged in tool_call_log
+                            if logged["name"] == call["name"] and logged["args"] == call_args
+                        ),
+                        None,
+                    )
+                    if repeat is not None:
+                        logger.warning(
+                            "Model repeated an identical tool call %s(%s); reusing "
+                            "the earlier result instead of re-invoking, and telling "
+                            "it plainly to stop calling and answer.",
+                            call["name"], call_args,
+                        )
+                        result = repeat["result"]
+                        convo.append(
+                            ToolMessage(
+                                content=(
+                                    json.dumps(result, default=str)
+                                    + " (note: identical to your earlier call -- this "
+                                    "won't return anything new. You already have "
+                                    "everything you need; reply with ONLY the final "
+                                    "JSON object now.)"
+                                ),
+                                tool_call_id=call["id"],
+                            )
+                        )
+                        continue
                     result = await tool.ainvoke(call_args)
                     tool_call_log.append(
                         {"name": call["name"], "args": call_args, "result": result}
@@ -204,11 +292,12 @@ async def invoke_tool_loop_with_fallback(
                 turn += 1
 
             raise RuntimeError(
-                f"Tool-calling loop exceeded {turns_limit} turns without a final answer"
+                f"Tool-calling loop exceeded {turns_limit} turns without a final answer "
+                f"(calls made: {[(c['name'], c['args']) for c in tool_call_log]!r})"
             )
         except Exception as exc:
             last_error = exc
-            if not _is_missing_model_error(exc):
+            if not _is_advance_worthy_error(exc):
                 raise
 
     if last_error is not None:

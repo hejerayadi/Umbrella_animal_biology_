@@ -21,7 +21,6 @@ from kb.sources._http_retry import request_with_retry
 
 KEGG_LINK_URL = "https://rest.kegg.jp/link/pathway/{kegg_gene_id}"
 KEGG_GET_URL = "https://rest.kegg.jp/get/{pathway_id}"
-KEGG_FIND_URL = "https://rest.kegg.jp/find/{organism}/{gene_symbol}"
 
 
 def _assert_kegg_academic_use_only() -> None:
@@ -52,42 +51,6 @@ def _assert_kegg_academic_use_only() -> None:
 #  Raw implementations — called directly by the node for branching (§8) and
 #  as the deterministic fallback (§9); also what tests monkeypatch.
 # --------------------------------------------------------------------------- #
-
-async def _find_kegg_gene_id_raw(organism: str, gene_symbol: str) -> str | None:
-    """The KEGG gene id ("mmu:14176") for a gene symbol, or None.
-
-    KEGG keys genes by Entrez id, not by symbol: `link/pathway/mmu:FGF5`
-    answers 200 with an empty body, which reads downstream as "this gene is in
-    no pathway" rather than as a lookup that never happened.
-
-    `find` is a substring search over every name and alias KEGG holds, and it
-    is not ranked usefully - searching mmu for FGF5 returns Fgf7 first, because
-    one of Fgf7's aliases is "Fgf5b". So the reply is matched against the
-    alias list of each row and only an exact symbol match is accepted.
-    """
-    _assert_kegg_academic_use_only()
-    wanted = gene_symbol.strip().lower()
-    if not wanted or not organism:
-        return None
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await request_with_retry(
-            client,
-            "GET",
-            KEGG_FIND_URL.format(organism=organism, gene_symbol=gene_symbol),
-        )
-
-    for line in resp.text.strip().splitlines():
-        if "\t" not in line:
-            continue
-        kegg_gene_id, description = line.split("\t", 1)
-        # "Fgf5, Fgf-5, Fgf3a, HBGF-5; fibroblast growth factor 5 precursor"
-        # - the aliases are everything before the first semicolon.
-        aliases = [alias.strip().lower() for alias in description.split(";", 1)[0].split(",")]
-        if wanted in aliases:
-            return kegg_gene_id.strip()
-    return None
-
 
 async def _list_pathway_candidates_raw(kegg_gene_id: str) -> list[dict]:
     """All pathways KEGG's link endpoint returns for this gene, not just the first."""

@@ -19,6 +19,7 @@ they call.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -39,6 +40,41 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 
 __all__ = ["pathways_agent", "mock_pathways_agent"]
+
+
+async def _enrich_other_pathway_candidates(
+    gene: str, candidates: list[dict], picked_id: str
+) -> None:
+    """Ingest every KEGG pathway link for this gene besides the one already
+    being returned as this call's answer, so the Qdrant KB reflects the
+    real breadth of pathway data available rather than just whichever one
+    a given trait's LLM call happened to pick."""
+    others = [c for c in candidates if c["pathway_id"] != picked_id]
+    if not others:
+        return
+    names = await asyncio.gather(
+        *(fetch_pathway_name(c["pathway_id"]) for c in others),
+        return_exceptions=True,
+    )
+    for candidate, name in zip(others, names):
+        if not isinstance(name, str) or not name:
+            continue
+        cand_key = f"kegg:{candidate['pathway_id']}:{gene}"
+        if await get_cached("kegg_pathways", cand_key):
+            continue
+        await upsert_point(
+            "kegg_pathways",
+            cand_key,
+            text_to_embed=name,
+            payload={
+                "gene_symbol": gene,
+                "pathway_id": candidate["pathway_id"],
+                "pathway_name": name,
+                "source": "KEGG REST API",
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
+                "schema_version": SCHEMA_VERSION,
+            },
+        )
 
 
 async def _select_pathway_for_gene(
@@ -74,6 +110,18 @@ async def _select_pathway_for_gene(
             raise RuntimeError(
                 f"LLM picked invalid pathway_id {pathway_id} not in {valid_ids}"
             )
+        # ---- KB enrichment: ingest every other real KEGG link too, not
+        # just the one picked as the answer for *this* trait (mirrors the
+        # same fix in gene_mapper_agent -- a broadly-connected gene can
+        # have a dozen+ real pathway links, and only ever indexing the
+        # single LLM pick caps context_recall regardless of how good
+        # retrieval itself is). Kept inside the try/except so a failure
+        # here degrades to "just don't enrich" rather than losing the
+        # otherwise-successful pick.
+        try:
+            await _enrich_other_pathway_candidates(gene, candidates, picked_id=pathway_id)
+        except Exception as enrich_exc:
+            logger.warning("pathway KB enrichment failed for %s: %s", gene, enrich_exc)
         return PathwayEntry(
             pathway_id=pathway_id, pathway_name=pathway_name, reasoning=reasoning
         )

@@ -1,0 +1,180 @@
+# Part B — orchestration/escalation/parallel-fan-out scenarios.
+#
+# Unlike rag_test_cases.yaml (gene-by-gene retrieval quality), each case here
+# is scenario-by-scenario *graph* behavior: which nodes ran, in what order,
+# whether escalation fired against the right condition, and whether the two
+# levels of parallel fan-out actually overlapped in time.
+#
+# `fixtures` names map 1:1 onto the builder functions in agent_fixtures.py.
+# `null` means "don't patch this node" (only used where a case intentionally
+# needs the graph to short-circuit before that node would ever run — the
+# `must_not_be_called` guard fixtures make that assertion explicit instead of
+# relying on it never showing up in the trajectory).
+
+- id: case1_gene_list_present
+  description: >
+    Gene list already present in context -> check_gene_list skips escalation
+    and proceeds straight to gene_mapper.
+  input:
+    trait_name: fur growth
+    species_name: mouse
+    instruction: Which genes cause fur growth?
+    context: {gene_list: [FGF5, KRT71, HR]}
+  fixtures:
+    gene_mapper: gene_mapper_completed
+    pathways: pathways_completed
+    protein_data: protein_data_completed
+    literature_support: literature_completed
+    resolve_capability: null
+    write_explanation: fake_write_explanation
+  expect:
+    status: completed
+    target_agent: null
+    trajectory: [[check_gene_list], [gene_mapper], [functional_evidence, literature_support], [join_and_route], [aggregate]]
+    non_fatal_case: false
+    check_parallelism: [functional_evidence_vs_literature]
+
+- id: case2_no_gene_list
+  description: >
+    No gene list in context -> check_gene_list escalates to the Genome
+    Agent, with the correct target_agent and a non-empty prompt.
+  input:
+    trait_name: fur growth
+    species_name: mouse
+    instruction: Which genes cause fur growth?
+    context: {}
+  fixtures:
+    gene_mapper: gene_mapper_completed   # must NOT run — see must_not_be_called guard
+    pathways: pathways_completed         # must NOT run
+    protein_data: protein_data_completed # must NOT run
+    literature_support: literature_completed  # must NOT run
+    resolve_capability: {fixture: resolver_returns, target_agent: Genome Agent}
+    write_explanation: write_explanation_must_not_be_called
+  expect:
+    status: needs_agent
+    target_agent: Genome Agent
+    trajectory: [[check_gene_list], [escalate_genome_agent]]
+    non_fatal_case: false
+    check_parallelism: []
+    nodes_must_not_run: [gene_mapper, functional_evidence, literature_support, join_and_route, aggregate]
+
+- id: case3_fatal_gene_mapper_failure
+  description: >
+    Gene Mapper fails outright (simulated empty/garbage gene list) ->
+    join_and_route routes to failed -> END, no escalation, no explanation.
+  input:
+    trait_name: fur growth
+    species_name: mouse
+    instruction: Which genes cause fur growth?
+    context: {gene_list: [ZZZTOP]}
+  fixtures:
+    gene_mapper: gene_mapper_failed
+    pathways: pathways_failed
+    protein_data: protein_data_failed
+    literature_support: literature_completed
+    resolve_capability: resolver_must_not_be_called
+    write_explanation: write_explanation_must_not_be_called
+  expect:
+    status: failed
+    target_agent: null
+    trajectory: [[check_gene_list], [gene_mapper], [functional_evidence, literature_support], [join_and_route], [failed]]
+    non_fatal_case: false
+    check_parallelism: [functional_evidence_vs_literature]
+
+- id: case4_functional_evidence_partial_failure
+  description: >
+    Pathways errors but Protein Data succeeds -> merge_node treats this as
+    non-fatal (only both-failed is fatal) -> join_and_route still proceeds
+    to aggregate.
+  input:
+    trait_name: fur growth
+    species_name: mouse
+    instruction: Which genes cause fur growth?
+    context: {gene_list: [FGF5]}
+  fixtures:
+    gene_mapper: gene_mapper_completed
+    pathways: pathways_failed
+    protein_data: protein_data_completed
+    literature_support: literature_completed
+    resolve_capability: null
+    write_explanation: fake_write_explanation
+  expect:
+    status: completed
+    target_agent: null
+    trajectory: [[check_gene_list], [gene_mapper], [functional_evidence, literature_support], [join_and_route], [aggregate]]
+    non_fatal_case: true
+    check_parallelism: [functional_evidence_vs_literature, pathways_vs_protein_data]
+
+- id: case5_thin_literature_evidence
+  description: >
+    Literature evidence is thin -> escalate_literature_agent fires with the
+    right target, and this must NOT also block/fail the functional evidence
+    branch (its data must still be present in final state).
+  input:
+    trait_name: cold adaptation
+    species_name: mouse
+    instruction: Which genes drive cold adaptation?
+    context: {gene_list: [UCP1]}
+  fixtures:
+    gene_mapper: gene_mapper_completed
+    pathways: pathways_completed
+    protein_data: protein_data_completed
+    literature_support: literature_thin_needs_agent
+    resolve_capability: {fixture: resolver_returns, target_agent: Literature Agent}
+    write_explanation: write_explanation_must_not_be_called
+  expect:
+    status: needs_agent
+    target_agent: Literature Agent
+    trajectory: [[check_gene_list], [gene_mapper], [functional_evidence, literature_support], [join_and_route], [escalate_literature_agent]]
+    non_fatal_case: false
+    check_parallelism: [functional_evidence_vs_literature, pathways_vs_protein_data]
+    functional_evidence_data_present: true
+
+- id: case6_happy_path
+  description: >
+    Both top-level branches succeed normally -> aggregate produces a
+    complete, faithful explanation referencing every upstream branch.
+  input:
+    trait_name: fur growth
+    species_name: mouse
+    instruction: Which genes cause fur growth?
+    context: {gene_list: [FGF5, KRT71, HR]}
+  fixtures:
+    gene_mapper: gene_mapper_completed
+    pathways: pathways_completed
+    protein_data: protein_data_completed
+    literature_support: literature_completed
+    resolve_capability: null
+    write_explanation: fake_write_explanation
+  expect:
+    status: completed
+    target_agent: null
+    trajectory: [[check_gene_list], [gene_mapper], [functional_evidence, literature_support], [join_and_route], [aggregate]]
+    non_fatal_case: false
+    check_parallelism: [functional_evidence_vs_literature, pathways_vs_protein_data]
+    aggregate_faithfulness: true
+
+- id: case7_nested_parallelism
+  description: >
+    Purpose-built to check that pathways and protein_data genuinely run
+    concurrently *inside* functional_evidence, not just that the top-level
+    functional_evidence and literature_support branches do. Sleeps are
+    intentionally larger here to make the overlap assertion robust.
+  input:
+    trait_name: fur growth
+    species_name: mouse
+    instruction: Which genes cause fur growth?
+    context: {gene_list: [FGF5, KRT71]}
+  fixtures:
+    gene_mapper: gene_mapper_completed
+    pathways: {fixture: pathways_completed, sleep_seconds: 0.3}
+    protein_data: {fixture: protein_data_completed, sleep_seconds: 0.3}
+    literature_support: {fixture: literature_completed, sleep_seconds: 0.3}
+    resolve_capability: null
+    write_explanation: fake_write_explanation
+  expect:
+    status: completed
+    target_agent: null
+    trajectory: [[check_gene_list], [gene_mapper], [functional_evidence, literature_support], [join_and_route], [aggregate]]
+    non_fatal_case: false
+    check_parallelism: [functional_evidence_vs_literature, pathways_vs_protein_data]

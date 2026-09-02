@@ -1,0 +1,240 @@
+# Gold retrieval dataset for the four retrieval-facing nodes
+# (gene_mapper, pathways, protein_data, literature_support).
+#
+# This is NOT exhaustive ground truth (see Sprint 4 guide, Step 3) — it's a
+# partial list of terms/pathways/summary fragments we'd expect a correct
+# retrieval to surface, used for context recall/precision checks and for the
+# faithfulness/answer-relevancy checks in rag_evaluators.py.
+#
+# `category` records which failure mode(s) each gene targets (guide Step 3,
+# items 1-5). A gene can legitimately cover more than one category.
+#
+# species_name is threaded into GeneMapperInput; the other three subagent
+# inputs don't take species_name directly but do take trait_name + gene_list.
+
+- gene: TP53
+  species_name: "Homo sapiens"
+  trait_name: "tumor suppression"
+  category: [happy_path]
+  expected_go_terms:
+    - "DNA damage response"
+    - "apoptotic process"
+    - "negative regulation of cell population proliferation"
+  expected_pathways:
+    - "p53 signaling pathway"
+  expected_protein_summary_contains:
+    - "tumor suppressor"
+    - "transcription factor"
+  has_thin_literature_evidence: false
+  notes: >
+    Well-annotated, heavily studied gene. Sanity check that retrieval works
+    at all before looking at any failure-mode case.
+
+    expected_protein_summary_contains verified 2026-08-30 against the live
+    UniProt P04637 cc_function comment: both "tumor suppressor" ("Acts as a
+    tumor suppressor in many tumor types...") and "transcription factor"
+    ("Multifunctional transcription factor that induces cell cycle
+    arrest...") appear verbatim in the full comment. No change needed here
+    -- unlike HRAS below, this expectation was already faithful to the
+    source.
+
+- gene: BRCA1
+  species_name: "Homo sapiens"
+  trait_name: "DNA damage response"
+  category: [happy_path]
+  expected_go_terms:
+    - "DNA repair"
+    - "double-strand break repair"
+  expected_pathways:
+    - "Homologous recombination"
+  expected_protein_summary_contains:
+    - "tumor suppressor"
+    - "DNA repair"
+  has_thin_literature_evidence: false
+  notes: "Second happy-path gene from a different disease domain than the repo's existing hair/thermogenesis fixtures, to check retrieval generalizes."
+
+- gene: UCP1
+  species_name: "Mus musculus"
+  trait_name: "cold adaptation"
+  category: [happy_path, thin_literature]
+  expected_go_terms:
+    - "response to cold"
+    - "thermogenesis"
+    - "brown fat cell differentiation"
+  expected_pathways:
+    - "Thermogenesis"
+  expected_protein_summary_contains:
+    - "proton channel"
+    - "mitochondrial"
+  has_thin_literature_evidence: true
+  notes: >
+    Already in the repo's mock DB (subagents/*/mock.py) at happy-path
+    strength for GO/pathway/protein, but the literature mock only has 1
+    record for "cold adaptation" — exactly at _THIN_EVIDENCE_THRESHOLD, so
+    this is also the literature_support NEEDS_AGENT escalation case (not a
+    zero-evidence FAILED case — see TRPV3 below for that).
+
+- gene: FGF5
+  species_name: "Mus musculus"
+  trait_name: "fur growth"
+  category: [happy_path]
+  expected_go_terms:
+    - "hair follicle development"
+    - "regulation of hair cycle"
+  expected_pathways:
+    - "MAPK signaling pathway"
+  expected_protein_summary_contains:
+    - "fibroblast growth factor"
+    - "hair"
+  has_thin_literature_evidence: false
+  notes: "Already in repo mock DB; existing happy-path fixture."
+
+- gene: HR
+  species_name: "Mus musculus"
+  trait_name: "hair cycle regulation"
+  category: [sparse_go]
+  expected_go_terms:
+    - "hair cycle"
+  expected_pathways: []
+  expected_protein_summary_contains:
+    - "transcriptional corepressor"
+  has_thin_literature_evidence: true
+  notes: >
+    Real biology only supports 1-2 GO biological-process terms for this
+    gene — recall check should honestly surface "thin evidence" rather than
+    the system padding it out with unrelated terms.
+
+- gene: TRPV3
+  species_name: "Homo sapiens"
+  trait_name: "thermal sensation"
+  category: [sparse_go, zero_literature]
+  expected_go_terms:
+    - "detection of temperature stimulus involved in sensory perception of pain"
+    - "sensory perception of temperature stimulus"
+  expected_pathways: []
+  expected_protein_summary_contains:
+    - "thermosensitive"
+    - "cation channel"
+  has_thin_literature_evidence: true
+  notes: >
+    No entry in the literature mock DB at all -> expect
+    literature_support_agent status FAILED (zero evidence, no LLM call), NOT
+    a fabricated citation and NOT the NEEDS_AGENT escalation path that UCP1
+    takes. Also sparse on the pathway side (no well-annotated KEGG entry).
+
+- gene: PRDM16
+  species_name: "Mus musculus"
+  trait_name: "cold adaptation"
+  category: [rich_pathway_weak_protein]
+  expected_go_terms:
+    - "brown fat cell differentiation"
+    - "positive regulation of transcription by RNA polymerase II"
+  expected_pathways:
+    - "Thermogenesis"
+    - "PPAR signaling pathway"
+  expected_protein_summary_contains:
+    - "transcription factor"
+  has_thin_literature_evidence: false
+  notes: >
+    Rich pathway data (two well-characterized KEGG pathways) but a
+    comparatively generic protein function summary -- tests that
+    functional_evidence_status stays non-fatal when one side is thinner
+    than the other.
+
+- gene: KRT71
+  species_name: "Mus musculus"
+  trait_name: "fur growth"
+  category: [rich_protein_weak_pathway]
+  expected_go_terms:
+    - "hair cycle"
+    - "keratinization"
+  expected_pathways: []
+  expected_protein_summary_contains:
+    - "keratin"
+    - "hair shaft"
+  has_thin_literature_evidence: false
+  notes: "Mirror of PRDM16: well-characterized structural protein, no strong KEGG pathway hit expected."
+
+- gene: MC1R
+  species_name: "Homo sapiens"
+  trait_name: "coat color"
+  category: [rich_protein_weak_pathway]
+  expected_go_terms:
+    - "melanin biosynthetic process"
+    - "G protein-coupled receptor signaling pathway"
+  expected_pathways:
+    - "Melanogenesis"
+  expected_protein_summary_contains:
+    - "melanocortin"
+    - "G-protein coupled receptor"
+  has_thin_literature_evidence: false
+  notes: "Protein function is very well characterized; pathway retrieval for this specific gene tends to be shallow -- watch context precision here, not just recall."
+
+- gene: ASIP
+  species_name: "Mus musculus"
+  trait_name: "coat color agouti pattern"
+  category: [ambiguous_synonym, zero_literature]
+  expected_go_terms:
+    - "melanin biosynthetic process"
+    - "regulation of pigmentation"
+  expected_pathways:
+    - "Melanogenesis"
+  expected_protein_summary_contains:
+    - "agouti"
+    - "melanocortin"
+  has_thin_literature_evidence: true
+  synonyms: ["Agouti", "agouti signaling protein"]
+  notes: >
+    Gene is commonly referred to by the synonym "Agouti" in older
+    literature/PubMed titles -- tests whether gene_mapper/pathways/
+    protein_data retrieval keyed on the official symbol ASIP still finds
+    documents indexed under the synonym, and whether literature_support
+    correctly returns FAILED (not fabricated) when the KB has no records
+    under either name.
+
+- gene: MARCH1
+  species_name: "Homo sapiens"
+  trait_name: "immune regulation"
+  category: [ambiguous_synonym]
+  expected_go_terms:
+    - "protein ubiquitination"
+    - "regulation of MHC class II biosynthetic process"
+  expected_pathways: []
+  expected_protein_summary_contains:
+    - "E3 ubiquitin"
+    - "RING-CH"
+  has_thin_literature_evidence: false
+  notes: >
+    Classic ambiguous-symbol case: "MARCH1" collides with the calendar
+    month "March" + a digit in naive text/embedding matching. Precision
+    failure mode -- checks retrieval doesn't pull in unrelated documents
+    that merely mention "March".
+
+- gene: HRAS
+  species_name: "Homo sapiens"
+  trait_name: "cell growth regulation"
+  category: [ambiguous_synonym]
+  expected_go_terms:
+    - "Ras protein signal transduction"
+    - "positive regulation of cell population proliferation"
+  expected_pathways:
+    - "Ras signaling pathway"
+    - "MAPK signaling pathway"
+  expected_protein_summary_contains:
+    - "GTPase"
+    - "signal transducer"
+  has_thin_literature_evidence: false
+  notes: >
+    Symbol substring-collides with HR (the hairless gene, also in this
+    dataset). Precision check: gene_mapper/pathways/protein_data retrieval
+    for HRAS should not accidentally surface HR's documents or vice versa.
+
+    expected_protein_summary_contains verified 2026-08-30 against the live
+    UniProt P01112 cc_function comment ("Signal transducer in the Ras-MAPK
+    signaling pathway... Ras proteins bind GDP/GTP and possess intrinsic
+    GTPase activity... Recognized by LZTR1..."). The comment is short and
+    complete (single texts[] entry, nothing truncated) and never uses the
+    word "oncogene" anywhere -- the original "proto-oncogene" expectation
+    came from common-knowledge framing of HRAS (NCBI/GeneCards use that
+    term), not from UniProt's own phrasing, so it could never have been
+    satisfied by a faithful retrieval from this source.
