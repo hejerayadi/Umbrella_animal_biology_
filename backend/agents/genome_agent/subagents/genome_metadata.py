@@ -4,11 +4,8 @@ Retrieves genome size, chromosome count, and assembly level for a
 resolved assembly. Never cached - numeric, exact-match, cheap to
 refetch (see the consolidated store-or-not matrix).
 
-Output shape matches schemas.outputs.GenomeMetadataOutput
-(genome_size_bp, chromosome_count, karyotype, assembly_level) plus
-`gap_bases_bp`, derived here rather than declared on that model because
-the model is the shape the LLM path submits and the gap count is measured,
-not chosen. See `get_genome_metadata` for how it is derived. The old
+Output shape matches schemas.outputs.GenomeMetadataOutput exactly
+(genome_size_bp, chromosome_count, karyotype, assembly_level). The old
 mock version of this module also exposed get_all_genome_metadata(),
 used only by subagents/visualization.py's size_comparison scope to
 enumerate every species it knew about. NCBI has no "list every
@@ -92,7 +89,6 @@ async def get_genome_metadata(assembly_id: str) -> dict:
             "chromosome_count": None,
             "karyotype": None,
             "assembly_level": None,
-            "gap_bases_bp": None,
         }
 
     resp = await asyncio.to_thread(
@@ -125,50 +121,11 @@ async def get_genome_metadata(assembly_id: str) -> dict:
 
     assembly_level = assembly_info.get("assemblystatus") or stats.get("assembly-level")
 
-    # A scaffold- or contig-level assembly has not been organised into
-    # chromosomes, so NCBI's chromosome_count of 0 there means "not counted",
-    # not "zero chromosomes" - reported as None so no caller has to explain
-    # away a biologically impossible number. On a chromosome-level assembly a
-    # 0 is kept as-is: there it would be a real (if surprising) data point.
-    #
-    # `fetch_assembly_stats` below applies the same rule; the two functions
-    # return the same field and must agree on what it means.
-    if chromosome_count == 0 and str(assembly_level or "").lower() in ("scaffold", "contig"):
-        chromosome_count = None
-
-    # How many bases this assembly leaves unresolved. NCBI reports the span
-    # twice - `total_length` counts the Ns, `ungapped_length` does not - so
-    # their difference is the assembly's own statement of how much of itself
-    # is gap. Both numbers are already in the esummary parsed above, so this
-    # costs no extra request.
-    #
-    # This exists because `assembly_level` is a poor proxy for "has gaps".
-    # A Chromosome-level assembly is organised into chromosomes; it is not
-    # thereby finished. Measured: Mus musculus NT_111906.3 carries a single
-    # 50,000-base run of N inside a Chromosome-level assembly, and screening
-    # on level alone means no such assembly is ever offered for
-    # reconstruction. See `_INCOMPLETE_LEVELS` in
-    # workflows/nodes/genome_data_nodes.py for the consumer.
-    ungapped_length = stats.get("ungapped_length")
-    try:
-        ungapped_length = int(ungapped_length) if ungapped_length is not None else None
-    except ValueError:
-        ungapped_length = None
-
-    if genome_size_bp is None or ungapped_length is None or ungapped_length > genome_size_bp:
-        # Missing either number, or a pair that cannot both be right. An
-        # unknown gap count is reported as None rather than as 0, so a caller
-        # cannot read "we did not measure" as "there are no gaps".
-        gap_bases_bp = None
-    else:
-        gap_bases_bp = genome_size_bp - ungapped_length
-
     return {
         "genome_size_bp": genome_size_bp,
         "chromosome_count": chromosome_count,
         "karyotype": None,
         "assembly_level": assembly_level,
-        "gap_bases_bp": gap_bases_bp,
     }
 
 

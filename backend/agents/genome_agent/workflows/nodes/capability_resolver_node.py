@@ -31,6 +31,7 @@ async def capability_resolver_node(state: GenomeAgentState) -> dict[str, Any]:
     if decision.target_agent == "none":
         return {
             "errors": [
+                *state.errors,
                 f"No agent in the catalog can resolve: {prompt_to_target}",
             ],
             "visualization": {

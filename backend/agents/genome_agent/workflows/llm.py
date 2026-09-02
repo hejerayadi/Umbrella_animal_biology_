@@ -48,20 +48,25 @@ warnings.filterwarnings(
 
 logger = logging.getLogger(__name__)
 
-# meta/llama-3.3-70b-instruct is one of the most heavily-used models in
-# NVIDIA's free NIM catalog — "Worker local total request limit reached
-# (24/16)" is that specific model's shared worker pool being oversubscribed
-# by *everyone* on the free tier hitting it at once, not a limit tied to
-# this app or this key. Local pacing/backoff can't fix a pool that's
-# already 8 requests over capacity before we even get in line — the actual
-# lever is using a smaller, less contended model. meta/llama-3.1-8b-instruct
-# still supports tool calling (bind_tools) and gets noticeably less
-# free-tier traffic, at the cost of somewhat weaker reasoning on the
-# harder disambiguation cases — that's the "slight compromise" for
-# actually getting live LLM responses instead of skipping. Override with
-# NVIDIA_LLM_MODEL if you want the 70b back (e.g. once congestion clears,
-# or if you have a paid/higher-tier key).
-MODEL_NAME = os.getenv("NVIDIA_LLM_MODEL", "meta/llama-3.1-8b-instruct")
+# meta/llama-3.1-8b-instruct (and every other plain-instruct model this
+# used to fall back to — 3.3-70b, Mistral, Granite, Phi-4, Qwen3-Instruct,
+# etc.) now comes back 404/410 from NVIDIA NIM: those catalog entries were
+# deprecated, not just congested. This is the same dead-model wave
+# trait_discovery_agent hit (see its workflows/llm/client.py
+# FALLBACK_MODELS comment and probe_all_models.py) — of 46 candidates
+# probed there, only 5 were still alive, all hybrid-reasoning:
+#   nvidia/nemotron-3-nano-30b-a3b   <- smallest/fastest of the 5, used here
+#   nvidia/nemotron-3-super-120b-a12b
+#   nvidia/nemotron-3-ultra-550b-a55b
+#   openai/gpt-oss-20b
+#   openai/gpt-oss-120b
+# genome_agent doesn't have trait_discovery_agent's multi-model
+# FALLBACK_MODELS chain — it only ever calls one model — so this switches
+# straight to the smallest confirmed-alive one rather than the smallest
+# *congested-but-alive* one. Override with NVIDIA_LLM_MODEL if a bigger
+# model from that list is needed once a fallback chain is added here, or a
+# paid/higher-tier key changes the calculus.
+MODEL_NAME = os.getenv("NVIDIA_LLM_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
 
 _T = TypeVar("_T")
 
@@ -235,24 +240,28 @@ def _build_llm_client(api_key: str) -> BaseChatModel:
         api_key=api_key,
         temperature=0.2,
         top_p=0.7,
-        max_tokens=1024,
-        # The library defaults this to 60s, and it isn't just an HTTP
-        # timeout — on a 202 ("still processing") response it polls every
-        # 0.02s for up to `timeout` seconds before giving up (see
-        # `_wait()` in langchain_nvidia_ai_endpoints._common). Under
-        # free-tier saturation that's exactly the response you get, so
-        # the default means a single call can silently hang for up to a
-        # minute before our fallback logic ever gets a chance to run.
-        # Failing in a few seconds instead means the deterministic
-        # fallback kicks in fast, which is the whole point of having one.
-        # Bumped from 8s -> 12s: on a congested free-tier worker pool, calls
-        # that *do* eventually succeed often take longer than 8s to get a
-        # slot, and the old timeout was cutting those off before they had a
-        # chance. The cross-process flock in _llm_call_slot already bounds
-        # how many calls can be waiting at once, so a slightly longer
-        # per-call timeout doesn't reintroduce the pile-up risk the shorter
-        # value was originally guarding against.
-        timeout=float(os.getenv("NVIDIA_LLM_TIMEOUT", "12")),
+        # Bumped from 1024 -> 8192: MODEL_NAME is now a hybrid-reasoning
+        # model (see above), which spends a chunk of its output on visible
+        # chain-of-thought before ever reaching its actual tool-call/JSON
+        # answer. 1024 was sized for the old plain-instruct 8B model and
+        # would routinely get a reasoning completion cut off mid-thought,
+        # before it produced anything callers here could parse. Matches the
+        # same fix trait_discovery_agent made for the same model family
+        # (see its workflows/llm/client.py MAX_TOKENS comment).
+        max_tokens=int(os.getenv("NVIDIA_LLM_MAX_TOKENS", "8192")),
+        # Bumped from 12s -> 60s: the old short timeout was deliberately
+        # tuned to fail fast on a *congested* worker pool so the
+        # deterministic fallback kicked in quickly (see the removed comment
+        # below this one in git history). A hybrid-reasoning model doesn't
+        # just queue slower, it also *thinks* for several seconds before
+        # replying even once it has a worker slot — 12s was cutting off
+        # calls that were succeeding, not just ones that were stuck, which
+        # meant the LLM path barely ever completed. 60s matches the
+        # langchain_nvidia_ai_endpoints library default and gives the model
+        # real room to finish; the cross-process flock in _llm_call_slot
+        # still bounds how many calls can be waiting at once, so this
+        # doesn't reintroduce a pile-up risk.
+        timeout=float(os.getenv("NVIDIA_LLM_TIMEOUT", "60")),
     )
 
 

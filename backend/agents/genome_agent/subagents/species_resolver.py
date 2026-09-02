@@ -243,6 +243,32 @@ def _check_duplicate_tool_call(
     return False, None
 
 
+def _recover_text_submission(content: Any) -> dict | None:
+    """If a model wrote its final answer as plain JSON text instead of
+    calling the SpeciesResolverOutput tool, try to recover it.
+
+    Only recovers something that actually looks like a SpeciesResolverOutput
+    payload (a JSON object containing an "assembly_id" key, possibly null) —
+    anything else (a question, a plan, unrelated prose) is left alone and
+    falls through to the normal "no tool calls" handling.
+    """
+    if not isinstance(content, str):
+        return None
+    text = content.strip()
+    if not text:
+        return None
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(parsed, dict) or "assembly_id" not in parsed:
+        return None
+    return parsed
+
+
 async def resolve_species_llm(species_name: str) -> dict | None:
     """Use the LLM with tool calling to resolve a species to an assembly.
 
@@ -315,16 +341,18 @@ async def resolve_species_llm(species_name: str) -> dict | None:
     # after the loop below.
     step_trace: list[str] = []
 
-    # 8 steps, not 6: bumped again after switching MODEL_NAME to the
-    # smaller/less-contended meta/llama-3.1-8b-instruct (see workflows/llm.py
-    # for why). A smaller model is more prone to needing an extra retry
-    # round on a rejected/ungrounded submission or a redundant tool call
-    # before it converges on the same disambiguation work the 70b model did
-    # in fewer steps — this is part of the same compromise (weaker
-    # reasoning, so give it more room to still land correctly rather than
-    # exhausting the budget on a case like "elephant" that needs several
-    # genuine round trips even for a strong model).
-    max_steps = 8
+    # 10 steps, not 8: bumped again after live "elephant"/"bear" runs
+    # showed a real grounded answer can still need one more round after
+    # this loop's own confidence-vs-ambiguity guard rejects a too-confident
+    # recovered submission (see the no-tool-calls branch below) — that
+    # rejection consumes a step just like a normal one, so 8 wasn't enough
+    # headroom for a case that both needs disambiguation *and* triggers a
+    # rejection. Smaller/less-contended meta/llama-3.1-8b-instruct (see
+    # workflows/llm.py for why) is also more prone to needing an extra
+    # retry round on a rejected/ungrounded submission or a redundant tool
+    # call before it converges on the same disambiguation work a larger
+    # model does in fewer steps.
+    max_steps = 10
     for step in range(max_steps):
         try:
             response = await asyncio.to_thread(
@@ -352,8 +380,51 @@ async def resolve_species_llm(species_name: str) -> dict | None:
 
         tool_calls = response.tool_calls or []
         if not tool_calls:
-            step_trace.append(f"step {step + 1}: model returned no tool calls (content: {str(response.content)[:120]!r})")
-            continue
+            # Live runs on "elephant" and "bear" showed a model that had
+            # already done all the right search_taxonomy /
+            # search_assembly_by_taxid calls, found a real grounded
+            # assembly, and then just *typed* the SpeciesResolverOutput
+            # fields as plain JSON text instead of actually invoking the
+            # tool — discarding a correct answer and burning a step for
+            # nothing. If the content parses as a plausible submission,
+            # recover it and run it through the exact same validation path
+            # a real tool call would take (grounding / confidence /
+            # reasoning checks below), rather than throwing it away.
+            recovered = _recover_text_submission(response.content)
+            if recovered is not None:
+                step_trace.append(
+                    f"step {step + 1}: model answered in plain text instead of "
+                    "calling SpeciesResolverOutput — recovered it as a submission"
+                )
+                tool_calls = [
+                    {"id": f"recovered-{step}", "name": "SpeciesResolverOutput", "args": recovered}
+                ]
+            else:
+                step_trace.append(
+                    f"step {step + 1}: model returned no tool calls (content: {str(response.content)[:120]!r})"
+                )
+                # Without appending anything here, `messages` is completely
+                # unchanged, so the *next* bound.invoke(messages) call sees
+                # the exact same context and has nothing new to react to —
+                # a model that answers in prose once is then prone to just
+                # repeating itself step after step until max_steps is
+                # exhausted (seen live on "bear": two near-identical
+                # no-tool-call steps back to back). Recording what it said
+                # and explicitly telling it plain text isn't accepted gives
+                # it something to actually correct on the next step.
+                messages.append(AIMessage(content=str(response.content)))
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "That was plain text, not a tool call — it will not be "
+                            "scored. Call search_taxonomy, search_assembly_by_taxid, "
+                            "or SpeciesResolverOutput. If you were about to give a "
+                            "final answer, call the SpeciesResolverOutput tool with "
+                            "those exact field values instead of writing them as text."
+                        )
+                    )
+                )
+                continue
 
         messages.append(AIMessage(content="", tool_calls=tool_calls))
 
@@ -561,7 +632,24 @@ async def resolve_species_llm(species_name: str) -> dict | None:
                             # candidate, not a repeat of the same stall.
                             consecutive_assembly_guard_hits = 0
                         continue
-                    if not any_taxonomy_hit and len(taxonomy_queries_tried) < 2:
+                    # Reached only once every *known* candidate's assembly
+                    # lookup has already failed (the guard above didn't
+                    # fire) — but that doesn't mean reformulation was ever
+                    # tried. Live run on "bear": search_taxonomy("bear")
+                    # found exactly one candidate whose assembly lookup
+                    # came back empty, any_taxonomy_hit was True, and the
+                    # old `not any_taxonomy_hit and ...` condition here
+                    # never fired as a result — so a null submission was
+                    # accepted after a single query, even though the model
+                    # itself went on to try "Ursus americanus" and "brown
+                    # bear" unprompted a few steps later and would very
+                    # likely have found a real assembly if given the
+                    # chance. Checking query count alone (regardless of
+                    # whether that single query happened to return a hit)
+                    # is what actually captures "has reformulation been
+                    # tried" — the old check only detected the harder
+                    # zero-candidates case.
+                    if len(taxonomy_queries_tried) < 2:
                         consecutive_reformulation_guard_hits += 1
                         step_trace.append(
                             f"step {step + 1}: SpeciesResolverOutput rejected — "
@@ -569,9 +657,10 @@ async def resolve_species_llm(species_name: str) -> dict | None:
                             f"search_taxonomy attempt(s) (stall #{consecutive_reformulation_guard_hits})"
                         )
                         reformulation_text = (
-                            "Error: search_taxonomy returned no results, but you have "
-                            "not yet tried a reformulated query (fix a possible typo, "
-                            "drop a qualifier word, or try a synonym). Try ONE "
+                            "Error: no assembly was found yet, but you have not tried "
+                            "a reformulated search_taxonomy query (fix a possible typo, "
+                            "drop or add a qualifier like 'asian'/'african', try a "
+                            "synonym or a more specific species name). Try ONE "
                             "reformulated search_taxonomy call before submitting "
                             "assembly_id=null."
                         )

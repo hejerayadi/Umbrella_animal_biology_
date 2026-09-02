@@ -1,0 +1,373 @@
+# Genome Agent — Evaluation Dataset
+# Sprint 4 · 28 cases across 7 categories
+# Format mirrors the guide spec exactly.
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 1 — Happy path  (unambiguous species, complete assembly)
+# ─────────────────────────────────────────────────────────────────
+
+- id: happy_human_genome_size
+  input: "What is the genome size of humans?"
+  species_hint: "human"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: happy_path
+
+- id: happy_mouse_genes
+  input: "List the annotated genes for Mus musculus"
+  species_hint: "Mus musculus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name, gene_list]
+  expected_escalation: false
+  category: happy_path
+
+- id: happy_zebrafish_chromosomes
+  input: "How many chromosomes does a zebrafish have?"
+  species_hint: "zebrafish"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: happy_path
+
+- id: happy_chimpanzee_genome
+  input: "Tell me about the Pan troglodytes genome"
+  species_hint: "Pan troglodytes"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: happy_path
+
+- id: happy_chicken_gene_annotation
+  input: "What genes are annotated in the chicken genome?"
+  species_hint: "Gallus gallus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name, gene_list]
+  expected_escalation: false
+  category: happy_path
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 2 — Ambiguous species name
+# ─────────────────────────────────────────────────────────────────
+
+- id: ambiguous_panda
+  input: "What is the genome size of the panda?"
+  species_hint: "panda"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: ambiguous_species
+  notes: "Resolver should disambiguate giant panda (Ailuropoda melanoleuca) vs red panda"
+
+- id: ambiguous_elephant
+  input: "Show me the genome of an elephant"
+  species_hint: "elephant"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: ambiguous_species
+  notes: "African vs Asian elephant — resolver must pick one and log confidence < 1.0"
+
+- id: ambiguous_bear
+  input: "What genes does a bear have?"
+  species_hint: "bear"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name, gene_list]
+  expected_escalation: false
+  category: ambiguous_species
+  notes: "Polar, black, grizzly — any valid bear assembly is acceptable"
+
+- id: ambiguous_tiger
+  input: "How large is the tiger genome?"
+  species_hint: "tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: ambiguous_species
+  notes: "Amur vs Bengal tiger — either subspecies assembly is valid"
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 3 — Scaffold/Contig assembly → must escalate
+# ─────────────────────────────────────────────────────────────────
+
+- id: scaffold_amur_tiger
+  input: "What is the genome sequence of the Amur tiger?"
+  species_hint: "Amur tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  reconstruction_resolver, explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name]
+  expected_escalation: true
+  category: scaffold_escalation
+  notes: "GCF_000464555.1 is Scaffold level — must set reconstruction_need"
+
+- id: scaffold_snow_leopard
+  # NOTE: originally "Panthera uncia" (GCF_023721935.1). Live NCBI now
+  # reports that assembly as Chromosome-level (it was RefSeq-annotated at
+  # chromosome level as of the 2022 Armstrong et al. publication — this
+  # case predates that, or was written from stale data). Swapped species
+  # to Amur tiger (GCF_000464555.1), which the scaffold_amur_tiger case
+  # in this same file confirms is still Scaffold-level on live NCBI, so
+  # this case actually exercises the reconstruction path again.
+  input: "Give me the complete genome of the Amur tiger, including any gaps"
+  species_hint: "Amur tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  reconstruction_resolver, explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name]
+  expected_escalation: true
+  category: scaffold_escalation
+  notes: "Scaffold-level assembly should always trigger reconstruction path"
+
+- id: scaffold_gene_list_incomplete_assembly
+  input: "List all genes in the Amur tiger genome"
+  species_hint: "Amur tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  reconstruction_resolver, explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name]
+  expected_escalation: true
+  category: scaffold_escalation
+  notes: "Gene-list request on scaffold assembly — escalation fires even though user asked about genes, not assembly quality"
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 4 — Complete assembly → must NOT escalate (false-positive check)
+# ─────────────────────────────────────────────────────────────────
+
+- id: no_escalation_human
+  input: "Describe the human genome assembly"
+  species_hint: "Homo sapiens"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: no_false_escalation
+  notes: "GRCh38 is Chromosome level — reconstruction_need must be None"
+
+- id: no_escalation_mouse
+  input: "What is the genome assembly quality of Mus musculus?"
+  species_hint: "Mus musculus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: no_false_escalation
+  notes: "GRCm39 is Chromosome level — must not trigger reconstruction"
+
+- id: no_escalation_zebrafish
+  input: "How complete is the zebrafish reference genome?"
+  species_hint: "Danio rerio"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: no_false_escalation
+
+- id: no_escalation_chicken
+  input: "What is the chicken genome size in base pairs?"
+  species_hint: "Gallus gallus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: no_false_escalation
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 5 — Nonexistent / misspelled species → must hit error_end
+# ─────────────────────────────────────────────────────────────────
+
+- id: nonexistent_fabricated_species
+  input: "What is the genome of Draconus mythicus?"
+  species_hint: "Draconus mythicus"
+  expected_path: [query_router, species_resolver, error_end]
+  expected_tool_calls: [ncbi_taxonomy_search]
+  expected_output_fields: []
+  expected_escalation: false
+  expected_error_end: true
+  category: nonexistent_species
+  notes: "Fabricated binomial — must hit error_end, never return a genome"
+
+- id: nonexistent_typo_species
+  # NOTE: originally expected this one-letter typo ("tigriz" vs "tigris")
+  # to fail resolution entirely (expected_error_end: true). Live runs show
+  # the resolver does exactly what system-prompt Rule 3 tells it to do —
+  # reformulate once, find "Panthera tigris" via search_taxonomy, and
+  # ground a real assembly_id from search_assembly_by_taxid for it. That's
+  # correct, intended behavior (not a fabricated/ungrounded guess — see
+  # Rule 7), so forcing error_end here would be penalizing the resolver
+  # for successfully doing its job. Re-pointed this case at recognizing a
+  # successful reformulation instead, and moved it out of
+  # nonexistent_species (whose category median assumes ~1 tool call before
+  # error_end — a resolved case here would always trip check_efficiency)
+  # into ambiguous_species, where a multi-tool-call resolution is the norm.
+  input: "Genome of Panthera tigriz"
+  species_hint: "Panthera tigriz"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: [assembly_id, scientific_name, genome_size]
+  expected_escalation: false
+  category: ambiguous_species
+  notes: "One-letter typo — resolver must reformulate once and ground a real assembly, not fabricate or give up"
+
+- id: nonexistent_nonsense_string
+  input: "Tell me about the genome of xkcdwombat9999"
+  species_hint: "xkcdwombat9999"
+  expected_path: [query_router, species_resolver, error_end]
+  expected_tool_calls: [ncbi_taxonomy_search]
+  expected_output_fields: []
+  expected_escalation: false
+  expected_error_end: true
+  category: nonexistent_species
+
+- id: nonexistent_plausible_misspell
+  # NOTE: same situation as nonexistent_typo_species above (see its note)
+  # — this double-l typo in "musculus" is close enough that the resolver's
+  # own Rule 3 reformulation correctly recovers "Mus musculus" and grounds
+  # a real assembly, rather than fabricating or giving up. Re-pointed at
+  # that success and moved out of nonexistent_species for the same
+  # category-median reason (see nonexistent_typo_species's note).
+  input: "What genes does Mus muscullus have?"
+  species_hint: "Mus muscullus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name, gene_list]
+  expected_escalation: false
+  category: ambiguous_species
+  notes: "Double-l typo in musculus — resolver must reformulate once and ground a real assembly, not fabricate or give up"
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 6 — Gene-list request on incomplete assembly
+# ─────────────────────────────────────────────────────────────────
+
+- id: gene_list_scaffold_silent_escalation
+  input: "Which genes are responsible for coat color in the Amur tiger?"
+  species_hint: "Amur tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  reconstruction_resolver, explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name]
+  expected_escalation: true
+  category: gene_list_incomplete
+  notes: "User asked about genes, not assembly quality — escalation still fires silently"
+
+- id: gene_list_scaffold_trait_question
+  # NOTE: originally "snow leopard" (GCF_023721935.1), same stale-data
+  # issue as scaffold_snow_leopard above — live NCBI reports that
+  # assembly as Chromosome-level, not Scaffold. Swapped to Amur tiger,
+  # confirmed Scaffold-level on live NCBI.
+  input: "What genes control fur thickness in Amur tigers?"
+  species_hint: "Amur tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  reconstruction_resolver, explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name]
+  expected_escalation: true
+  category: gene_list_incomplete
+
+- id: gene_list_scaffold_annotation_explicit
+  input: "Get me all gene annotations for the Amur tiger assembly"
+  species_hint: "Amur tiger"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  reconstruction_resolver, explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup,
+                        ncbi_assembly_stats, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name, gene_list]
+  expected_escalation: true
+  category: gene_list_incomplete
+
+# ─────────────────────────────────────────────────────────────────
+# CATEGORY 7 — Simulated tool failure / degradation
+# ─────────────────────────────────────────────────────────────────
+
+- id: tool_failure_ncbi_timeout
+  input: "What is the genome size of the domestic cat?"
+  species_hint: "Felis catus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_assembly_stats]
+  expected_output_fields: []
+  expected_escalation: false
+  simulate_failure: {tool: ncbi_assembly_stats, error: TimeoutError}
+  expected_graceful_degradation: true
+  category: tool_failure
+  notes: "Metadata node should return errors list and continue, not crash the graph"
+
+- id: tool_failure_gene_annotation_timeout
+  input: "List genes in the domestic cat genome"
+  species_hint: "Felis catus"
+  expected_path: [query_router, species_resolver, parallel_kickoff,
+                  get_genome_metadata, get_gene_annotation, join_parallel,
+                  explanation_writer]
+  expected_tool_calls: [ncbi_taxonomy_search, ncbi_assembly_lookup, ncbi_gene_list]
+  expected_output_fields: [assembly_id, scientific_name]
+  expected_escalation: false
+  simulate_failure: {tool: ncbi_gene_list, error: TimeoutError}
+  expected_graceful_degradation: true
+  category: tool_failure
+  notes: "Gene annotation node should return empty gene_list, not an exception"
+
+- id: tool_failure_species_resolver_network_error
+  input: "What is the genome size of the African lion?"
+  species_hint: "Panthera leo"
+  expected_path: [query_router, species_resolver, error_end]
+  expected_tool_calls: [ncbi_taxonomy_search]
+  expected_output_fields: []
+  expected_escalation: false
+  simulate_failure: {tool: ncbi_taxonomy_search, error: ConnectionError}
+  expected_graceful_degradation: true
+  expected_error_end: true
+  category: tool_failure
+  notes: "If species resolver network call fails, must route to error_end gracefully"
