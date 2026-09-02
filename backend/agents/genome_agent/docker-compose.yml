@@ -18,6 +18,30 @@ services:
     working_dir: /app/project
     command: python -m genome_agent.scripts.run_orchestrator_scenarios
 
+  # Sprint 4 Part A: behavior-quality evaluation across the 26-case dataset
+  # in evaluation/test_cases.yaml. Writes a category-broken-down scorecard
+  # to evaluation/results/. NVIDIA_API_KEY optional — same fallback
+  # behavior as genome-agent-scenarios above. Requires outbound network
+  # access to eutils.ncbi.nlm.nih.gov (real NCBI calls, no mocking except
+  # the tool_failure category, which simulates failures in-process).
+  #
+  #   docker compose run --rm genome-agent-eval
+  #   docker compose run --rm genome-agent-eval --category scaffold_escalation
+  #   docker compose run --rm genome-agent-eval --case happy_human_genome_size
+  #   docker compose run --rm genome-agent-eval --fast   # list cases, no live calls
+  #   docker compose run --rm genome-agent-eval --verbose   # stream each node live as it fires
+  #   docker compose run --rm genome-agent-eval --verbose --case happy_human_genome_size
+  genome-agent-eval:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app/genome_agent
+      - ../../..:/app/project
+    working_dir: /app/project
+    entrypoint: ["python", "-m", "genome_agent.evaluation.run_eval"]
+    command: []
+
   # Optional: pytest suite (routing/capability-resolver unit tests +
   # live LLM smoke test, the latter auto-skips without NVIDIA_API_KEY).
   test:

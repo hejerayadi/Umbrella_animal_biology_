@@ -276,16 +276,25 @@ async def test_no_match_after_reformulation_returns_none():
     empty_results = []
 
     # LLM calls search_taxonomy twice (original + reformulated), both empty,
-    # then keeps returning no tool calls for the rest of the max_steps=8
+    # then keeps returning no tool calls for the rest of the max_steps=10
     # budget — the loop `continue`s on an empty response rather than
     # exiting early, so the mock must cover every step it will actually
     # take or the (n+1)th bound.invoke() call raises StopIteration.
+    #
+    # Empty content ("") is deliberate, not just "no tool calls": it also
+    # exercises _recover_text_submission's early-out for blank content,
+    # confirming the recovery path added for the "elephant"/"bear" live
+    # failures doesn't change this exhaustion case's behavior — a genuinely
+    # empty response must still fall through to the "give feedback and
+    # continue" branch, not be mistaken for a submission.
     tax_call_1 = _make_tool_call("search_taxonomy", {"query": "definitely not a real species xyzzy123"}, call_id="call_1")
     tax_call_2 = _make_tool_call("search_taxonomy", {"query": "xyzzy123 species"}, call_id="call_2")
 
     client.invoke.side_effect = [
         _make_llm_response([tax_call_1]),
         _make_llm_response([tax_call_2]),
+        _make_llm_response([]),
+        _make_llm_response([]),
         _make_llm_response([]),
         _make_llm_response([]),
         _make_llm_response([]),
@@ -299,4 +308,4 @@ async def test_no_match_after_reformulation_returns_none():
             result = await resolve_species_llm("definitely not a real species xyzzy123")
 
     assert result is None
-    assert client.invoke.call_count == 8
+    assert client.invoke.call_count == 10

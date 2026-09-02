@@ -36,6 +36,7 @@ async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]
     except Exception as exc:
         return {
             "errors": [
+                *state.errors,
                 f"generate_visualization raised an exception: {exc}",
             ],
             "visualization": None,
@@ -45,6 +46,7 @@ async def generate_visualization_node(state: GenomeAgentState) -> dict[str, Any]
         return {
             "visualization": result,
             "errors": [
+                *state.errors,
                 f"Visualization failed with status FAILED for scope '{scope}'.",
             ],
         }

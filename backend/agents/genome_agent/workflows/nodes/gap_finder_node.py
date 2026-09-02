@@ -28,22 +28,14 @@ async def find_target_gaps_node(state: GenomeAgentState) -> dict[str, Any]:
     except Exception as exc:
         return {
             "errors": [
+                *state.errors,
                 f"find_target_gaps raised an exception: {exc}",
             ],
             "sequence_accession": None,
             "target_gaps": [],
-            "gap_selection": None,
         }
 
     return {
         "sequence_accession": result.get("sequence_accession"),
         "target_gaps": result.get("target_gaps") or [],
-        # Kept together with the gaps so the handoff can say how many were
-        # found versus how many are being sent.
-        "gap_selection": {
-            "gaps_found": result.get("gaps_found"),
-            "gaps_over_floor": result.get("gaps_over_floor"),
-            "gaps_selected": result.get("gaps_selected"),
-            "selection_policy": result.get("selection_policy"),
-        },
     }
