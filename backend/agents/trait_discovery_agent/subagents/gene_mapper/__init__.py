@@ -20,6 +20,7 @@ attributes actually changes what gene_mapper_agent() calls.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -110,7 +111,7 @@ async def gene_mapper_agent(input: GeneMapperInput) -> GeneMapperOutput:
                         f"LLM picked invalid go_id {go_id} not in {valid_ids}"
                     )
                 logger.info("LLM picked %s (%s) for %s: %s", go_id, go_name, gene, reasoning)
-                entry = GOAnnotation(gene_symbol=gene, go_id=go_id, go_name=go_name)
+                entry = GOAnnotation(gene_symbol=gene, go_id=go_id, go_name=go_name, reasoning=reasoning)
             except Exception as exc:
                 # ---- LLM/NIM unavailable or invalid → deterministic fallback (§9) ----
                 logger.warning(
@@ -121,6 +122,42 @@ async def gene_mapper_agent(input: GeneMapperInput) -> GeneMapperOutput:
                     unmatched.append(gene)
                     continue
                 entry = fallback
+
+        # ---- KB enrichment: ingest every other real QuickGO candidate too,
+        # not just the one the LLM picked as the answer for *this* trait
+        # (§ retrieval-quality fix). Deliberately run BEFORE the winner's own
+        # cache check below: once a gene's winning term is cached, the old
+        # code's `continue` on that cache hit meant this block could never
+        # run again for that gene on any subsequent call, permanently
+        # freezing go_annotations at one term/gene regardless of later code
+        # changes. Per-candidate caching inside this loop (get_cached on
+        # cand_key) still makes it a no-op once a given *other* candidate is
+        # itself indexed, so this stays cheap on repeat runs.
+        if len(candidates) > 1:
+            others = [c for c in candidates if c["go_id"] != entry.go_id]
+            other_names = await asyncio.gather(
+                *(resolve_go_term_name(c["go_id"]) for c in others),
+                return_exceptions=True,
+            )
+            for candidate, name in zip(others, other_names):
+                if not isinstance(name, str) or not name:
+                    continue
+                cand_key = f"go:{candidate['go_id']}:{gene}"
+                if await get_cached("go_annotations", cand_key):
+                    continue
+                await upsert_point(
+                    "go_annotations",
+                    cand_key,
+                    text_to_embed=name,
+                    payload={
+                        "gene_symbol": gene,
+                        "go_id": candidate["go_id"],
+                        "go_name": name,
+                        "source": "GO REST API (QuickGO)",
+                        "ingested_at": datetime.now(timezone.utc).isoformat(),
+                        "schema_version": SCHEMA_VERSION,
+                    },
+                )
 
         # ---- cache layer (§6) ----
         dedup_key = f"go:{entry.go_id}:{entry.gene_symbol}"

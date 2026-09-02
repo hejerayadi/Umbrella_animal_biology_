@@ -7,6 +7,7 @@ class GOAnnotation:
     gene_symbol: str
     go_id: str
     go_name: str
+    reasoning: str = ""          # NEW — why this GO term was picked (mirrors PathwayEntry)
 
 @dataclass
 class GeneMapperOutput:

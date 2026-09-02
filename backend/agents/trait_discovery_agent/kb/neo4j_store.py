@@ -28,6 +28,16 @@ except ModuleNotFoundError:
     AsyncGraphDatabase = Any  # type: ignore[assignment]
     _NEO4J_AVAILABLE = False
 
+try:
+    from langsmith import traceable
+except ModuleNotFoundError:
+    def traceable(*_args: Any, **_kwargs: Any):  # type: ignore[no-redef]
+        """No-op fallback so the graph write still works if langsmith isn't
+        installed -- mirrors the same fallback in kb/retrieval.py."""
+        def _decorator(fn):
+            return fn
+        return _decorator
+
 logger = logging.getLogger(__name__)
 
 _driver: Optional[Any] = None
@@ -68,6 +78,18 @@ def get_driver() -> Any:
     return _driver
 
 
+@traceable(
+    run_type="tool",
+    name="neo4j_upsert_trait_gene_relationship",
+    # Static metadata, not an input: the Cypher text is a module-level
+    # constant (never built per-call), so this is the only way for the
+    # actual MERGE statement being run to show up in the span rather than
+    # just its scalar bind params (trait_name/gene_symbol/pmid, which are
+    # already visible as ordinary function-argument inputs). Sprint 4 Part C
+    # step 4 asks for "the Cypher query or relationship being fetched" to be
+    # visible per span -- this is the query half of that.
+    metadata={"cypher": _MERGE_TRAIT_GENE_RELATIONSHIP},
+)
 async def upsert_trait_gene_relationship(
     trait_name: str, gene_symbol: str, pmid: str
 ) -> bool:

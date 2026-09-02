@@ -12,6 +12,17 @@ except ModuleNotFoundError:
     FieldCondition = Filter = MatchAny = MatchValue = Range = Any  # type: ignore[assignment]
     _QDRANT_AVAILABLE = False
 
+try:
+    from langsmith import traceable
+except ModuleNotFoundError:
+    def traceable(*_args: Any, **_kwargs: Any):  # type: ignore[no-redef]
+        """No-op fallback so retrieval works even if langsmith isn't installed
+        (e.g. a slim deploy environment) -- tracing is purely observability,
+        never a hard dependency for retrieval to function."""
+        def _decorator(fn):
+            return fn
+        return _decorator
+
 from kb.embeddings import embed_text
 from kb.qdrant_store import COLLECTIONS, get_client
 
@@ -75,6 +86,30 @@ def build_filter(**conditions: Any) -> Optional["Filter"]:
     return Filter(must=must) if must else None
 
 
+def _summarize_semantic_search_output(results: list["RetrievedDocument"]) -> dict[str, Any]:
+    """Shapes what LangSmith logs for this span's outputs (Sprint 4 Part C,
+    step 4.3): the collection name is already visible in the span's inputs
+    since it's a plain function argument, but the raw list[RetrievedDocument]
+    return value doesn't show the chunk count or per-doc gene_symbol/score at
+    a glance without opening every item, which is exactly what the
+    trace-based spot-check in step 5.1 needs to be fast. This only affects
+    what's recorded in the trace -- the function's actual return value to
+    its caller is untouched.
+    """
+    return {
+        "num_results": len(results),
+        "results": [
+            {
+                "id": doc.id,
+                "score": doc.score,
+                "gene_symbol": doc.payload.get("gene_symbol"),
+            }
+            for doc in results
+        ],
+    }
+
+
+@traceable(run_type="retriever", name="qdrant_semantic_search", process_outputs=_summarize_semantic_search_output)
 async def semantic_search(
     collection: str,
     query_text: str,

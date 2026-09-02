@@ -127,6 +127,49 @@ async def test_legitimate_final_answer_is_not_mistaken_for_a_tool_call(monkeypat
     assert tool_call_log == []
 
 
+@pytest.mark.asyncio
+async def test_repeated_identical_tool_call_is_not_reinvoked(monkeypatch):
+    """Regression for MC1R/HRAS: a model that calls the same (name, args)
+    tool twice used to burn a full turn re-running it for the same result,
+    which is exactly what exhausts MAX_TOOL_TURNS on a model that gets
+    stuck re-checking rather than answering. The second, identical call
+    should be answered from the logged result -- with a nudge to stop
+    calling and answer -- instead of invoking the tool again."""
+    responses = [
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "counting_tool", "args": {"x": "P04637"}, "id": "call_1"}],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "counting_tool", "args": {"x": "P04637"}, "id": "call_2"}],
+        ),
+        AIMessage(
+            content='{"source_accession": "P04637", "reasoning": "confirmed"}',
+            tool_calls=[],
+        ),
+    ]
+    calls_to_tool = []
+
+    @tool
+    async def counting_tool(x: str) -> str:
+        """Counts invocations so the test can prove it wasn't called twice."""
+        calls_to_tool.append(x)
+        return f"resolved:{x}"
+
+    _patch_llm(monkeypatch, _ScriptedLLM(responses))
+
+    parsed, tool_call_log = await tool_loop.invoke_tool_loop_with_fallback(
+        "system", "human", [counting_tool], max_turns=3,
+    )
+
+    assert parsed == {"source_accession": "P04637", "reasoning": "confirmed"}
+    assert calls_to_tool == ["P04637"]  # the tool itself only ever ran once
+    assert tool_call_log == [
+        {"name": "counting_tool", "args": {"x": "P04637"}, "result": "resolved:P04637"}
+    ]
+
+
 def test_as_disguised_tool_call_helper_shapes():
     tools_by_name = {"fake_tool_a": fake_tool_a}
 
