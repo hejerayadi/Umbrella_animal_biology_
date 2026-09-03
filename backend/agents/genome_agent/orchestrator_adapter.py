@@ -100,6 +100,40 @@ def _visualization_summary(visualization: dict[str, Any]) -> dict[str, Any]:
             summary[key] = visualization[key]
     return summary
 
+
+def _is_reconstruction_target(target: str | None) -> bool:
+    """Recognize both names used for the Reconstruction Agent."""
+    return (target or "").strip().casefold() in {"reconstruction", "reconstruction agent"}
+
+
+def _completed_output(state: GenomeAgentState) -> dict[str, Any]:
+    """Build the Genome Agent response for a completed workflow."""
+    output: dict[str, Any] = {
+        "genome": _summarise(state),
+        "assembly_id": state.assembly_id,
+    }
+
+    if state.species:
+        output["species_record"] = state.species
+    if state.metadata:
+        output["genome_metadata"] = state.metadata
+
+    annotation = state.annotation or {}
+    if annotation.get("gene_list"):
+        output["gene_list"] = annotation["gene_list"]
+    if annotation.get("gene_table"):
+        output["gene_table"] = annotation["gene_table"]
+    if state.explanation:
+        output["explanation"] = state.explanation
+    if state.errors:
+        output["warnings"] = list(state.errors)
+
+    if state.visualization:
+        output["visualization"] = _visualization_summary(state.visualization)
+
+    return output
+
+
 def to_result(state: GenomeAgentState) -> AgentResult:
     """Map the orchestrator's final state onto the platform's AgentResult."""
 
@@ -116,33 +150,8 @@ def to_result(state: GenomeAgentState) -> AgentResult:
             ),
         )
 
-    output: dict[str, Any] = {
-        "genome": _summarise(state),
-        "assembly_id": state.assembly_id,
-    }
-
-    if state.species:
-        output["species_record"] = state.species
-    if state.metadata:
-        output["genome_metadata"] = state.metadata
-
-    annotation = state.annotation or {}
-    if annotation.get("gene_list"):
-        # The key the Trait Discovery Agent waits for. Real NCBI gene symbols
-        # rather than a fixed list - this is the whole point of running the
-        # real agent instead of the mock.
-        output["gene_list"] = annotation["gene_list"]
-    if annotation.get("gene_table"):
-        output["gene_table"] = annotation["gene_table"]
-    if state.explanation:
-        output["explanation"] = state.explanation
-    if state.errors:
-        # Non-fatal: a partial answer with a note beats no answer at all.
-        output["warnings"] = list(state.errors)
-
+    output = _completed_output(state)
     visualization = state.visualization
-    if visualization:
-        output["visualization"] = _visualization_summary(visualization)
 
     # Reconstruction handoff takes priority over the visualization handoff
     # below: get_genome_metadata_node (workflows/nodes/genome_data_nodes.py)
@@ -234,4 +243,27 @@ class OrchestratorGenomeAgent:
             species_name=species_name,
             visualization_scope=_INFER_SCOPE,
         )
-        return to_result(state)
+        result = to_result(state)
+
+        # Reconstruction cannot change the assembly level held by NCBI. When
+        # the workflow returns with Reconstruction output already in context,
+        # do not send the same scaffold/contig handoff a second time.
+        context = request.context or {}
+        already_reconstructed = any(
+            key in context
+            for key in ("reconstruction", "reconstruction_summary", "reconstruction_best_fill")
+        )
+        if (
+            result.status is AgentStatus.NEEDS_AGENT
+            and _is_reconstruction_target(result.target_agent)
+            and already_reconstructed
+        ):
+            output = _completed_output(state)
+            output["reconstruction_note"] = (
+                "The Reconstruction Agent already examined this assembly's "
+                "unresolved regions in this workflow; the figures below are "
+                "from the draft assembly."
+            )
+            return AgentResult(status=AgentStatus.COMPLETED, output=output)
+
+        return result
