@@ -12,8 +12,30 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from ... import events
 from ...responder import Responder
 from ...state import WorkflowState
+
+
+def _write(responder: Responder, stream_method: str, fallback_method: str, **kwargs: Any) -> str:
+    """Produce the final answer, streaming it out to any listener as it comes.
+
+    Falls back to the plain blocking call when the responder has no streaming
+    method. That is not defensive padding: `build_orchestrator_graph` accepts
+    an injected responder, and the test doubles that use it implement only
+    `answer_directly` and `synthesize`. Nothing listens to events in those
+    tests either, so both halves of this stay honest.
+    """
+
+    stream = getattr(responder, stream_method, None)
+    if stream is None:
+        return str(getattr(responder, fallback_method)(**kwargs))
+
+    chunks: list[str] = []
+    for chunk in stream(**kwargs):
+        chunks.append(chunk)
+        events.answer_delta(chunk)
+    return "".join(chunks)
 
 
 def make_direct_answer_node(
@@ -26,7 +48,14 @@ def make_direct_answer_node(
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
-        answer = responder.answer_directly(state.user_query)
+        step_id = events.step_started("Responder", "Replying")
+        answer = _write(
+            responder,
+            "answer_directly_stream",
+            "answer_directly",
+            user_query=state.user_query,
+        )
+        events.step_finished(step_id, "Responder", "Replied directly")
         return {
             "final_answer": answer,
             "execution_history": [
@@ -69,12 +98,19 @@ def make_responder_node(
 
         failure = "; ".join(failures) if failures else None
 
-        answer = responder.synthesize(
+        step_id = events.step_started(
+            "Responder", "Writing the answer from what the agents found"
+        )
+        answer = _write(
+            responder,
+            "synthesize_stream",
+            "synthesize",
             user_query=state.user_query,
             context=state.context,
             execution_history=state.execution_history,
             failure=failure,
         )
+        events.step_finished(step_id, "Responder", "Answer ready")
         return {
             "final_answer": answer,
             "execution_history": [

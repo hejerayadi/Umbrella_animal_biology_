@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from ... import events
 from ...planner import Planner
 from ...state import WorkflowState
 
@@ -22,10 +23,28 @@ def make_planner_node(planner: Planner) -> Callable[[WorkflowState], dict[str, A
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
+        step_id = events.step_started("Planner", "Reading your question and picking an agent")
+
         # Ask the planner: "does this even need an agent, and if so, who
         # should go first?" The image flag travels separately from the query
         # because the planner reads text and the attachment is not in it.
         plan = planner.plan(state.user_query, has_image=state.has_image)
+
+        # The planner is already required to justify itself in one sentence
+        # (`_PlannerOutput.reasoning`), and until now that sentence was written
+        # to the server log and thrown away. It is the closest thing the
+        # orchestrator has to a thought, so it goes to the user.
+        events.thought(step_id, getattr(plan, "reasoning", "") or "")
+        if plan.initial_agent is None:
+            chosen = "No research agent needed for this message"
+        elif plan.follow_up_agent:
+            chosen = (
+                f"Starting with the {events.agent_label(plan.initial_agent)}, "
+                f"then the {events.agent_label(plan.follow_up_agent)}"
+            )
+        else:
+            chosen = f"Starting with the {events.agent_label(plan.initial_agent)}"
+        events.step_finished(step_id, "Planner", chosen)
 
         # `initial_agent` is None when the message needs no research agent -
         # the router sends those straight to the direct-answer node.

@@ -20,6 +20,7 @@ function ConversationView() {
     conversations,
     messagesFor,
     activitiesFor,
+    liveAnswerFor,
     sendMessage,
     isThinking,
     streamingMessageId,
@@ -30,11 +31,23 @@ function ConversationView() {
   const conversation = conversations.find((c) => c.id === conversationId);
   const messages = messagesFor(conversationId);
   const activities = activitiesFor(conversationId);
+  const liveAnswer = liveAnswerFor(conversationId);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // A run in progress belongs with the reply it is about to become, so the
+  // commentary is shown in the thread while it is live and only falls back to
+  // the pinned panel above the composer once it is history.
+  const live = isThinking || liveAnswer !== null;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, isThinking, conversationId]);
+
+  // The answer arrives token by token; keep the newest line in view as it
+  // grows, exactly as if the user were scrolling along with it.
+  useEffect(() => {
+    if (liveAnswer !== null) bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [liveAnswer]);
 
   if (hydrated && !conversation) {
     return (
@@ -89,6 +102,26 @@ function ConversationView() {
                   streaming={message.id === streamingMessageId}
                 />
               ))}
+
+              {live && (
+                <div className="space-y-3">
+                  <AgentThinkingPanel activities={activities} isThinking={isThinking} />
+                  {liveAnswer !== null && (
+                    <ChatMessage
+                      message={{
+                        id: "live",
+                        conversationId,
+                        sender: "assistant",
+                        // Already arriving a token at a time, so the
+                        // typewriter effect stays off - see `streaming`.
+                        content: liveAnswer,
+                        timestamp: new Date().toISOString(),
+                      }}
+                      userName={user?.full_name ?? "Researcher"}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div ref={bottomRef} className="h-2" />
@@ -97,10 +130,13 @@ function ConversationView() {
 
       <div className="shrink-0 border-t border-border bg-background/90 px-5 py-4 backdrop-blur">
         <div className="mx-auto max-w-3xl space-y-2">
-          <AgentThinkingPanel activities={activities} isThinking={isThinking} />
+          {!live && <AgentThinkingPanel activities={activities} isThinking={false} />}
           <ChatComposer
             focusKey={conversationId}
-            disabled={isThinking}
+            // `live`, not `isThinking`: thinking ends at the first token of the
+            // answer, and a second question sent while that answer is still
+            // being written would take over the stream it is arriving on.
+            disabled={live}
             onSend={(value, image) => sendMessage(conversationId, value, image)}
           />
           <p className="text-center text-[0.7rem] text-muted-foreground">

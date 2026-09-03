@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ....registry import resolve_agent_name
+from ... import events
 from ...capability_resolver import CapabilityResolver
 from ...state import WorkflowState
 
@@ -31,6 +32,11 @@ def make_resolver_node(
         assert state.current_agent is not None
 
         request = result.prompt_to_target_agent or state.user_query
+        step_id = events.step_started(
+            "Resolver",
+            f"Working out who can help the {events.agent_label(state.current_agent)}",
+        )
+        events.thought(step_id, request)
 
         # A worker that pauses usually already knows who it needs, and says so
         # in `target_agent`. Take that answer when it names a real agent.
@@ -57,6 +63,8 @@ def make_resolver_node(
                 prompt_to_target_agent=request,
             )
             step = f"Resolver -> {target}"
+
+        events.step_finished(step_id, "Resolver", f"Bringing in the {events.agent_label(target)}")
 
         updates: dict[str, Any] = {
             "resolved_agent": target,

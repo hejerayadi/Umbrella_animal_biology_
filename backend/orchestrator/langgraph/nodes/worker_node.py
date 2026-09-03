@@ -27,6 +27,7 @@ from uuid import uuid4
 import httpx
 
 from ....image_store import IMAGE_STORE
+from ... import events
 from ...schema import AgentResult, AgentStatus
 from ...state import WorkflowState
 
@@ -106,6 +107,22 @@ def _context_for(agent_name: str, context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# An agent's own words are shown to the user under the step that produced
+# them. A full result dict is not prose - it can be a whole gene table - so
+# only the opening of it is worth showing, and the answer itself follows
+# minutes later anyway.
+_MAX_THOUGHT_CHARS = 240
+
+
+def _summarise(value: Any) -> str:
+    """One short line of an agent's output, for display under its step."""
+
+    text = " ".join(str(value or "").split())
+    if len(text) <= _MAX_THOUGHT_CHARS:
+        return text
+    return f"{text[:_MAX_THOUGHT_CHARS]}…"
+
+
 def _call_agent(
     agent_name: str,
     base_url: str,
@@ -183,6 +200,7 @@ def make_worker_node(
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
+        label = events.agent_label(agent_name)
         retries_used = state.continue_retry_counts.get(agent_name, 0)
         if retries_used:
             delay = retry_delays[retries_used - 1]
@@ -193,7 +211,16 @@ def make_worker_node(
                 len(retry_delays),
                 delay,
             )
+            # Emitted before the sleep, not after: the whole point is that the
+            # user can see why nothing is happening for the next few seconds.
+            step_id = events.step_started(
+                agent_name,
+                f"Waiting {delay:.0f}s, then asking the {label} again "
+                f"(retry {retries_used} of {len(retry_delays)})",
+            )
             sleep(delay)
+        else:
+            step_id = events.step_started(agent_name, f"Asking the {label}")
 
         # The one place in the whole orchestrator that talks to an agent.
         result = _call_agent(agent_name, base_url, state, client)
@@ -261,6 +288,17 @@ def make_worker_node(
             _logger.info("[%s] failed -> %r", agent_name, result.output)
         else:
             _logger.info("[%s] %s -> %r", agent_name, status, result.output)
+
+        if status == "needs_agent":
+            events.thought(step_id, _summarise(result.prompt_to_target_agent))
+            events.step_finished(step_id, agent_name, f"The {label} needs help from another agent")
+        elif status == "failed":
+            events.thought(step_id, _summarise(result.output))
+            events.step_finished(step_id, agent_name, f"The {label} could not finish", failed=True)
+        elif status == "continue":
+            events.step_finished(step_id, agent_name, f"The {label} is not done yet")
+        else:
+            events.step_finished(step_id, agent_name, f"The {label} finished")
 
         # Start building the state updates every worker produces, no matter
         # its status: which agent just ran, what it returned, and a log entry.
