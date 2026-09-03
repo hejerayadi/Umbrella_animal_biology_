@@ -54,6 +54,38 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   return (await apiRequestWithMeta<T>(path, init)).data;
 }
 
+/**
+ * Same auth, CSRF and cookie handling as `apiRequest`, but hands back the raw
+ * `Response` with its body still unread.
+ *
+ * `apiRequest` awaits `response.json()`, which for a streaming endpoint means
+ * waiting for the last byte - exactly what a stream exists to avoid. Callers
+ * read `response.body` themselves.
+ *
+ * An error response is still JSON, and still in the standard envelope, so it
+ * is unwrapped here and thrown the same way `apiRequest` would.
+ */
+export async function apiStream(path: string, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const headers = new Headers(init.headers);
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && csrfToken) {
+    headers.set("X-CSRF-Token", csrfToken);
+  }
+  const response = await fetch(apiUrl(path), { ...init, headers, credentials: "include" });
+  if (!response.ok) {
+    const envelope = (await response.json().catch(() => null)) as ApiEnvelope<never> | null;
+    throw new ApiClientError(
+      envelope?.error?.detail ?? `Request failed (${response.status})`,
+      response.status,
+      envelope?.error?.code ?? "HTTP_ERROR",
+    );
+  }
+  return response;
+}
+
 export async function apiRequestWithMeta<T>(
   path: string,
   init: RequestInit = {},

@@ -120,8 +120,11 @@ class ReconstructionService:
         )
 
         record = await self._resolve_record(request)
+        # The placeholder for an unnamed target belongs to `profile_for`, which
+        # now also resolves a name into a tax id. Passing the placeholder from
+        # here would send it to a taxonomy search that can only ever miss.
         profile = await self._taxonomy.profile_for(
-            request.scientific_name or record.organism or "unknown organism",
+            request.scientific_name or record.organism or "",
             record.tax_id,
             record.molecule_type,
         )

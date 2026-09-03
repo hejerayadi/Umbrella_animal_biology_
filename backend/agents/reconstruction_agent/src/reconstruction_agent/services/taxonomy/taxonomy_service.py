@@ -33,15 +33,29 @@ class TaxonomyService:
 
         Carries biology only. What collection to search is a separate decision,
         made later and from this.
+
+        A name without a tax id is resolved here rather than left unresolved.
+        That case is not exotic: it is every caller who supplied a sequence
+        instead of an accession, because nothing fetched a record that could
+        carry the id. Leaving it None costs more than a missing label - the
+        lineage stays empty, no taxonomic scope can be derived from it, and the
+        homology round returns before dispatching a single search. The species
+        the caller named would reach the response as a display string and
+        change nothing about what was searched.
         """
         from reconstruction_agent.domain.enums import MoleculeType
+
+        if tax_id is None and scientific_name:
+            node = await self._client.resolve_name(scientific_name)
+            if node is not None:
+                tax_id = node.tax_id
 
         lineage: tuple[TaxonNode, ...] = ()
         if tax_id is not None:
             lineage = await self._client.lineage(tax_id)
 
         return TargetProfile(
-            scientific_name=scientific_name,
+            scientific_name=scientific_name or "unknown organism",
             tax_id=tax_id,
             taxonomy_lineage=lineage,
             taxonomy_ranks={node.rank: node.name for node in lineage if node.rank != "no rank"},

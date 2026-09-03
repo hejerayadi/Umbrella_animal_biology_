@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from ... import events
 from ...extractor import Extractor
 from ...state import WorkflowState
 
@@ -40,9 +41,15 @@ def make_extractor_node(
     """
 
     def _node(state: WorkflowState) -> dict[str, Any]:
+        step_id = events.step_started(
+            "Extractor", "Picking out the species and terms you named"
+        )
         facts = extractor.extract(state.user_query)
 
         if not facts:
+            events.step_finished(
+                step_id, "Extractor", "Nothing specific named in the message"
+            )
             # Nothing named in the message. Leave context untouched rather
             # than writing empty keys - agents check for a key's presence.
             return {
@@ -53,6 +60,7 @@ def make_extractor_node(
             }
 
         step = ", ".join(f"{key}={_abbreviate(value)}" for key, value in facts.items())
+        events.step_finished(step_id, "Extractor", f"Found {step}")
         return {
             # Merge, never replace: same pattern the worker node uses when an
             # agent completes, so nothing already in context is lost.

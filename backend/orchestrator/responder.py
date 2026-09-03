@@ -14,7 +14,7 @@ It handles the two ways a conversation can end:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from langchain_core.output_parsers import StrOutputParser
@@ -101,14 +101,26 @@ class Responder:
     def answer_directly(self, user_query: str) -> str:
         """Reply conversationally to a message that needs no research agent."""
 
-        answer = self._direct_chain.invoke(
-            {
-                "capabilities": _format_capabilities(self._agent_cards),
-                "user_query": user_query,
-            }
-        )
+        answer = self._direct_chain.invoke(self._direct_inputs(user_query))
         _logger.info("[Responder] answered directly (no agents used)")
         return answer
+
+    def answer_directly_stream(self, user_query: str) -> Iterator[str]:
+        """`answer_directly`, yielded chunk by chunk as the model writes it.
+
+        Same prompt, same chain, same result once joined - the only difference
+        is that the caller can show the text arriving instead of waiting for
+        the last token before showing the first.
+        """
+
+        yield from self._direct_chain.stream(self._direct_inputs(user_query))
+        _logger.info("[Responder] streamed a direct answer (no agents used)")
+
+    def _direct_inputs(self, user_query: str) -> dict[str, Any]:
+        return {
+            "capabilities": _format_capabilities(self._agent_cards),
+            "user_query": user_query,
+        }
 
     def synthesize(
         self,
@@ -120,21 +132,44 @@ class Responder:
         """Write the final answer from what the agents found."""
 
         answer = self._synthesis_chain.invoke(
-            {
-                "user_query": user_query,
-                "findings": _format_findings(context),
-                "quality_constraints": _quality_constraints(context),
-                "execution_history": "\n".join(f"- {entry}" for entry in execution_history),
-                "failure_note": (
-                    f"\n\nNote: an agent failed with: {failure}. Explain this to the user "
-                    "honestly instead of guessing an answer."
-                    if failure
-                    else ""
-                ),
-            }
+            self._synthesis_inputs(user_query, context, execution_history, failure)
         )
         _logger.info("[Responder] synthesized final answer from %d findings", len(context))
         return answer
+
+    def synthesize_stream(
+        self,
+        user_query: str,
+        context: dict[str, Any],
+        execution_history: list[str],
+        failure: str | None = None,
+    ) -> Iterator[str]:
+        """`synthesize`, yielded chunk by chunk as the model writes it."""
+
+        yield from self._synthesis_chain.stream(
+            self._synthesis_inputs(user_query, context, execution_history, failure)
+        )
+        _logger.info("[Responder] streamed final answer from %d findings", len(context))
+
+    def _synthesis_inputs(
+        self,
+        user_query: str,
+        context: dict[str, Any],
+        execution_history: list[str],
+        failure: str | None,
+    ) -> dict[str, Any]:
+        return {
+            "user_query": user_query,
+            "findings": _format_findings(context),
+            "quality_constraints": _quality_constraints(context),
+            "execution_history": "\n".join(f"- {entry}" for entry in execution_history),
+            "failure_note": (
+                f"\n\nNote: an agent failed with: {failure}. Explain this to the user "
+                "honestly instead of guessing an answer."
+                if failure
+                else ""
+            ),
+        }
 
 
 def _format_capabilities(agent_cards: dict[str, AgentCard]) -> str:

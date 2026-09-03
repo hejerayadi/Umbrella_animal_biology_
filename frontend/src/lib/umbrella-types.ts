@@ -479,4 +479,10 @@ export interface AgentActivity {
   status: AgentStatus;
   description: string;
   timestamp: string;
+  /**
+   * The model's own words about this step - the planner's one-line reason for
+   * picking an agent, or what a stuck agent asked another one for. Absent on
+   * steps nobody explained, and on any run that did not stream.
+   */
+  thought?: string;
 }

@@ -22,7 +22,7 @@ import type {
   ReconstructionSpec,
   WritingDraftSpec,
 } from "./umbrella-types";
-import { apiRequest, apiUrl } from "./api-client";
+import { ApiClientError, apiRequest, apiStream, apiUrl } from "./api-client";
 
 /**
  * Base URL of the Python orchestrator API (backend/api.py).
@@ -101,6 +101,122 @@ export async function askOrchestrator(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, context }),
   });
+}
+
+/**
+ * One thing the orchestrator did, sent the moment it happened.
+ *
+ * `step` arrives twice for the same `id` - once "running", once with the
+ * outcome - so it is rendered as one line that updates rather than two.
+ * Mirrors `backend/orchestrator/events.py`; keep the two in step.
+ */
+export type OrchestratorEvent =
+  | { type: "step"; id: string; agent: string; text: string; state: "running" | "done" | "failed" }
+  | { type: "thought"; id: string; text: string }
+  | { type: "answer"; delta: string }
+  | { type: "done"; payload: ChatResponse }
+  | { type: "error"; message: string };
+
+/**
+ * Sends one chat message and reports the orchestrator's progress as it runs.
+ *
+ * `onEvent` fires for every step, thought and answer chunk, in order; the
+ * promise resolves with the same complete result `askOrchestrator` returns, so
+ * a caller that only wants the final answer can ignore the callback entirely.
+ *
+ * Falls back to the blocking `/chat` route when the backend has no streaming
+ * one - the deployed API and the frontend are updated separately, and a 404
+ * here should cost the live commentary, not the answer.
+ */
+export async function streamOrchestrator(
+  query: string,
+  image: UploadedImage | null | undefined,
+  onEvent: (event: OrchestratorEvent) => void,
+): Promise<ChatResponse> {
+  const context: Record<string, unknown> = image ? { [image.context_key]: image.image_id } : {};
+
+  let response: Response;
+  try {
+    response = await apiStream("/api/v1/chat/stream", {
+      method: "POST",
+      body: JSON.stringify({ query, context }),
+    });
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) {
+      return askOrchestrator(query, image);
+    }
+    throw error;
+  }
+
+  if (!response.body) {
+    // No streaming body to read (a proxy that buffers, an old browser). The
+    // question still deserves an answer.
+    return askOrchestrator(query, image);
+  }
+
+  let result: ChatResponse | null = null;
+  let failure: string | null = null;
+
+  for await (const event of readServerSentEvents(response.body)) {
+    if (event.type === "done") result = event.payload;
+    else if (event.type === "error") failure = event.message;
+    onEvent(event);
+  }
+
+  if (failure) throw new Error(failure);
+  if (!result) throw new Error("The orchestrator closed the connection without answering.");
+  return result;
+}
+
+/**
+ * Splits an SSE body into the events it carries.
+ *
+ * Frames are separated by a blank line and a single frame can straddle two
+ * network chunks, so the tail of a chunk is carried over rather than parsed.
+ * Lines starting with ":" are comments - the backend sends those as a
+ * keep-alive while a slow agent works, and they are not events.
+ */
+async function* readServerSentEvents(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<OrchestratorEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let split = buffer.indexOf("\n\n");
+      while (split !== -1) {
+        const frame = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+        const event = parseFrame(frame);
+        if (event) yield event;
+        split = buffer.indexOf("\n\n");
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function parseFrame(frame: string): OrchestratorEvent | null {
+  const data = frame
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n");
+  if (!data) return null;
+  try {
+    return JSON.parse(data) as OrchestratorEvent;
+  } catch {
+    // A truncated or malformed frame is not worth killing the run over: the
+    // next one is probably fine, and `done` carries the whole result anyway.
+    return null;
+  }
 }
 
 /**
